@@ -1,6 +1,7 @@
--- Central asset loader. Caches PNGs from assets/ (missing files return nil so
+-- Asset loader for teh game
+-- We cache all PNGs from assets/ (missing files return nil so
 -- entities fall back to placeholder art), and synthesizes all sfx + music in
--- code so no audio files ship. Synthesis is pcall'd: a failure means silence.
+-- code so no audio files ship
 
 local config = require("src.config")
 
