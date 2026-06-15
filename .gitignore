@@ -5,3 +5,4 @@ CLAUDE.md
 *.app
 .DS_Store
 *.zip
+__pycache__/
