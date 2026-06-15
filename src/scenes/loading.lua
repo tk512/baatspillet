@@ -1,7 +1,6 @@
 -- src/scenes/loading.lua
--- A "Laster…" screen shown between the menu and the world. World:load is heavy
--- (terrain meshes etc.), so we run it inside a coroutine and time-slice it here,
--- animating this screen between slices instead of freezing on one blocking call.
+-- Loading screen due to World:load being heavy
+-- Run as coroutine
 
 local config = require("src.config")
 local Loader = require("src.systems.loader")
