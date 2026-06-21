@@ -143,8 +143,8 @@ function Port:drawPlaceholder(g)
     local bc = config.BUILDING_COLORS
     local function col(n) return bc[((salt + n) % #bc) + 1] end
 
-    -- 1) lot + a darker quay/apron near the water
-    Objects.drawLot(g, c.lot)
+    -- 1) cobblestone plaza + a darker quay/apron near the water
+    Objects.drawPavedLot(g, salt)
     box(36, 0, 56, 30, z, z + 1.5, c.road)
 
     -- 2) main warehouse with windows + a pitched roof

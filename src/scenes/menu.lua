@@ -92,6 +92,54 @@ function Menu:load(game)
     local hw = sw * 0.24
     self.hero = { x = -hw, y = sh * 0.74, w = hw, speed = sw * 0.13 }
 
+    -- A little shark (the toy, photographed) cruising the other way, low in the
+    -- foreground water, chomping its jaw as it goes. Frames are pre-aligned by
+    -- the snout (see tools/make_shark.py) so we just swap them in place. Friendly,
+    -- not scary -- the harbours are always safe.
+    self.sharkFrames = {}
+    for i = 1, 4 do
+        local img = Assets.image("shark/shark_" .. i .. ".png")   -- pixel-art: keep nearest
+        self.sharkFrames[i] = img
+    end
+    if self.sharkFrames[1] then
+        local sw2 = sw * 0.16
+        self.shark = { x = sw + sw2, y = sh * 0.86, w = sw2, speed = sw * 0.06,
+                       frames = { 1, 2, 3, 4, 3, 2 }, frameDur = 0.18 }
+    end
+
+    -- A Coast Guard helicopter that flies in after a short wait (5-10s), buzzing
+    -- left-to-right across the sky with its rotors spun in code (the photo's static
+    -- blades were cropped; see tools/make_heli.py). When it arrives, my boy's own
+    -- "chopper" recording plays. It waits off-screen until startAt, then flies and
+    -- wraps, sounding again each lap.
+    if Assets.image("menu/helicopter.png") then
+        local hw = sw * 0.20
+        -- speed tuned so one crossing (~7.8s) matches the chopper clip's fade
+        -- in/out, so the sound swells in as it enters and trails off as it leaves
+        self.heli = { x = -hw, y = sh * 0.30, w = hw, speed = sw * 0.18,
+                      startAt = 5 + love.math.random() * 5, flying = false }
+    end
+
+    -- The passenger action-figures playfully pop up from the bottom edge to peek,
+    -- then duck back down -- each on its own gentle rhythm so it's never crowded
+    -- (usually just one peeking at a time). My boy loves a peek-a-boo.
+    self.passengerImgs = {}
+    for i = 1, 4 do self.passengerImgs[i] = Assets.image("icons/passenger" .. i .. ".png") end
+    self.peekers = {}
+    if self.passengerImgs[1] then
+        local slots = { 0.14, 0.33, 0.54, 0.70 }
+        for i, fx in ipairs(slots) do
+            self.peekers[i] = {
+                fig     = ((i - 1) % 4) + 1,
+                x       = sw * fx,
+                offset  = i * 2.3,                 -- staggered starts
+                period  = 8.5 + i * 0.9,           -- each its own rhythm
+                peekDur = 2.4,                     -- how long a peek lasts
+                sway    = love.math.random() * TAU,
+            }
+        end
+    end
+
     -- Voice first (words bounce in to match), then the splash + wave crash.
     self.splash = {}
     self.splashFired = false
@@ -310,6 +358,29 @@ function Menu:update(dt)
         if self.hero.x - self.hero.w > w then self.hero.x = -self.hero.w end
     end
 
+    -- The shark glides the other way (right to left) and wraps back around.
+    if self.shark then
+        self.shark.x = self.shark.x - self.shark.speed * dt
+        if self.shark.x + self.shark.w < 0 then self.shark.x = w + self.shark.w end
+    end
+
+    -- The helicopter waits off-screen, then flies in (chopper sound on arrival)
+    -- and buzzes left-to-right, wrapping back around and sounding again each lap.
+    if self.heli then
+        if not self.heli.flying then
+            if self.t >= self.heli.startAt then
+                self.heli.flying = true
+                Assets.playSfx("chopper", 1.0)
+            end
+        else
+            self.heli.x = self.heli.x + self.heli.speed * dt
+            if self.heli.x - self.heli.w > w then
+                self.heli.x = -self.heli.w
+                Assets.playSfx("chopper", 1.0)   -- here it comes again
+            end
+        end
+    end
+
     -- After the voice finishes: erupt the splash + crash, restore the music.
     if not self.splashFired and self.t >= self.splashAt then
         self.splashFired = true
@@ -396,6 +467,48 @@ local function miniBoat(x, y, s, col)
         x + 8 * s, y + 8 * s, x - 8 * s, y + 8 * s)                       -- hull
 end
 
+-- Cheap, busy-looking main rotor: a short mast, a faint swept disc, then a few
+-- motion-blur "ghosts" of two blades sweeping a flattened (side-on) ellipse, and
+-- a hub cap. halfW is the blade reach; the y-squash makes it read as a top rotor
+-- seen almost edge-on.
+function Menu:drawRotor(cx, cy, halfW)
+    local squash = 0.16
+    love.graphics.setColor(0.15, 0.15, 0.17)              -- short mast up to the hub
+    love.graphics.setLineWidth(3)
+    love.graphics.line(cx, cy + halfW * squash + 4, cx, cy)
+    love.graphics.setColor(0.90, 0.92, 0.95, 0.16)        -- faint swept disc
+    love.graphics.ellipse("fill", cx, cy, halfW, halfW * squash)
+    local spin = self.t * 18
+    for k = 0, 2 do                                        -- 3 ghosts = motion blur
+        love.graphics.setColor(0.10, 0.10, 0.12, 0.55 - k * 0.16)
+        love.graphics.setLineWidth(3)
+        local a = spin - k * 0.45
+        for b = 0, 1 do
+            local ang = a + b * math.pi
+            love.graphics.line(cx, cy, cx + math.cos(ang) * halfW, cy + math.sin(ang) * halfW * squash)
+        end
+    end
+    love.graphics.setColor(0.20, 0.20, 0.22); love.graphics.circle("fill", cx, cy, 3)
+    love.graphics.setLineWidth(1); love.graphics.setColor(1, 1, 1)
+end
+
+-- The tail rotor, seen face-on from the side: a small spinning disc of blades.
+function Menu:drawTailRotor(cx, cy, r)
+    love.graphics.setColor(0.85, 0.88, 0.92, 0.15)
+    love.graphics.circle("fill", cx, cy, r)
+    local spin = self.t * 24
+    for k = 0, 2 do
+        love.graphics.setColor(0.10, 0.10, 0.12, 0.5 - k * 0.15)
+        love.graphics.setLineWidth(2)
+        local a = spin - k * 0.5
+        for b = 0, 1 do
+            local ang = a + b * math.pi
+            love.graphics.line(cx, cy, cx + math.cos(ang) * r, cy + math.sin(ang) * r)
+        end
+    end
+    love.graphics.setLineWidth(1); love.graphics.setColor(1, 1, 1)
+end
+
 function Menu:draw()
     local c = config.colors
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
@@ -448,6 +561,66 @@ function Menu:draw()
             boatImg:getWidth() / 2, boatImg:getHeight() * 0.85)
     end
 
+    -- The chomping shark, low in the foreground water (drawn over the boat so it
+    -- reads as nearer the viewer). It already faces left, which is the way it
+    -- swims, so no flip is needed.
+    if self.shark then
+        local frame = self.shark.frames[math.floor(self.t / self.shark.frameDur) % #self.shark.frames + 1]
+        local img = self.sharkFrames[frame]
+        if img then
+            local scale = self.shark.w / img:getWidth()
+            local ih = img:getHeight() * scale
+            local bob = math.sin(self.t * 1.3) * 6
+            local pitch = math.sin(self.t * 1.6) * 0.03         -- gentle swim wobble
+            local sx, sy = self.shark.x, self.shark.y + bob
+            -- soft shadow + a few ripples trailing behind the tail (to the right)
+            love.graphics.setColor(0, 0, 0, 0.12)
+            love.graphics.ellipse("fill", sx, sy + ih * 0.30, self.shark.w * 0.42, ih * 0.10)
+            love.graphics.setColor(1, 1, 1, 0.45)
+            for k = 1, 4 do
+                love.graphics.ellipse("fill", sx + self.shark.w * (0.45 + k * 0.05), sy, 5, 2.5)
+            end
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.draw(img, sx, sy, pitch, scale, scale,
+                img:getWidth() / 2, img:getHeight() / 2)
+        end
+    end
+
+    -- The Coast Guard helicopter crossing the sky, rotors spinning (drawn in
+    -- code). It faces right, the way it flies, so no flip is needed. Only once it
+    -- has flown in (after the initial wait).
+    if self.heli and self.heli.flying then
+        local img = Assets.image("menu/helicopter.png")
+        if img then
+            local scale = self.heli.w / img:getWidth()
+            local ih = img:getHeight() * scale
+            local bob = math.sin(self.t * 2.4) * 4
+            local hx, hy = self.heli.x, self.heli.y + bob
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.draw(img, hx, hy, 0, scale, scale,
+                img:getWidth() / 2, img:getHeight() / 2)
+            -- main rotor on top (hub just above the cabin roof) + small tail rotor
+            self:drawRotor(hx - self.heli.w * 0.02, hy - ih * 0.5 - ih * 0.05, self.heli.w * 0.46)
+            self:drawTailRotor(hx - self.heli.w * 0.46, hy - ih * 0.12, ih * 0.18)
+        end
+    end
+
+    -- Passenger figures peeking up from the bottom edge (clipped by the scissor,
+    -- so they rise out of the waterline and duck back down with a little wobble).
+    local baseY = S.y + S.h
+    for _, p in ipairs(self.peekers) do
+        local cyc = (self.t + p.offset) % p.period
+        local up = (cyc < p.peekDur) and math.sin(cyc / p.peekDur * math.pi) or 0
+        if up > 0.01 then
+            local img = self.passengerImgs[p.fig]
+            local scale = (sw * 0.05) / img:getWidth()
+            local show = img:getHeight() * scale * 0.62        -- how much shows at full peek
+            local sway = math.sin(self.t * 3 + p.sway) * 0.05 * up
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.draw(img, p.x, baseY - show * up, sway, scale, scale, img:getWidth() / 2, 0)
+        end
+    end
+
     -- splash droplets
     for _, p in ipairs(self.splash) do
         local a = clamp01(1 - p.life / p.ttl)
@@ -486,6 +659,7 @@ end
 
 -- Credit my boy Finn-Erik (the artist) peeking up from the bottom-right corner.
 function Menu:drawArtist(sw, sh)
+    if not config.SHOW_ARTIST_PHOTO then return end
     local img = self.artist
     if not img then return end
     local ih = sh * 0.34

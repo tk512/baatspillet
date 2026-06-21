@@ -40,7 +40,7 @@ function CargoSystem:makeOffer(port)
                                               or  love.math.random(1, 3)
     local reward = count * love.math.random(6, 12)
 
-    return {
+    local offer = {
         mode   = prod.mode,            -- "passengers" | "cargo"
         type   = prod.label,           -- shown in HUD / screen
         icon   = prod.icon,            -- passenger / fish / apple / flower / box
@@ -51,6 +51,20 @@ function CargoSystem:makeOffer(port)
         color  = dest.color,           -- destination's accent color (for the flag)
         reward = reward,
     }
+
+    -- Passengers are real little people: pick a specific action-figure for each
+    -- one (passenger1..4 -> assets/icons/passengerN.png). `figures` is the per-
+    -- person list (shown at the harbour); `icon` becomes one of them so the HUD's
+    -- single-icon mission banner shows a real passenger too.
+    if prod.mode == "passengers" then
+        offer.figures = {}
+        for i = 1, count do
+            offer.figures[i] = "passenger" .. love.math.random(4)
+        end
+        offer.icon = offer.figures[1]
+    end
+
+    return offer
 end
 
 function CargoSystem:offerAt(portId)

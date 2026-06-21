@@ -29,6 +29,7 @@ function Pirate.new(x, y, playerMaxSpeed)
     self.turnRate = 1.5
     self.radius   = 26
     self.state    = "chase"                 -- "chase" | "retreat"
+    self.hits     = 0                        -- cannon hits taken (flees at SCARE_HITS)
     self.fireT    = P.FIRE_INTERVAL * 0.7   -- a moment before the first shot
     self.balls    = {}
     self.farT     = 0                       -- how long you've been out of reach

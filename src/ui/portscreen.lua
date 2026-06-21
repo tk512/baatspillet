@@ -8,9 +8,22 @@
 local config = require("src.config")
 local Assets = require("src.assets")
 local Retro  = require("src.ui.retro")
+local Icons  = require("src.ui.icons")
 
 local PortScreen = {}
 PortScreen.__index = PortScreen
+
+-- The Butikk's own look: a weathered, warm-lit pirate trading post (dark wood +
+-- lantern glow), regardless of the harbour's cosy/scary mood.
+local STORE = {
+    wood   = {0.26, 0.17, 0.10}, woodhi = {0.42, 0.29, 0.16}, woodlo = {0.10, 0.06, 0.03},
+    deep   = {0.16, 0.10, 0.06},
+    lamp   = {1.00, 0.82, 0.42},
+    text   = {0.96, 0.88, 0.66}, accent = {0.96, 0.74, 0.30}, dim = {0.55, 0.45, 0.30},
+    crate  = {0.46, 0.33, 0.18}, cratehi = {0.62, 0.46, 0.26}, cratelo = {0.20, 0.13, 0.07},
+    buy    = {0.30, 0.50, 0.26}, buyhi  = {0.46, 0.66, 0.36}, buylo  = {0.15, 0.27, 0.12},
+    red    = {0.86, 0.36, 0.28},
+}
 
 -- Color themes: warm wood vs cold stone.
 local THEMES = {
@@ -50,6 +63,10 @@ function PortScreen.new(world, port, info)
     self.mood  = port.def.mood or "cosy"
     self.theme = THEMES[self.mood] or THEMES.cosy
     self.t = 0
+    self.shopOpen = false                 -- the Butikk is a full-screen sub-view
+    self.shop = world.game.data.shop      -- the buyable catalog (data-driven)
+    self.buyFlash = 0                     -- "Kjøpt!" confirmation timer
+    self.storeMsg = nil                   -- transient store line, e.g. "Spar 30 til!"
     Assets.startDockMood(self.mood)
     self:playVoice()
     if self.mode == "deliver" then           -- raining gold coins
@@ -86,8 +103,18 @@ function PortScreen:playVoice()
     Assets.playSfx("horn")
 end
 
+local function inRect(r, mx, my)
+    return mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
+end
+
 function PortScreen:update(dt)
     self.t = self.t + dt
+    if self.buyFlash > 0 then self.buyFlash = self.buyFlash - dt end
+    if self.storeMsg then
+        self.storeMsg.t = self.storeMsg.t - dt
+        if self.storeMsg.t <= 0 then self.storeMsg = nil end
+    end
+
     if self.coins then
         for _, co in ipairs(self.coins) do
             if not co.rest then
@@ -135,6 +162,9 @@ function PortScreen:layout(vw, vh)
     local bodyY = py + titleH + pad
     local bodyH = ph - titleH - btnH - pad * 3
     local portraitW = math.floor(pw * 0.36)
+    local seilW = math.floor(pw * 0.30)
+    local butW  = math.floor(pw * 0.28)
+    local rowY  = py + ph - btnH - pad
     return {
         pad = pad,
         panel   = { x = px, y = py, w = pw, h = ph },
@@ -142,23 +172,36 @@ function PortScreen:layout(vw, vh)
         portrait= { x = px + pad, y = bodyY, w = portraitW, h = bodyH },
         brief   = { x = px + portraitW + pad * 2, y = bodyY,
                     w = pw - portraitW - pad * 3, h = bodyH },
-        seil    = { x = px + pw - math.floor(pw * 0.40) - pad, y = py + ph - btnH - pad,
-                    w = math.floor(pw * 0.40), h = btnH },
-        speaker = { x = px + pad, y = py + ph - btnH - pad, w = btnH, h = btnH },
+        seil    = { x = px + pw - seilW - pad, y = rowY, w = seilW, h = btnH },
+        butikk  = { x = px + pw - seilW - pad - butW - pad, y = rowY, w = butW, h = btnH },
     }
-end
-
-local function inRect(r, mx, my)
-    return mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
 end
 
 -- Input (screen px -> panel-local px)
 function PortScreen:mousepressed(mx, my, button)
-    if button ~= 1 or not self._L then return end
+    if button ~= 1 or not self._ox then return end
     mx = mx - self._ox
     my = my - self._oy
-    if inRect(self._L.speaker, mx, my) then
-        self:playVoice()
+
+    -- Inside the store: click a crate to buy it, or Tilbake / Seil.
+    if self.shopOpen then
+        if self._crates then
+            for _, c in ipairs(self._crates) do
+                if inRect(c, mx, my) then self:tryBuy(c.item); return end
+            end
+        end
+        if self._backRect and inRect(self._backRect, mx, my) then
+            self.shopOpen = false                      -- back to the harbour-master briefing
+        elseif self._seilRect and inRect(self._seilRect, mx, my) then
+            self:confirm()
+        end
+        return
+    end
+
+    if not self._L then return end
+    if inRect(self._L.butikk, mx, my) then
+        self.shopOpen = true                       -- open the store...
+        Assets.playNamedVoice("butikk")            -- ...with "Vil du kjøpe noe?"
     elseif inRect(self._L.seil, mx, my) then
         self:confirm()
     elseif not inRect(self._L.panel, mx, my) then
@@ -168,7 +211,45 @@ end
 
 function PortScreen:keypressed(key)
     if key == "space" or key == "return" or key == "kpenter" then
-        self:confirm()
+        if self.shopOpen then
+            self.shopOpen = false                  -- back out of the store
+        else
+            self:confirm()
+        end
+    end
+end
+
+-- The buy button is always clickable. Clicking it:
+--   already owned -> a voice "du har allerede en kanon" (so he learns he's set)
+--   can afford    -> spend the gold, see it go down, happy fanfare
+--   too poor      -> a gentle nudge (the "Spar X til!" maths is on screen)
+function PortScreen:tryBuy(item)
+    local game = self.world.game
+    if not item then return end
+
+    local ok
+    if item.food then
+        ok = game:buyFood(item.id, item.price)        -- food: buy again and again
+    elseif game:owns(item.id) then
+        if not Assets.playNamedVoice("har_" .. item.id) then  -- e.g. har_kanon.ogg
+            Assets.playSfx("bump")
+        end
+        return
+    else
+        ok = game:buyUpgrade(item.id, item.price)     -- upgrade: one-time
+    end
+
+    if ok then
+        self.buyFlash, self.buyItem = 1.4, item
+        self.storeMsg = nil
+        Assets.playSfx("coin")
+        Assets.playSfx("deliver")              -- happy little fanfare
+        self.world:showToast("Kjøpt: " .. item.name .. "!")
+    else
+        -- can't afford -> show the subtraction the store exists to teach
+        local need = item.price - game.state.coins
+        self.storeMsg = { text = "Spar " .. need .. " til!", t = 2.5 }
+        Assets.playSfx("bump")
     end
 end
 
@@ -196,6 +277,10 @@ local bevel = Retro.bevel
 
 function PortScreen:draw()
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+
+    -- The Butikk is its own bigger, full-panel screen.
+    if self.shopOpen then self:drawStoreScreen(sw, sh); return end
+
     -- Panel size capped so it stays a tidy dialog (and the text readable) on big
     -- monitors. Drawn at full resolution; the retro feel comes from the bevels,
     -- dither and blocky icons.
@@ -238,7 +323,7 @@ function PortScreen:drawRetro(L, vw, vh)
 
     self:drawTitle(L, t)
     self:drawPortrait(L, t)
-    self:drawBrief(L)
+    self:drawBrief(L, t)
     self:drawButtons(L, t)
 end
 
@@ -358,7 +443,7 @@ function PortScreen:drawHarborMaster(x, y, w, h)
     end
 end
 
-function PortScreen:drawBrief(L)
+function PortScreen:drawBrief(L, t)
     local th, B = self.theme, L.brief
     local cx = B.x + B.w / 2
     local fh = vfont(B.h * 0.14)
@@ -371,7 +456,7 @@ function PortScreen:drawBrief(L)
         love.graphics.setColor(th.accent)
         love.graphics.print(head, cx - fh:getWidth(head) / 2, B.y + B.h * 0.04)
 
-        self:drawIconRow(o.icon, o.count, cx, B.y + B.h * 0.40, B.h * 0.16)
+        self:drawIconRow(o.icon, o.count, cx, B.y + B.h * 0.40, B.h * 0.16, o.figures)
 
         love.graphics.setFont(fb)
         local verb = (o.mode == "passengers") and "Ta" or "Frakt"
@@ -395,7 +480,7 @@ function PortScreen:drawBrief(L)
         love.graphics.print(t1, cx - fh:getWidth(t1) / 2, B.y + B.h * 0.06)
         local m = self.mission
         if m then
-            self:drawIconRow(m.icon, m.count, cx, B.y + B.h * 0.42, B.h * 0.16)
+            self:drawIconRow(m.icon, m.count, cx, B.y + B.h * 0.42, B.h * 0.16, m.figures)
             love.graphics.setFont(fb)
             local l1 = "Du har allerede oppdrag!"
             love.graphics.setColor(th.text)
@@ -437,65 +522,254 @@ function PortScreen:drawBrief(L)
     end
 end
 
-function PortScreen:drawIconRow(kind, count, cx, y, s)
-    count = math.min(count, 6)
-    local gap = s * 1.5
-    local total = (count - 1) * gap
-    for i = 1, count do
-        self:drawIcon(kind, cx - total / 2 + (i - 1) * gap, y, s)
-    end
-end
-
-function PortScreen:drawIcon(kind, x, y, s)
-    if kind == "passenger" or kind == "smile" then
-        love.graphics.setColor(0.95, 0.80, 0.55)
-        love.graphics.rectangle("fill", x - s * 0.22, y - s * 0.55, s * 0.44, s * 0.44)  -- head
-        love.graphics.setColor(0.30, 0.45, 0.70)
-        love.graphics.rectangle("fill", x - s * 0.40, y - s * 0.10, s * 0.80, s * 0.55)  -- body
-    elseif kind == "fish" then
-        love.graphics.setColor(0.55, 0.68, 0.82)
-        love.graphics.rectangle("fill", x - s * 0.45, y - s * 0.22, s * 0.7, s * 0.44)   -- body
-        love.graphics.polygon("fill", x + s * 0.25, y, x + s * 0.5, y - s * 0.3, x + s * 0.5, y + s * 0.3)
-        love.graphics.setColor(0.12, 0.14, 0.18)
-        love.graphics.rectangle("fill", x - s * 0.32, y - s * 0.08, s * 0.12, s * 0.12)  -- eye
-    elseif kind == "apple" then
-        love.graphics.setColor(0.80, 0.30, 0.25)
-        love.graphics.rectangle("fill", x - s * 0.35, y - s * 0.35, s * 0.7, s * 0.7)
-    else
-        love.graphics.setColor(0.60, 0.45, 0.28)
-        love.graphics.rectangle("fill", x - s * 0.4, y - s * 0.4, s * 0.8, s * 0.8)
-        love.graphics.setColor(0.40, 0.30, 0.20)
-        love.graphics.rectangle("fill", x - s * 0.4, y - s * 0.05, s * 0.8, s * 0.1)
-    end
-end
-
-function PortScreen:drawButtons(L, t)
+-- A beveled, centered-label button. `primary` picks the green action palette
+-- (Seil!/Kjøp); otherwise the wooden secondary one (Butikk/Tilbake).
+function PortScreen:labelButton(b, label, t, primary)
     local th = self.theme
     local mx, my = love.mouse.getPosition()
     mx, my = mx - self._ox, my - self._oy
-
-    -- Seil! button
-    local b = L.seil
     local hover = inRect(b, mx, my)
-    bevel(b.x, b.y, b.w, b.h, hover and th.btnhi or th.btn, th.btnhi, th.btnlo, t, true)
+    local face = primary and (hover and th.btnhi or th.btn) or (hover and th.hi or th.face)
+    bevel(b.x, b.y, b.w, b.h, face, primary and th.btnhi or th.hi,
+          primary and th.btnlo or th.lo, t, true)
+    local f = vfont(b.h * 0.40)
+    love.graphics.setFont(f)
+    local lx = b.x + b.w / 2 - f:getWidth(label) / 2
+    local ly = b.y + b.h / 2 - f:getHeight() / 2
+    love.graphics.setColor(0, 0, 0, 0.5); love.graphics.print(label, lx + 1, ly + 1)
+    love.graphics.setColor(1, 1, 1);      love.graphics.print(label, lx, ly)
+end
+
+-- ===================== The Butikk (store) =====================
+-- A bigger, full-panel rusty pirate trading post: dark weathered wood lit by
+-- lanterns, a grid of wooden-crate goods. Click a crate to buy. Owned goods are
+-- crossed out. The maths (your gold, prices, "Spar X til!") stays front-and-centre.
+
+function PortScreen:drawStoreScreen(sw, sh)
+    local pw = math.min(math.floor(sw * 0.90), 1040)
+    local ph = math.min(math.floor(sh * 0.88), 740)
+    self._ox = math.floor((sw - pw) / 2)
+    self._oy = math.floor((sh - ph) / 2)
+
+    love.graphics.setColor(0, 0, 0, 0.62)           -- dim the world behind
+    love.graphics.rectangle("fill", 0, 0, sw, sh)
+
+    love.graphics.push()
+    love.graphics.translate(self._ox, self._oy)
+    self:drawStorePanel(pw, ph)
+    love.graphics.pop()
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- A small wall lantern casting a warm pool of light.
+local function lantern(lx, ly, r)
+    love.graphics.setColor(0.14, 0.09, 0.05)
+    love.graphics.rectangle("fill", lx - 1, ly - r * 1.7, 2, r * 0.9)        -- bracket
+    love.graphics.setColor(0.24, 0.17, 0.10)
+    love.graphics.rectangle("fill", lx - r * 0.5, ly - r * 0.8, r, r * 1.6)  -- housing
+    love.graphics.setColor(STORE.lamp[1], STORE.lamp[2], STORE.lamp[3], 0.95)
+    love.graphics.rectangle("fill", lx - r * 0.3, ly - r * 0.5, r * 0.6, r)  -- flame glass
+end
+
+-- A weathered barrel of goods.
+local function barrel(bx, by, w, h)
+    love.graphics.setColor(0.34, 0.22, 0.12)
+    love.graphics.rectangle("fill", bx, by, w, h)
+    love.graphics.setColor(0.22, 0.14, 0.08)                                 -- side shading
+    love.graphics.rectangle("fill", bx, by, w * 0.18, h)
+    love.graphics.rectangle("fill", bx + w * 0.82, by, w * 0.18, h)
+    love.graphics.setColor(0.50, 0.50, 0.55)                                 -- metal hoops
+    love.graphics.rectangle("fill", bx, by + h * 0.16, w, h * 0.10)
+    love.graphics.rectangle("fill", bx, by + h * 0.72, w, h * 0.10)
+end
+
+function PortScreen:drawStorePanel(pw, ph)
+    local s = STORE
+    local game = self.world.game
+    local t = math.max(2, math.floor(ph / 110))
+    local mx, my = love.mouse.getPosition()
+    mx, my = mx - self._ox, my - self._oy
+
+    -- panel: raised wood slab + sunken inner well
+    bevel(0, 0, pw, ph, s.wood, s.woodhi, s.woodlo, t, true)
+    bevel(t * 2, t * 2, pw - t * 4, ph - t * 4, s.deep, s.woodhi, s.woodlo, t, false)
+    local ix, iy, iw, ih = t * 3, t * 3, pw - t * 6, ph - t * 6
+
+    -- vertical woodgrain planks + faint scanlines
+    love.graphics.setColor(0, 0, 0, 0.13)
+    for xx = ix, ix + iw, 26 do love.graphics.rectangle("fill", xx, iy, 1, ih) end
+    for yy = iy, iy + ih, 3 do love.graphics.rectangle("fill", ix, yy, iw, 1) end
+
+    -- warm lantern glow in the top corners (additive pools)
+    love.graphics.setBlendMode("add")
+    love.graphics.setColor(s.lamp[1], s.lamp[2], s.lamp[3], 0.10)
+    love.graphics.circle("fill", ix + iw * 0.10, iy + ih * 0.10, ih * 0.30)
+    love.graphics.circle("fill", ix + iw * 0.90, iy + ih * 0.10, ih * 0.30)
+    love.graphics.setBlendMode("alpha")
+    lantern(ix + iw * 0.07, iy + ih * 0.12, ih * 0.045)
+    lantern(ix + iw * 0.93, iy + ih * 0.12, ih * 0.045)
+
+    -- hanging sign: BUTIKK
+    local fT = vfont(ih * 0.085)
+    love.graphics.setFont(fT)
+    local title = "BUTIKK"
+    local tw = fT:getWidth(title)
+    local plY = iy + ih * 0.03
+    bevel(pw / 2 - tw / 2 - 20, plY, tw + 40, fT:getHeight() + 14, s.crate, s.cratehi, s.cratelo, t, true)
+    love.graphics.setColor(0, 0, 0, 0.5); love.graphics.print(title, pw / 2 - tw / 2 + 1, plY + 8)
+    love.graphics.setColor(s.accent);    love.graphics.print(title, pw / 2 - tw / 2, plY + 7)
+
+    -- your gold, centered under the sign (a coin + the running total)
+    local fG = vfont(ih * 0.052)
+    love.graphics.setFont(fG)
+    local gold = "Gull: " .. game.state.coins
+    local gw = fG:getWidth(gold)
+    local gy = iy + ih * 0.155
+    local cr = ih * 0.03
+    love.graphics.setColor(0.6, 0.45, 0.1); love.graphics.circle("fill", pw / 2 - gw / 2 - cr * 1.6, gy + fG:getHeight() / 2, cr + 1)
+    love.graphics.setColor(config.colors.gold); love.graphics.circle("fill", pw / 2 - gw / 2 - cr * 1.6, gy + fG:getHeight() / 2, cr)
+    love.graphics.setColor(config.colors.gold); love.graphics.print(gold, pw / 2 - gw / 2, gy)
+
+    -- the goods grid (3 columns)
+    local cols = 3
+    local n = #self.shop
+    local rows = math.max(1, math.ceil(n / cols))
+    local gridX, gridY = ix + iw * 0.04, iy + ih * 0.23
+    local gridW, gridH = iw * 0.92, ih * 0.56
+    local gap, rowGap = iw * 0.025, ih * 0.035
+    local cw = (gridW - (cols - 1) * gap) / cols
+    local ch = math.min((gridH - (rows - 1) * rowGap) / rows, cw * 0.92)
+    self._crates = {}
+    for i = 1, n do
+        local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+        local rect = { x = gridX + col * (cw + gap), y = gridY + row * (ch + rowGap),
+                       w = cw, h = ch, item = self.shop[i] }
+        self._crates[i] = rect
+        self:drawCrate(rect, mx, my, t)
+    end
+
+    -- bottom bar: barrels flanking the Tilbake / Seil! buttons
+    local barH = ih * 0.11
+    local barY = iy + ih - barH - ih * 0.02
+    local bw, gapb = iw * 0.26, iw * 0.06
+    local totalB = bw * 2 + gapb
+    self._backRect = { x = ix + iw / 2 - totalB / 2, y = barY, w = bw, h = barH }
+    self._seilRect = { x = ix + iw / 2 + gapb / 2,   y = barY, w = bw, h = barH }
+    barrel(ix + iw * 0.02, barY + barH * 0.05, iw * 0.08, barH * 0.95)
+    barrel(ix + iw * 0.90, barY + barH * 0.05, iw * 0.08, barH * 0.95)
+
+    -- transient line just above the bar: "Spar X til!" or "Kjøpt!"
+    local fM = vfont(ih * 0.058)
+    love.graphics.setFont(fM)
+    if self.buyFlash > 0 then
+        love.graphics.setColor(s.buyhi[1], s.buyhi[2], s.buyhi[3], math.min(1, self.buyFlash))
+        love.graphics.print("Kjøpt!", pw / 2 - fM:getWidth("Kjøpt!") / 2, barY - ih * 0.085)
+    elseif self.storeMsg then
+        love.graphics.setColor(s.accent)
+        love.graphics.print(self.storeMsg.text, pw / 2 - fM:getWidth(self.storeMsg.text) / 2, barY - ih * 0.085)
+    end
+
+    self:storeButton(self._backRect, "Tilbake", t, false, mx, my)
+    self:storeButton(self._seilRect, "Seil!", t, true, mx, my)
+end
+
+-- One goods crate: icon, name, price (with coin). Owned -> crossed out;
+-- unaffordable -> dimmed with a red price; affordable -> brightens on hover.
+function PortScreen:drawCrate(r, mx, my, t)
+    local s = STORE
+    local game = self.world.game
+    local item = r.item
+    local owned  = (not item.food) and game:owns(item.id)   -- food is never "owned"
+    local stock  = item.food and game:foodCount(item.id) or 0
+    local afford = game.state.coins >= item.price
+    local hover  = inRect(r, mx, my)
+
+    local face = (hover and not owned) and s.cratehi or s.crate
+    bevel(r.x, r.y, r.w, r.h, face, s.cratehi, s.cratelo, t, true)
+    bevel(r.x + t * 2, r.y + t * 2, r.w - t * 4, r.h - t * 4, s.wood, s.cratehi, s.cratelo,
+          math.max(1, math.floor(t * 0.6)), false)
+
+    Icons.draw(item.icon, r.x + r.w / 2, r.y + r.h * 0.34, r.h * 0.34)
+
+    local fn = vfont(r.h * 0.13)
+    love.graphics.setFont(fn)
+    love.graphics.setColor(s.text)
+    love.graphics.print(item.name, r.x + r.w / 2 - fn:getWidth(item.name) / 2, r.y + r.h * 0.60)
+
+    local fp = vfont(r.h * 0.16)
+    love.graphics.setFont(fp)
+    local pr = tostring(item.price)
+    local prw = fp:getWidth(pr)
+    local py = r.y + r.h * 0.76
+    local cr = r.h * 0.075
+    local coinX = r.x + r.w / 2 - prw / 2 - cr * 1.5
+    love.graphics.setColor(0.6, 0.45, 0.1); love.graphics.circle("fill", coinX, py + fp:getHeight() / 2, cr + 1)
+    love.graphics.setColor(config.colors.gold); love.graphics.circle("fill", coinX, py + fp:getHeight() / 2, cr)
+    love.graphics.setColor(afford and config.colors.gold or s.red)
+    love.graphics.print(pr, r.x + r.w / 2 - prw / 2, py)
+
+    -- food stock badge ("xN") in the top-right corner, when you have some aboard
+    if item.food and stock > 0 then
+        local fb = vfont(r.h * 0.15)
+        love.graphics.setFont(fb)
+        local lbl = "x" .. stock
+        local bx = r.x + r.w - fb:getWidth(lbl) - t * 3
+        love.graphics.setColor(0, 0, 0, 0.5); love.graphics.print(lbl, bx + 1, r.y + t * 3 + 1)
+        love.graphics.setColor(s.text);       love.graphics.print(lbl, bx, r.y + t * 3)
+    end
+
+    if owned then
+        love.graphics.setColor(0, 0, 0, 0.34); love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
+        love.graphics.setColor(s.red); love.graphics.setLineWidth(math.max(3, t * 1.5))
+        love.graphics.line(r.x + t * 3, r.y + t * 3, r.x + r.w - t * 3, r.y + r.h - t * 3)
+        love.graphics.line(r.x + r.w - t * 3, r.y + t * 3, r.x + t * 3, r.y + r.h - t * 3)
+        love.graphics.setLineWidth(1)
+    elseif not afford then
+        love.graphics.setColor(0, 0, 0, 0.20); love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
+    elseif hover then
+        love.graphics.setColor(s.buyhi[1], s.buyhi[2], s.buyhi[3], 0.9)
+        love.graphics.setLineWidth(math.max(2, t))
+        love.graphics.rectangle("line", r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+        love.graphics.setLineWidth(1)
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- A store bottom-bar button (its own rusty palette; `primary` = the green Seil!).
+function PortScreen:storeButton(b, label, t, primary, mx, my)
+    local s = STORE
+    local hover = inRect(b, mx, my)
+    local face = primary and (hover and s.buyhi or s.buy) or (hover and s.woodhi or s.crate)
+    bevel(b.x, b.y, b.w, b.h, face, primary and s.buyhi or s.cratehi,
+          primary and s.buylo or s.cratelo, t, true)
     local f = vfont(b.h * 0.42)
     love.graphics.setFont(f)
-    local label = "Seil!"
-    love.graphics.setColor(0, 0, 0, 0.5)
-    love.graphics.print(label, b.x + b.w / 2 - f:getWidth(label) / 2 + 1, b.y + b.h / 2 - f:getHeight() / 2 + 1)
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.print(label, b.x + b.w / 2 - f:getWidth(label) / 2, b.y + b.h / 2 - f:getHeight() / 2)
+    local lx = b.x + b.w / 2 - f:getWidth(label) / 2
+    local ly = b.y + b.h / 2 - f:getHeight() / 2
+    love.graphics.setColor(0, 0, 0, 0.5); love.graphics.print(label, lx + 1, ly + 1)
+    love.graphics.setColor(1, 1, 1);      love.graphics.print(label, lx, ly)
+end
 
-    -- Speaker / replay button (so a non-reader can hear the order again)
-    local s = L.speaker
-    bevel(s.x, s.y, s.w, s.h, th.face, th.hi, th.lo, t, true)
-    local cxp, cyp = s.x + s.w / 2, s.y + s.h / 2
-    local u = s.h * 0.12
-    love.graphics.setColor(th.accent)
-    love.graphics.rectangle("fill", cxp - u * 2, cyp - u, u * 1.4, u * 2)        -- speaker box
-    love.graphics.polygon("fill", cxp - u * 0.6, cyp - u, cxp + u, cyp - u * 2,
-        cxp + u, cyp + u * 2, cxp - u * 0.6, cyp + u)                            -- cone
-    love.graphics.rectangle("fill", cxp + u * 1.6, cyp - u * 0.4, u * 0.5, u * 0.8)  -- sound wave
+-- A row of icons. With `figures` (a per-item list, e.g. passenger figures) each
+-- slot can differ; otherwise it's `count` copies of `kind`.
+function PortScreen:drawIconRow(kind, count, cx, y, s, figures)
+    local n = figures and math.min(#figures, 6) or math.min(count, 6)
+    local gap = s * 1.5
+    local total = (n - 1) * gap
+    for i = 1, n do
+        self:drawIcon(figures and figures[i] or kind, cx - total / 2 + (i - 1) * gap, y, s)
+    end
+end
+
+-- Delegate to the shared icon module (which prefers assets/icons/<kind>.png).
+function PortScreen:drawIcon(kind, x, y, s)
+    Icons.draw(kind, x, y, s)
+end
+
+function PortScreen:drawButtons(L, t)
+    -- Butikk (opens the store) and Seil! (cast off)
+    self:labelButton(L.butikk, "Butikk", t, false)
+    self:labelButton(L.seil, "Seil!", t, true)
 end
 
 return PortScreen

@@ -5,6 +5,7 @@
 
 local config = require("src.config")
 local Retro  = require("src.ui.retro")
+local Icons  = require("src.ui.icons")
 
 local HUD = {}
 local WOOD = Retro.WOOD
@@ -28,25 +29,6 @@ local function coin(x, y, r)
     love.graphics.circle("fill", x - r * 0.3, y - r * 0.3, r * 0.28)
 end
 
--- A small icon (passenger / fish / generic) centred at (x,y), size s.
-local function missionIcon(kind, x, y, s)
-    if kind == "passenger" then
-        love.graphics.setColor(0.95, 0.80, 0.55)
-        love.graphics.rectangle("fill", x - s * 0.22, y - s * 0.5, s * 0.44, s * 0.4)
-        love.graphics.setColor(0.30, 0.45, 0.70)
-        love.graphics.rectangle("fill", x - s * 0.38, y - s * 0.08, s * 0.76, s * 0.5)
-    elseif kind == "fish" then
-        love.graphics.setColor(0.55, 0.68, 0.82)
-        love.graphics.rectangle("fill", x - s * 0.42, y - s * 0.2, s * 0.66, s * 0.4)
-        love.graphics.polygon("fill", x + s * 0.24, y, x + s * 0.46, y - s * 0.26, x + s * 0.46, y + s * 0.26)
-        love.graphics.setColor(0.12, 0.14, 0.18)
-        love.graphics.rectangle("fill", x - s * 0.28, y - s * 0.06, s * 0.1, s * 0.1)
-    else
-        love.graphics.setColor(0.60, 0.45, 0.28)
-        love.graphics.rectangle("fill", x - s * 0.36, y - s * 0.36, s * 0.72, s * 0.72)
-    end
-end
-
 -- world exposes: game (coins + fonts), boat, cargoSystem, nearPort, toast.
 function HUD.draw(world)
     local c     = config.colors
@@ -65,10 +47,31 @@ function HUD.draw(world)
     local boatStr  = "Båt: " .. world.boat.def.name
     local cargoStr = "Last: " .. world.boat:cargoCount() .. " / " .. world.boat.capacity
 
+    -- Bought goods (the "inventory") shown under the boat/cargo rows as a row of
+    -- symbols only -- no text -- so a non-reader recognises them at a glance (and
+    -- so Finn-Erik's drawings can replace them later via assets/icons/<icon>.png).
+    local owned = {}
+    for _, it in ipairs(world.game.data.shop) do
+        if it.food then
+            local n = world.game:foodCount(it.id)
+            if n > 0 then owned[#owned + 1] = { it = it, count = n } end
+        elseif world.game:owns(it.id) then
+            owned[#owned + 1] = { it = it }
+        end
+    end
+    local invIcon = nmH * 0.9                             -- inventory icon size
+    local invGap  = math.floor(invIcon * 0.35)
+    local invPer  = 5                                     -- icons per row before wrapping
+    local invRows = (#owned > 0) and math.ceil(#owned / invPer) or 0
+    local invCols = math.min(#owned, invPer)
+    local invW = (#owned > 0) and (invCols * invIcon + (invCols - 1) * invGap) or 0
+    if #owned > 0 then invW = math.max(invW, fonts.small:getWidth("Kjøpt:")) end
+
     local row1W = cr * 2 + gap + fonts.normal:getWidth(goldStr)
-    local contentW = math.max(row1W, fonts.small:getWidth(boatStr), fonts.small:getWidth(cargoStr))
+    local contentW = math.max(row1W, fonts.small:getWidth(boatStr), fonts.small:getWidth(cargoStr), invW)
     local pw = contentW + (pad + t * 2) * 2
     local ph = (pad + t * 2) * 2 + nmH + gap + smH + gap + smH
+    if #owned > 0 then ph = ph + gap + smH + gap + invRows * (invIcon + invGap) end
     local ix, iy = plaque(16, 16, pw, ph, t)
 
     -- row 1: coin + gold count
@@ -82,6 +85,29 @@ function HUD.draw(world)
     local ry = iy + pad + nmH + gap
     love.graphics.print(boatStr, ix + pad, ry)
     love.graphics.print(cargoStr, ix + pad, ry + smH + gap)
+
+    -- inventory: "Kjøpt:" header then a wrapped row of symbols only
+    if #owned > 0 then
+        local oy = ry + (smH + gap) * 2
+        love.graphics.setFont(fonts.small)
+        love.graphics.setColor(WOOD.accent)
+        love.graphics.print("Kjøpt:", ix + pad, oy)
+        local startY = oy + smH + gap
+        for k, e in ipairs(owned) do
+            local col, row = (k - 1) % invPer, math.floor((k - 1) / invPer)
+            local cxk = ix + pad + col * (invIcon + invGap) + invIcon * 0.5
+            local cyk = startY + row * (invIcon + invGap) + invIcon * 0.5
+            Icons.draw(e.it.icon, cxk, cyk, invIcon)
+            if e.count and e.count > 1 then        -- food stock: "xN" badge
+                love.graphics.setFont(fonts.small)
+                local lbl = "x" .. e.count
+                love.graphics.setColor(0, 0, 0, 0.55)
+                love.graphics.print(lbl, cxk + invIcon * 0.5 - fonts.small:getWidth(lbl) + 1, cyk + invIcon * 0.3 + 1)
+                love.graphics.setColor(WOOD.text)
+                love.graphics.print(lbl, cxk + invIcon * 0.5 - fonts.small:getWidth(lbl), cyk + invIcon * 0.3)
+            end
+        end
+    end
 
     -- Top-centre: current mission banner
     if world.boat.cargo[1] then
@@ -135,7 +161,7 @@ function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     love.graphics.print("Oppdrag", cx, ty(nmH)); cx = cx + wLabel + gap
 
     -- icon ×N
-    missionIcon(m.icon, cx + s / 2, cy, s); cx = cx + s + gap * 0.4
+    Icons.draw(m.icon, cx + s / 2, cy, s); cx = cx + s + gap * 0.4
     love.graphics.setColor(WOOD.text)
     love.graphics.print(countStr, cx, ty(nmH)); cx = cx + wCount + gap
 

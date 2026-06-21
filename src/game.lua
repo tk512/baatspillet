@@ -16,6 +16,8 @@ local function defaultState()
         coins            = 0,
         unlockedBoats    = { "starter_boat" },
         discoveredIslands = {},
+        owned            = {},   -- one-time upgrades, e.g. owned.cannon = true
+        food             = {},   -- consumable provisions, e.g. food.brod = 3
     }
 end
 
@@ -79,6 +81,7 @@ function Game:loadData()
     self.data = {
         boats = require("src.data.boats"),
         ports = require("src.data.ports"),
+        shop  = require("src.data.shop"),
     }
 end
 
@@ -86,6 +89,7 @@ end
 function Game:reloadData()
     package.loaded["src.data.boats"] = nil
     package.loaded["src.data.ports"] = nil
+    package.loaded["src.data.shop"]  = nil
     self:loadData()
     self:reloadScene()
 end
@@ -109,6 +113,8 @@ function Game:loadSave()
             self.state.unlockedBoats = data.unlockedBoats or self.state.unlockedBoats
             self.state.discoveredIslands = data.discoveredIslands or self.state.discoveredIslands
             self.state.fog = data.fog or self.state.fog
+            self.state.owned = data.owned or self.state.owned
+            self.state.food = data.food or self.state.food
         end
     end
 end
@@ -123,6 +129,56 @@ end
 function Game:addCoins(n)
     self.state.coins = self.state.coins + n
     self:save()
+end
+
+-- Shop ownership: owns() checks a purchase, buyUpgrade() spends gold to acquire
+-- one (only if you can afford it). Both persist via the save.
+function Game:owns(id)
+    return self.state.owned and self.state.owned[id] == true
+end
+
+function Game:buyUpgrade(id, price)
+    if self.state.coins < price then return false end
+    self.state.coins = self.state.coins - price
+    self.state.owned = self.state.owned or {}
+    self.state.owned[id] = true
+    self:save()
+    return true
+end
+
+-- Food provisions: bought repeatedly (a stock count), eaten on voyages.
+function Game:foodCount(id)
+    return (self.state.food and self.state.food[id]) or 0
+end
+
+function Game:totalFood()
+    local n = 0
+    if self.state.food then for _, c in pairs(self.state.food) do n = n + c end end
+    return n
+end
+
+function Game:buyFood(id, price)
+    if self.state.coins < price then return false end
+    self.state.coins = self.state.coins - price
+    self.state.food = self.state.food or {}
+    self.state.food[id] = (self.state.food[id] or 0) + 1
+    self:save()
+    return true
+end
+
+-- Eat one unit of any food aboard (prefers the largest stock so it lasts).
+-- Returns the eaten food's id, or nil if there's nothing to eat.
+function Game:eatFood()
+    if not self.state.food then return nil end
+    local best, bestN = nil, 0
+    for id, c in pairs(self.state.food) do
+        if c > bestN then best, bestN = id, c end
+    end
+    if not best then return nil end
+    self.state.food[best] = self.state.food[best] - 1
+    if self.state.food[best] <= 0 then self.state.food[best] = nil end
+    self:save()
+    return best
 end
 
 -- Dev hotkeys + ESC, then forward to the active scene.

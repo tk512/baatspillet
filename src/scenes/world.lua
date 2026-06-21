@@ -18,8 +18,10 @@ local Loader       = require("src.systems.loader")
 local Boat         = require("src.entities.boat")
 local Port         = require("src.entities.port")
 local Pirate       = require("src.entities.pirate")
+local Shark        = require("src.entities.shark")
 local HUD          = require("src.ui.hud")
 local PortScreen   = require("src.ui.portscreen")
+local Icons        = require("src.ui.icons")
 
 local World = {}
 
@@ -100,6 +102,13 @@ function World:load(game)
     self.pirate = nil
     self.pirateCooldown = config.PIRATE.SPAWN_GRACE
     Assets.stopChase()
+
+    self:spawnShark()        -- one friendly shark roams the sea from the start
+    self.sharkSeen = false   -- so we greet it only the first time it bumps you
+
+    self.splashes = {}       -- short-lived water bursts (e.g. a zapped pirate)
+    self.eaten = {}          -- falling-food "Nam nam nam" bites
+    self.sailDist = 0        -- distance sailed toward the next bite
 
     collectgarbage("collect")
 end
@@ -298,6 +307,7 @@ local function pixelPuff(cx, cy, r, blk, a)
 end
 
 function World:drawClouds()
+    if not config.SHOW_CLOUDS then return end
     if not self.clouds then return end
     local t = love.timer.getTime()
     local blk = 2                                  -- lightly pixelated, not chunky
@@ -369,6 +379,24 @@ function World:update(dt)
     end
 
     self:updatePirate(dt)
+    self:updateShark(dt)
+
+    -- Auto-cannon (only once bought): fire back at an attacking pirate. We only
+    -- target one that's still chasing -- once scared off (retreating), leave it
+    -- be so it can sail away. Balls already in flight still finish their arc.
+    if self.game:owns("cannon") then
+        local target = (self.pirate and self.pirate.state == "chase") and self.pirate or nil
+        self.boat:updateCannon(dt, target, function() self:cannonHitPirate() end)
+    end
+
+    -- Advance short-lived splash bursts.
+    for i = #self.splashes, 1, -1 do
+        local s = self.splashes[i]
+        s.t = s.t + dt
+        if s.t > 0.7 then table.remove(self.splashes, i) end
+    end
+
+    self:updateEating(dt)
 
     self.camera:edgeScroll(dt, self.boat.x, self.boat.y)  -- scroll, but never lose the boat
     self.camera:update(dt)
@@ -446,6 +474,106 @@ function World:spawnPirate()
     Assets.playSfx("pirate_warn", 0.95)
     Assets.startChase()
     self:showToast("Sjørøvere!")
+end
+
+-- Drop the friendly shark onto open water a little way from the boat. It sweeps
+-- a few angles at a random distance in [SPAWN_MIN, SPAWN_MAX]; if nothing clear
+-- is found the world simply runs without it (it's purely ambient).
+function World:spawnShark()
+    local b = self.boat
+    for _ = 1, 24 do
+        local r = config.SHARK.SPAWN_MIN
+            + love.math.random() * (config.SHARK.SPAWN_MAX - config.SHARK.SPAWN_MIN)
+        local ang = love.math.random() * math.pi * 2
+        local x = b.x + math.cos(ang) * r
+        local y = b.y + math.sin(ang) * r
+        if x > 40 and y > 40 and x < config.WORLD_WIDTH - 40 and y < config.WORLD_HEIGHT - 40
+            and self.terrain:isWater(x, y) then
+            self.shark = Shark.new(x, y)
+            return
+        end
+    end
+end
+
+-- Run the friendly shark and apply its soft bounce. It dives away while a pirate
+-- is hunting. The bounce reuses boat:collideCircle (the island-nudge feel), but
+-- we skip it while latching so it can't fight the auto-docking glide.
+function World:updateShark(dt)
+    if not self.shark then return end
+    self.shark:update(dt, self.boat, self.terrain, self.pirate ~= nil, function()
+        if not self.sharkSeen then
+            self.sharkSeen = true
+            self:showToast("En snill hai!")        -- "A friendly shark!"
+        end
+    end)
+    if self.shark:isActive() and not self.latching then
+        self.boat:collideCircle(self.shark.x, self.shark.y, self.shark.radius)
+    end
+end
+
+-- Crew + passengers eat as you sail. Every config.EAT_DISTANCE travelled, one
+-- food unit aboard is eaten: it drops off the boat with a "Nam nam nam!". The
+-- longer the voyage, the more gets eaten -- a reason to stock up at the shop.
+function World:updateEating(dt)
+    -- advance falling-food bites (rise a touch, then drop + fade)
+    for i = #self.eaten, 1, -1 do
+        local e = self.eaten[i]
+        e.t = e.t + dt
+        if e.t > 1.1 then table.remove(self.eaten, i) end
+    end
+
+    if self.latching or self.dock then return end
+    self.sailDist = self.sailDist + self.boat.speed * dt
+    if self.sailDist < config.EAT_DISTANCE then return end
+    self.sailDist = self.sailDist - config.EAT_DISTANCE
+
+    local id = self.game:eatFood()
+    if not id then return end
+    local item = self:shopItem(id)
+    self.eaten[#self.eaten + 1] = {
+        icon = item and item.icon or "box",
+        x = self.boat.x, y = self.boat.y, t = 0,
+        dx = (love.math.random() - 0.5) * 30,        -- slight sideways drift
+    }
+    if not Assets.playNamedVoice("nam") then Assets.playSfx("coin", 0.5) end
+    self:showToast("Nam nam nam!")
+end
+
+function World:shopItem(id)
+    for _, it in ipairs(self.game.data.shop) do
+        if it.id == id then return it end
+    end
+end
+
+-- Draw the falling-food bites in world space: the eaten item icon pops up a
+-- little, then tumbles down past the boat and fades.
+function World:drawEaten()
+    for _, e in ipairs(self.eaten) do
+        local p = e.t / 1.1
+        local up = math.sin(math.min(p, 0.5) * math.pi) * 30      -- little pop up first
+        local fall = (p > 0.4) and (p - 0.4) * (p - 0.4) * 260 or 0 -- then accelerate down
+        local sx, sy = Iso.project(e.x + e.dx * p, e.y, 30 + up - fall)
+        love.graphics.setColor(1, 1, 1, 1 - p)
+        Icons.draw(e.icon, sx, sy, 26)
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- Your cannon landed a hit. It takes a few hits to drive a pirate off, so it
+-- really chases and shoots you first; only once it has taken SCARE_HITS does it
+-- turn tail and sail away (and it may return another day). No sinking, no spoils.
+function World:cannonHitPirate()
+    if not self.pirate or self.pirate.state ~= "chase" then return end
+    self.splashes[#self.splashes + 1] = { x = self.pirate.x, y = self.pirate.y, t = 0 }
+    self.pirate.hits = (self.pirate.hits or 0) + 1
+    Assets.playSfx("cannon_hit", 0.9)
+    self.camera:addShake(7)
+    if self.pirate.hits >= config.CANNON.SCARE_HITS then
+        self.pirate:flee()                            -- driven off; sails away
+        self:showToast("Sjørøveren rømmer!")          -- "The pirate flees!"
+    else
+        self:showToast("Treff!")                      -- "Hit!" -- keep at it
+    end
 end
 
 -- A cannonball struck the boat: lose a little gold (never below zero) and shake
@@ -614,23 +742,73 @@ function World:drawMissionPointer()
     love.graphics.setColor(1, 1, 1)
 end
 
--- Cover every visible, not-yet-explored tile with a dark "unknown" diamond.
--- Drawn in world space on top of the terrain + objects, so unexplored islands,
--- cities and props stay hidden until the boat sails close.
+-- Deterministic noise in [0,1) per world sub-cell. Keyed on world indices (not
+-- screen), so the frayed fog edge stays put as the camera scrolls.
+local function fogNoise(a, b)
+    local n = (a * 374761393 + b * 668265263) % 2147483647
+    n = (n * ((n % 8191) * 15731 + 789221) + 1376312589) % 2147483647
+    return (n % 1024) / 1024
+end
+
+-- Cover every visible, not-yet-explored tile with dark "unknown". Interior fog
+-- is one diamond per tile (cheap); along the reveal boundary the tile is frayed
+-- into granular sub-diamonds (a noise-dithered edge, like the coastline / peaks),
+-- so the dark doesn't read as hard blocky steps. Follows the sloped surface so
+-- unexplored islands, cities and props stay hidden until the boat sails close.
 function World:drawFog()
     local T = config.TILE
+    local fog, terrain = self.fog, self.terrain
     local minGx, minGy, maxGx, maxGy = self.camera:groundBounds()
-    local i0, j0, i1, j1 = self.terrain:visibleRange(minGx, minGy, maxGx, maxGy)
+    local i0, j0, i1, j1 = terrain:visibleRange(minGx, minGy, maxGx, maxGy)
     love.graphics.setColor(0.03, 0.05, 0.09, 1)
+
+    local K = 5    -- sub-cells per tile side at the boundary
+    local function corner(i, j)
+        return fog:pointRevealed((i - 1) * T, (j - 1) * T) and 1 or 0
+    end
+
     for i = i0, i1 do
         for j = j0, j1 do
-            if not self.fog:pointRevealed((i - 0.5) * T, (j - 0.5) * T) then
-                -- follow the sloped surface (per-corner heights) so peaks stay hidden
-                local ax, ay = Iso.project((i - 1) * T, (j - 1) * T, self.terrain:cornerZ(i, j))
-                local bx, by = Iso.project(i * T,       (j - 1) * T, self.terrain:cornerZ(i + 1, j))
-                local cx, cy = Iso.project(i * T,       j * T,       self.terrain:cornerZ(i + 1, j + 1))
-                local dx, dy = Iso.project((i - 1) * T, j * T,       self.terrain:cornerZ(i, j + 1))
+            local r00, r10 = corner(i, j), corner(i + 1, j)
+            local r11, r01 = corner(i + 1, j + 1), corner(i, j + 1)
+            local sum = r00 + r10 + r11 + r01
+            local centre = fog:pointRevealed((i - 0.5) * T, (j - 0.5) * T)
+            local z00, z10 = terrain:cornerZ(i, j), terrain:cornerZ(i + 1, j)
+            local z11, z01 = terrain:cornerZ(i + 1, j + 1), terrain:cornerZ(i, j + 1)
+            local bx0, by0 = (i - 1) * T, (j - 1) * T
+
+            if sum == 4 and centre then
+                -- fully revealed: nothing to draw
+            elseif sum == 0 and not centre then
+                -- fully hidden: a single dark diamond following the slope
+                local ax, ay = Iso.project(bx0,     by0,     z00)
+                local bx, by = Iso.project(bx0 + T, by0,     z10)
+                local cx, cy = Iso.project(bx0 + T, by0 + T, z11)
+                local dx, dy = Iso.project(bx0,     by0 + T, z01)
                 love.graphics.polygon("fill", ax, ay, bx, by, cx, cy, dx, dy)
+            else
+                -- boundary: fray into granular sub-diamonds (noise-dithered)
+                for a = 0, K - 1 do
+                    for b = 0, K - 1 do
+                        local uc, vc = (a + 0.5) / K, (b + 0.5) / K
+                        local r = r00 * (1 - uc) * (1 - vc) + r10 * uc * (1 - vc)
+                                + r01 * (1 - uc) * vc       + r11 * uc * vc
+                        if r < fogNoise(i * K + a, j * K + b) then
+                            local u0, u1 = a / K, (a + 1) / K
+                            local v0, v1 = b / K, (b + 1) / K
+                            local function P(u, v)
+                                local z = z00 * (1 - u) * (1 - v) + z10 * u * (1 - v)
+                                        + z01 * (1 - u) * v       + z11 * u * v
+                                return Iso.project(bx0 + u * T, by0 + v * T, z)
+                            end
+                            local ax, ay = P(u0, v0)
+                            local bx, by = P(u1, v0)
+                            local cx, cy = P(u1, v1)
+                            local dx, dy = P(u0, v1)
+                            love.graphics.polygon("fill", ax, ay, bx, by, cx, cy, dx, dy)
+                        end
+                    end
+                end
             end
         end
     end
@@ -684,6 +862,9 @@ function World:drawWorldSorted()
     for vi = 1, #vis do entry(vis[vi].depth, "object", vis[vi]) end
     entry(Iso.depth(self.boat.x, self.boat.y), "boat", nil)
     if self.pirate then entry(Iso.depth(self.pirate.x, self.pirate.y), "pirate", nil) end
+    if self.shark and self.shark.dive < 0.95 then
+        entry(Iso.depth(self.shark.x, self.shark.y), "shark", nil)
+    end
     for k = #objs, no + 1, -1 do objs[k] = nil end
     table.sort(objs, byDepth)
     for k = 1, no do
@@ -691,11 +872,39 @@ function World:drawWorldSorted()
         if it.kind == "object" then Objects.draw(it.obj)
         elseif it.kind == "boat" then self.boat:draw()
         elseif it.kind == "pirate" then self.pirate:draw()
+        elseif it.kind == "shark" then self.shark:draw()
         elseif it.kind == "dest" then self:drawDestinationMarker() end
     end
 
     -- cannonballs arc above everything in the world (still camera-attached)
     if self.pirate then self.pirate:drawBalls() end
+    if self.game:owns("cannon") then self.boat:drawCannonBalls() end
+    self:drawSplashes()
+    self:drawEaten()
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- Expanding rings + droplets where something splashed (a zapped pirate). Drawn
+-- in world space, camera-attached.
+function World:drawSplashes()
+    for _, s in ipairs(self.splashes) do
+        local p = s.t / 0.7
+        local a = 1 - p
+        local sx, sy = Iso.project(s.x, s.y, 0)
+        local r = 18 + p * 60
+        love.graphics.setColor(1, 1, 1, a * 0.8)
+        love.graphics.setLineWidth(3)
+        love.graphics.ellipse("line", sx, sy, r, r * 0.5)
+        love.graphics.ellipse("line", sx, sy, r * 0.5, r * 0.25)
+        love.graphics.setLineWidth(1)
+        for k = 1, 7 do
+            local ang = (k / 7) * math.pi * 2
+            local d = p * 64
+            local up = math.sin(p * math.pi) * 26
+            love.graphics.setColor(0.92, 0.96, 1.0, a)
+            love.graphics.circle("fill", sx + math.cos(ang) * d, sy + math.sin(ang) * d * 0.5 - up, 3 * (1 - p) + 1)
+        end
+    end
     love.graphics.setColor(1, 1, 1)
 end
 
@@ -715,6 +924,37 @@ function World:keypressed(key)
     if self.dock then self.dock:keypressed(key); return end
     if key == "c" then
         self.camera:centerOn(self.boat.x, self.boat.y)  -- recenter on the boat
+    -- DEV-ONLY playtest keys (remove before shipping):
+    --   G = +50 gold (also makes a pirate eligible to spawn)
+    --   P = summon a pirate in close, right now, to test the cannon fight
+    elseif key == "g" then
+        self.game:addCoins(50)
+        self:showToast("+50 gull (dev)")
+    elseif key == "p" then
+        self:devSpawnPirateClose()
+    end
+end
+
+-- DEV-ONLY: drop a pirate ~500 units away on open water so a fight starts at
+-- once. Mirrors spawnPirate but at close range. Remove with the G/P keys above.
+function World:devSpawnPirateClose()
+    if self.pirate then return end
+    local b = self.boat
+    for _, r in ipairs({ 500, 650, 400, 800 }) do
+        for k = 0, 11 do
+            local ang = (k / 12) * math.pi * 2 + love.math.random() * 0.52
+            local x = b.x + math.cos(ang) * r
+            local y = b.y + math.sin(ang) * r
+            if x > 40 and y > 40 and x < config.WORLD_WIDTH - 40 and y < config.WORLD_HEIGHT - 40
+                and self.terrain:isWater(x, y) then
+                self.pirate = Pirate.new(x, y, self.boat.maxSpeed)
+                self.pirate.angle = math.atan2(b.y - y, b.x - x)
+                Assets.playSfx("pirate_warn", 0.95)
+                Assets.startChase()
+                self:showToast("Sjørøvere! (dev)")
+                return
+            end
+        end
     end
 end
 

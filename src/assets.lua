@@ -322,7 +322,7 @@ end
 -- Drop a real recording at assets/sfx/<name>.<ext> to override the synth.
 -- Any LÖVE-supported format works (ogg/mp3/flac/wav), tried in order.
 local function loadSfxFiles()
-    local names = { "leave", "cannon", "cannon_hit", "pirate_warn" }
+    local names = { "leave", "cannon", "cannon_hit", "pirate_warn", "chopper" }
     local exts  = { ".ogg", ".mp3", ".flac", ".wav" }
     for _, name in ipairs(names) do
         for _, ext in ipairs(exts) do

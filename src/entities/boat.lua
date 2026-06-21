@@ -40,7 +40,79 @@ function Boat.new(def, x, y)
     self.destY    = nil
     self.bumpCooldown = 0
     self.safeX, self.safeY = self.x, self.y  -- last position known to be water
+    self.balls    = {}   -- player cannonballs in flight (only if a cannon is owned)
+    self.cannonT  = 0    -- time until the cannon can fire again
     return self
+end
+
+-- Auto-cannon: while a pirate is in range, fire at it on an interval. We're
+-- amateurs, so each ball flies a FIXED, slightly-wild trajectory (see
+-- fireCannon) -- no homing, no leading -- and only counts as a hit if it happens
+-- to pass close to the (moving) pirate. Most shots miss; landing one calls
+-- onHit, which scares the pirate off rather than sinking it. Only called by the
+-- world while the cannon is owned and the pirate is still attacking.
+function Boat:updateCannon(dt, target, onHit)
+    local C = config.CANNON
+    self.cannonT = math.max(0, self.cannonT - dt)
+
+    for i = #self.balls, 1, -1 do
+        local b = self.balls[i]
+        b.life = b.life + dt
+        b.x = b.x + b.vx * dt
+        b.y = b.y + b.vy * dt
+        local consumed = false
+        if target then
+            local dx, dy = target.x - b.x, target.y - b.y
+            local hitR = (target.radius or 26) + C.BALL_RADIUS
+            if (dx * dx + dy * dy) < hitR * hitR then
+                if onHit then onHit() end
+                consumed = true
+            end
+        end
+        if consumed or b.life > b.plan + 0.25 then
+            table.remove(self.balls, i)             -- hit, or splashed (missed)
+        end
+    end
+
+    if target and self.cannonT <= 0 then
+        local dx, dy = target.x - self.x, target.y - self.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+        if dist < C.FIRE_RANGE then
+            self.cannonT = C.FIRE_INTERVAL
+            self:fireCannon(target, dist)
+        end
+    end
+end
+
+-- Fire one wild shot: aim at where the pirate is RIGHT NOW (no leading) and add
+-- a random angular SPREAD, then commit the ball to that straight path. Because
+-- the pirate keeps moving and our aim is off, a moving ship is hard to hit -- as
+-- it should be for a 5-year-old's first cannon.
+function Boat:fireCannon(target, dist)
+    local C = config.CANNON
+    local ang = math.atan2(target.y - self.y, target.x - self.x)
+    ang = ang + (love.math.random() * 2 - 1) * C.SPREAD
+    self.balls[#self.balls + 1] = {
+        x = self.x, y = self.y,
+        vx = math.cos(ang) * C.BALL_SPEED, vy = math.sin(ang) * C.BALL_SPEED,
+        life = 0, plan = dist / C.BALL_SPEED,
+    }
+    Assets.playSfx("cannon", 0.8)
+end
+
+-- Cannonballs arc over the water (a parabolic screen height), like the pirate's.
+function Boat:drawCannonBalls()
+    local C = config.CANNON
+    for _, b in ipairs(self.balls) do
+        local pr = math.min(1, b.life / math.max(0.01, b.plan))
+        local h = math.sin(pr * math.pi) * 55
+        local sx, sy = Iso.project(b.x, b.y, h)
+        local gx, gy = Iso.project(b.x, b.y, 0)
+        love.graphics.setColor(0, 0, 0, 0.18); love.graphics.ellipse("fill", gx, gy + 2, 7, 3)
+        love.graphics.setColor(0.10, 0.10, 0.12); love.graphics.circle("fill", sx, sy, C.BALL_RADIUS * 0.6 + 2)
+        love.graphics.setColor(0.85, 0.86, 0.92); love.graphics.circle("fill", sx - 2, sy - 2, C.BALL_RADIUS * 0.4)
+    end
+    love.graphics.setColor(1, 1, 1)
 end
 
 -- Keep the boat on water. Called each frame after update(): if it wandered onto

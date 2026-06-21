@@ -1,5 +1,3 @@
--- Entry point: forward LÖVE's callbacks to the Game object (src/game.lua).
-
 local Game = require("src.game")
 
 function love.load()

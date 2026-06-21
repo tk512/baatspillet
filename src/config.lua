@@ -5,6 +5,10 @@ local config = {}
 -- True launches fullscreen (for play); false gives a resizable dev window.
 config.START_FULLSCREEN = true
 
+-- Temporary show/hide toggles (flip back to true to restore).
+config.SHOW_CLOUDS       = false  -- mountain-peak clouds in the world
+config.SHOW_ARTIST_PHOTO = true   -- Finn-Erik's photo on the title screen
+
 config.WORLD_WIDTH  = 12000  -- sailable ocean width, in ground units
 config.WORLD_HEIGHT = 8000
 
@@ -57,8 +61,9 @@ config.MOUNTAINS = {
 }
 
 -- Fog of war: the map starts dark and is revealed (and saved) as the boat sails.
-config.FOG_CELL        = 256   -- reveal granularity in ground units (4 tiles)
-config.FOG_REVEAL      = 760   -- reveal radius around the boat
+config.FOG_CELL        = 192   -- reveal granularity in ground units (3 tiles)
+config.FOG_REVEAL      = 1150  -- reveal radius around the boat (see far enough not
+                               -- to sail straight past an undiscovered island)
 
 -- Maps each port `size` to how many houses to scatter and how far they spread.
 config.CITY_SIZES = {
@@ -102,6 +107,55 @@ config.PIRATE = {
     GIVEUP_TIME   = 9,      -- ...for this long and the pirate gives up
     DESPAWN_DIST  = 1800,   -- vanishes once this far away while retreating
 }
+
+-- A friendly shark wandering the open sea -- the gentle opposite of the pirate.
+-- It can't chase you (its cruise is far slower than your boat); it just gets
+-- curious and ambles over, and if you bump it the boat softly bounces (same as
+-- nudging an island) while it chomps and darts off. It dives away while a pirate
+-- is hunting so the two never crowd the screen.
+config.SHARK = {
+    SPRITE_WIDTH = 72,     -- on-screen length -- about half the ferry (140), so it
+                           -- reads as a little fish, not a sea monster
+    SPEED        = 70,     -- gentle cruise -- well below the boat, so it's unhurried
+    DART_SPEED   = 150,    -- quick scoot right after a bump
+    TURN_RATE    = 1.2,    -- how briskly it swings toward a new heading
+    RADIUS       = 18,     -- soft-bounce collision radius (sits inside the body)
+    CURIOUS_DIST = 420,    -- ambles over to investigate within this range
+    BUMP_COOLDOWN = 3.0,   -- keeps its distance this long after a bump (no pestering)
+    DART_TIME    = 1.3,    -- how long it scoots away after a bump
+    CHOMP_RATE   = 1.6,    -- idle jaw cycle speed
+    DART_CHOMP   = 6.0,    -- faster, excited chomp while darting off
+    DIVE_RATE    = 1.2,    -- how fast it dives under / resurfaces (per second)
+    -- Mostly out of sight: it plays deep in the ocean and only pops up now and
+    -- then to look around (and maybe get bumped), then dives again.
+    SUBMERGED_MIN = 16,    -- stays under this long (s) between peeks...
+    SUBMERGED_MAX = 36,
+    SURFACE_MIN   = 7,     -- ...then surfaces to look around for this long
+    SURFACE_MAX   = 13,
+    SPAWN_MIN    = 600,    -- spawns this far from the boat...
+    SPAWN_MAX    = 1500,   -- ...out to this far, on open water
+}
+
+-- The player's cannon (bought in a harbour's Butikk). It auto-fires at a hunting
+-- pirate, but we're NOT professional gunners: shots are wild (SPREAD) and aimed
+-- at where the pirate is now (no leading), so most miss a moving ship. You'll
+-- take some hits and lose a little gold before you finally land one -- and a hit
+-- doesn't sink the pirate, it just scares it off so it turns and sails away (and
+-- can come back another day). Owning it tips the fight your way without trivialising it.
+config.CANNON = {
+    FIRE_RANGE    = 760,   -- about the pirate's own reach (720)
+    FIRE_INTERVAL = 1.6,   -- a touch faster than the pirate's 2.8
+    BALL_SPEED    = 300,   -- ball speed
+    BALL_RADIUS   = 16,    -- ball size for hit-testing the pirate
+    SPREAD        = 0.24,  -- random aim error in radians (bigger = wilder, more misses)
+    SCARE_HITS    = 3,     -- hits needed to drive the pirate off (so it really chases
+                           -- + shoots you first; 1 would scare it away too quickly)
+}
+
+-- Crew + passengers eat the food you've stocked as you sail: every EAT_DISTANCE
+-- ground-units travelled, one food unit aboard is eaten (longer voyage = more
+-- eaten). The eaten item drops with a "Nam nam nam!". Bigger = food lasts longer.
+config.EAT_DISTANCE = 1400
 
 config.MUSIC_VOLUME = 0.35
 config.SFX_VOLUME   = 0.6

@@ -91,6 +91,42 @@ function Objects.drawLot(g, color)
     love.graphics.polygon("fill", ax, ay, bx, by, cx, cy, dx, dy)
 end
 
+-- A cobblestone harbour plaza filling the footprint: a grid of small stone
+-- diamonds with deterministic light/dark variation and a darker rim, so the port
+-- ground reads as paved ground rather than one flat coloured square.
+function Objects.drawPavedLot(g, salt)
+    local z = g.z or 0
+    local N = 8
+    local x0, y0, x1, y1 = g.gx0, g.gy0, g.gx1, g.gy1
+    local dx, dy = (x1 - x0) / N, (y1 - y0) / N
+    salt = salt or 0
+    for a = 0, N - 1 do
+        for b = 0, N - 1 do
+            local n = math.sin((a + 1) * 12.9898 + (b + 1) * 78.233 + salt) * 43758.5453
+            n = n - math.floor(n)                       -- 0..1 deterministic
+            local f = 0.86 + n * 0.24                    -- per-stone shade
+            local cx0, cy0 = x0 + a * dx, y0 + b * dy
+            local cx1, cy1 = cx0 + dx, cy0 + dy
+            local Ax, Ay = Iso.project(cx0, cy0, z)
+            local Bx, By = Iso.project(cx1, cy0, z)
+            local Cx, Cy = Iso.project(cx1, cy1, z)
+            local Dx, Dy = Iso.project(cx0, cy1, z)
+            love.graphics.setColor(0.58 * f, 0.55 * f, 0.50 * f)
+            love.graphics.polygon("fill", Ax, Ay, Bx, By, Cx, Cy, Dx, Dy)
+        end
+    end
+    -- darker stone rim around the plaza
+    local ax, ay = Iso.project(x0, y0, z)
+    local bx, by = Iso.project(x1, y0, z)
+    local cx, cy = Iso.project(x1, y1, z)
+    local ex, ey = Iso.project(x0, y1, z)
+    love.graphics.setColor(0.34, 0.30, 0.25)
+    love.graphics.setLineWidth(2)
+    love.graphics.polygon("line", ax, ay, bx, by, cx, cy, ex, ey)
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(1, 1, 1)
+end
+
 -- An extruded iso box over a ground rect (cx,cy = center, hw/hd = half-extents
 -- in ground units) from z0..z1. Three shaded faces for readable volume.
 function Objects.box(cx, cy, hw, hd, z0, z1, col)
