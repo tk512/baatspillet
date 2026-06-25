@@ -149,18 +149,19 @@ if [ -n "$U" ]; then
     # time. These are the up-to-date steps (incl. macOS Sequoia/Tahoe, where the
     # old right-click→Open trick is gone).
     cat > "$STAGE/LES MEG – slik åpner du.txt" <<'TXT'
-Slik åpner du Båtspillet første gang
+Sånn åpner du Båtspillet
 ====================================
 
-  1. Dra «Båtspillet» over i Programmer-mappa (Applications) til høyre.
-  2. Dobbeltklikk på Båtspillet. macOS sier at det ikke kan åpnes – det er OK.
+  1. Dra «Båtspillet» over i Programmer-mappen (Applications) til høyre
+  2. Dobbeltklikk på Båtspillet. macOS sier at det ikke kan åpne
   3. Åpne Apple-menyen  → Systeminnstillinger → «Personvern og sikkerhet».
-  4. Bla helt ned. Der står det at «Båtspillet» ble blokkert – klikk «Åpne likevel».
-  5. Dobbeltklikk Båtspillet igjen og bekreft med «Åpne».
+  4. Bla helt ned. Der står det at «Båtspillet» ble blokkert – klikk «Åpne likevel»
+  5. Dobbeltklikk på Båtspillet igjen og bekreft med «Åpne»
 
 Etter dette starter spillet som normalt hver gang.
 
-Funker det ikke? Åpne appen Terminal, lim inn linjen under og trykk Enter:
+Dette virker antakelig ikke i Tahoe og oppover. Åpne Terminal, lim inn linjen 
+under og trykk Enter:
 
     xattr -dr com.apple.quarantine "/Applications/Båtspillet.app"
 

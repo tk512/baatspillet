@@ -155,7 +155,7 @@ config.CANNON = {
 -- Crew + passengers eat the food you've stocked as you sail: every EAT_DISTANCE
 -- ground-units travelled, one food unit aboard is eaten (longer voyage = more
 -- eaten). The eaten item drops with a "Nam nam nam!". Bigger = food lasts longer.
-config.EAT_DISTANCE = 1400
+config.EAT_DISTANCE = 3500
 
 config.MUSIC_VOLUME = 0.35
 config.SFX_VOLUME   = 0.6

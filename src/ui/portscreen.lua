@@ -244,6 +244,9 @@ function PortScreen:tryBuy(item)
         self.storeMsg = nil
         Assets.playSfx("coin")
         Assets.playSfx("deliver")              -- happy little fanfare
+        if item.food then
+            Assets.playNamedVoice("kjopt_mat")  -- my kid: "Du har kjøpt litt mat!"
+        end
         self.world:showToast("Kjøpt: " .. item.name .. "!")
     else
         -- can't afford -> show the subtraction the store exists to teach
