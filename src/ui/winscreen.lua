@@ -40,8 +40,8 @@ function WinScreen:update(dt)
     -- a steady volley of firework booms (random pitch) -- bababa-baaaaa-boom!
     self.fwT = self.fwT - dt
     if self.fwT <= 0 then
-        self.fwT = 0.35 + love.math.random() * 0.55
-        Assets.playPitched("firework", 0.5, 0.8 + love.math.random() * 0.6)
+        self.fwT = 0.45 + love.math.random() * 0.6
+        Assets.playPitched("firework", 0.45, 0.92 + love.math.random() * 0.2)   -- random fw clip
     end
 
     -- rain new coins/jewels from the top (stops once the heap is capped) -- big,
@@ -113,71 +113,6 @@ local function drawCoin(x, y, r, rot)
     love.graphics.ellipse("fill", x - w * 0.3, y - r * 0.3, w * 0.25, r * 0.25)
 end
 
--- A jaunty black pirate hat (turned-up brim, gold band, little skull), drawn at
--- (cx, cy) -- the top of the head -- about `w` wide.
-local function pirateHat(cx, cy, w)
-    local h = w * 0.62
-    love.graphics.setColor(0.09, 0.08, 0.10)
-    love.graphics.ellipse("fill", cx, cy, w * 0.52, h * 0.30)                 -- brim
-    love.graphics.polygon("fill", cx - w * 0.34, cy, cx - w * 0.20, cy - h * 0.72,
-        cx + w * 0.20, cy - h * 0.72, cx + w * 0.34, cy)                       -- crown
-    love.graphics.polygon("fill", cx - w * 0.52, cy + h * 0.04, cx - w * 0.26, cy - h * 0.34, cx - w * 0.12, cy) -- left turn-up
-    love.graphics.polygon("fill", cx + w * 0.52, cy + h * 0.04, cx + w * 0.26, cy - h * 0.34, cx + w * 0.12, cy) -- right turn-up
-    love.graphics.setColor(0.85, 0.68, 0.28)                                  -- gold band
-    love.graphics.rectangle("fill", cx - w * 0.30, cy - h * 0.10, w * 0.60, h * 0.12)
-    love.graphics.setColor(0.93, 0.91, 0.86)                                  -- skull
-    love.graphics.circle("fill", cx, cy - h * 0.30, w * 0.10)
-    love.graphics.setColor(0.09, 0.08, 0.10)
-    love.graphics.circle("fill", cx - w * 0.045, cy - h * 0.32, w * 0.025)
-    love.graphics.circle("fill", cx + w * 0.045, cy - h * 0.32, w * 0.025)
-end
-
--- A curved cutlass: hilt at (hx, hy), blade out along `ang`, `len` long.
-local function cutlass(hx, hy, len, ang)
-    love.graphics.push(); love.graphics.translate(hx, hy); love.graphics.rotate(ang)
-    love.graphics.setColor(0.35, 0.22, 0.12)                                  -- grip
-    love.graphics.rectangle("fill", -len * 0.16, -len * 0.035, len * 0.16, len * 0.07)
-    love.graphics.setColor(0.85, 0.68, 0.28)                                  -- guard
-    love.graphics.circle("fill", 0, 0, len * 0.06)
-    love.graphics.setColor(0.86, 0.89, 0.93)                                  -- curved blade
-    love.graphics.polygon("fill", 0, -len * 0.05, len * 0.55, -len * 0.085,
-        len, -len * 0.02, len * 0.98, len * 0.03, len * 0.55, len * 0.02, 0, len * 0.05)
-    love.graphics.setColor(1, 1, 1, 0.7)
-    love.graphics.setLineWidth(2); love.graphics.line(len * 0.12, -len * 0.02, len * 0.85, -len * 0.04)
-    love.graphics.setLineWidth(1)
-    love.graphics.pop()
-end
-
--- Finn-Erik's self-portrait, standing bottom-left, cheering (gentle bob + sway),
--- in a pirate hat with a cutlass. Tunables are fractions of his drawn box; nudge
--- HAT_* / SAB_* if the hat/sabre sit a touch off on his drawing.
-local HAT_X, HAT_Y, HAT_W = 0.36, 0.03, 0.56     -- head-centre x, head-top y, hat width
-local SAB_X, SAB_Y, SAB_A, SAB_L = 0.92, 0.60, -0.7, 0.42   -- hilt down at his hand
-function WinScreen:drawFinnErik(sw, sh)
-    local img = Assets.image("ui/fe_pirate.png")
-    if not img then return end
-    local t = self.t
-    local H  = sh * 0.52
-    local sc = H / img:getHeight()
-    local W  = img:getWidth() * sc
-    local baseX = sw * 0.04 + W / 2          -- his centre x
-    local baseY = sh * 0.99                   -- his feet
-    local bob   = math.sin(t * 2) * 6
-    local wave  = math.sin(t * 3) * 0.04      -- gentle cheering sway
-
-    love.graphics.push()
-    love.graphics.translate(baseX, baseY + bob)
-    love.graphics.rotate(wave)
-    -- the drawing (origin = his bottom-centre)
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.draw(img, 0, 0, 0, sc, sc, img:getWidth() / 2, img:getHeight())
-    -- cutlass first (so it sits behind the hat if they ever overlap)
-    cutlass((SAB_X - 0.5) * W, -(1 - SAB_Y) * H, SAB_L * H, SAB_A)
-    -- pirate hat on his head
-    pirateHat((HAT_X - 0.5) * W, -(1 - HAT_Y) * H, HAT_W * W)
-    love.graphics.pop()
-    love.graphics.setColor(1, 1, 1)
-end
 
 function WinScreen:draw()
     local sw, sh = love.graphics.getDimensions()
@@ -224,9 +159,6 @@ function WinScreen:draw()
             end
         end
     end
-
-    -- Finn-Erik the pirate, cheering at bottom-left (behind the gold pile)
-    self:drawFinnErik(sw, sh)
 
     -- the open chest with every collected sticker fanned in an arc above it
     local chestS = math.min(sw, sh) * 0.17

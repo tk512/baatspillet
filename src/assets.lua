@@ -363,13 +363,39 @@ local function loadSfxFiles()
     end
 end
 
+-- Random variant pools: drop assets/sfx/<name>1.ogg, <name>2.ogg, … and a
+-- playSfx/playPitched call for <name> picks one at random (so cannons + fireworks
+-- don't repeat the same clip). Falls back to the single synth sound if none.
+local function loadSfxVariants()
+    Assets.variants = {}
+    for _, name in ipairs({ "cannon", "firework" }) do
+        local list = {}
+        for i = 1, 9 do
+            local path = "assets/sfx/" .. name .. i .. ".ogg"
+            if love.filesystem.getInfo(path) then
+                local ok, src = pcall(love.audio.newSource, path, "static")
+                if ok and src then list[#list + 1] = src end
+            end
+        end
+        if #list > 0 then Assets.variants[name] = list end
+    end
+end
+
+-- Pick a source for `name`: a random variant if any are loaded, else the single one.
+local function sourceFor(name)
+    local v = Assets.variants and Assets.variants[name]
+    if v then return v[love.math.random(#v)] end
+    return Assets.sounds[name]
+end
+
 function Assets.loadSounds()
     pcall(makeSounds)
     pcall(makeAmbience)
     pcall(makeMusic)
     pcall(makeVoice)
     pcall(makeDockMoods)
-    pcall(loadSfxFiles)    -- real-file overrides
+    pcall(loadSfxFiles)        -- real-file overrides
+    pcall(loadSfxVariants)     -- random cannon/firework pools
 end
 
 -- Start/stop the looping harbor theme (ducks the world music while it plays).
@@ -399,9 +425,11 @@ end
 
 -- Play assets/voice/<name>.ogg on demand (per-town clips). Returns true if a
 -- file existed and played, false otherwise.
+-- Load + cache a named voice Source (no play). Returns the Source, or nil if the
+-- file is absent. Lets callers play it AND read its duration (e.g. to time the
+-- finale song to start after the cheer).
 local namedVoiceCache = {}
-function Assets.playNamedVoice(name)
-    if not config.AUDIO_ON then return false end
+function Assets.namedVoice(name)
     if namedVoiceCache[name] == nil then
         local full = "assets/voice/" .. name .. ".ogg"
         if love.filesystem.getInfo(full) then
@@ -411,7 +439,12 @@ function Assets.playNamedVoice(name)
             namedVoiceCache[name] = false
         end
     end
-    local src = namedVoiceCache[name]
+    return namedVoiceCache[name] or nil
+end
+
+function Assets.playNamedVoice(name)
+    if not config.AUDIO_ON then return false end
+    local src = Assets.namedVoice(name)
     if not src then return false end
     src:stop()
     src:setVolume(1.0)
@@ -419,11 +452,33 @@ function Assets.playNamedVoice(name)
     return true
 end
 
+-- Start a looping voice clip (assets/voice/<name>.ogg), e.g. the finale song.
+-- Returns the Source (so the caller can stop it) or nil if missing/off. With
+-- reverb=true it adds a celebratory hall echo when the system supports EFX.
+function Assets.playLoopVoice(name, vol, reverb, pitch)
+    if not config.AUDIO_ON then return nil end
+    local full = "assets/voice/" .. name .. ".ogg"
+    if not love.filesystem.getInfo(full) then return nil end
+    local ok, src = pcall(love.audio.newSource, full, "stream")
+    if not ok or not src then return nil end
+    src:setLooping(true)
+    src:setVolume(vol or 1.0)
+    if pitch then src:setPitch(pitch) end
+    if reverb then
+        pcall(function()
+            love.audio.setEffect("hall", { type = "reverb", decaytime = 2.2, density = 0.7 })
+            src:setEffect("hall")
+        end)
+    end
+    src:play()
+    return src
+end
+
 -- Play a one-shot effect at a given pitch (1 = normal). Used for the coin-shower
 -- clinks, where random pitches turn a stream of plays into "clirr klank klirr".
 function Assets.playPitched(name, vol, pitch)
     if not config.AUDIO_ON then return end
-    local src = Assets.sounds[name]
+    local src = sourceFor(name)
     if not src then return end
     local s = src:clone()
     s:setVolume(vol or config.SFX_VOLUME)
@@ -431,10 +486,11 @@ function Assets.playPitched(name, vol, pitch)
     s:play()
 end
 
--- Play a one-shot effect. Clones the source so overlapping plays work.
+-- Play a one-shot effect (a random variant if a pool exists). Clones the source
+-- so overlapping plays work.
 function Assets.playSfx(name, vol)
     if not config.AUDIO_ON then return end
-    local src = Assets.sounds[name]
+    local src = sourceFor(name)
     if not src then return end
     local s = src:clone()
     s:setVolume(vol or config.SFX_VOLUME)   -- optional louder override

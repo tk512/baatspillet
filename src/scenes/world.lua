@@ -414,7 +414,7 @@ function World:update(dt)
     end
 
     -- While a modal overlay is up (win/reveal/album/docking), the world is frozen.
-    if self.winScreen then self.winScreen:update(dt); return end
+    if self.winScreen then self.winScreen:update(dt); self:updateWinAudio(dt); return end
     if self.mapReveal then self.mapReveal:update(dt); return end
     if self.album then self.album:update(dt); return end
     if self.dock then self.dock:update(dt); return end
@@ -684,9 +684,9 @@ function World:spawnRacer(t)
                 self.racer = Pirate.new(x, y, self.boat.maxSpeed)
                 self.racer.goal = t
                 self.racer.angle = math.atan2(t.y - y, t.x - x)
-                Assets.playSfx("pirate_warn", 0.9)
+                if not Assets.playNamedVoice("fort_deg") then Assets.playSfx("pirate_warn", 0.9) end
                 Assets.startChase()
-                self:showToast("Sjørøvere! Kappløp om skatten!")
+                self:showToast("Fort deg, ta skatten før sjørøverne kommer!")
                 return
             end
         end
@@ -717,13 +717,36 @@ end
 function World:openWinScreen()
     self.winScreen = WinScreen.new(self)
     self:showToast("Alle skatter funnet!")
-    if not Assets.playNamedVoice("du_vant") and not Assets.playNamedVoice("bra_jobba") then
-        Assets.playSfx("deliver")
+    -- Duck the world music; a cheer plays first, then the looping celebration song
+    -- starts once the cheer is (nearly) done (see World:update's winScreen branch).
+    if self._winSong then self._winSong:stop(); self._winSong = nil end
+    Assets.setMusicVolume(0)
+    local cheer = config.AUDIO_ON and Assets.namedVoice("cheer") or nil
+    self._cheer = cheer
+    if cheer then
+        cheer:stop(); cheer:setVolume(1.0); cheer:play()
+        self._songT = math.max(0.1, cheer:getDuration() - 0.25)   -- song after the cheer
+    else
+        self._songT = 0
     end
-    Assets.playSfx("horn", 0.7)
+end
+
+-- Once the cheer has (almost) finished, start the looping celebration song.
+function World:updateWinAudio(dt)
+    if not self._songT then return end
+    self._songT = self._songT - dt
+    if self._songT <= 0 then
+        self._songT = nil
+        self._winSong = Assets.playLoopVoice("du_vant", 1.0, false, 1.12)  -- brighter, no reverb
+        if not self._winSong then Assets.playSfx("deliver") end
+    end
 end
 
 function World:closeWinScreen()
+    if self._cheer then self._cheer:stop(); self._cheer = nil end
+    if self._winSong then self._winSong:stop(); self._winSong = nil end
+    self._songT = nil
+    Assets.setMusicVolume(1.0)
     self.winScreen = nil
     self.game:newGame()   -- "Spill igjen": wipe progress and return to the title screen
 end

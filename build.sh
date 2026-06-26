@@ -178,14 +178,6 @@ else
     echo ">> NOTE: universal LÖVE not found ($LOVE_UNIVERSAL) — skipped $NAME.app/.dmg"
 fi
 
-# ── 3) Yosemite app (Intel LÖVE 11.3) ───────────────────────────────────────
-Y="$(resolve_love "$LOVE_YOSEMITE")"
-if [ -n "$Y" ]; then
-    make_app "$NAME-Yosemite.app" "$Y"
-else
-    echo ">> NOTE: Intel/11.3 LÖVE not found ($LOVE_YOSEMITE) — skipped $NAME-Yosemite.app"
-fi
-
 echo ">> done."
 if [ "$NOTARY_READY" = 1 ]; then
     echo ">> $NAME.dmg is signed + NOTARIZED — opens with a normal double-click for everyone. 🎉"
