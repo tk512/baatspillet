@@ -86,6 +86,69 @@ function Icons.draw(kind, x, y, s)
         love.graphics.setColor(0.05, 0.05, 0.06)                                          -- ball at muzzle
         love.graphics.circle("fill", x + s * 0.52, y - s * 0.01, s * 0.17)
 
+    elseif kind == "shell" then
+        love.graphics.setColor(0.94, 0.80, 0.72)                                          -- fan shell
+        love.graphics.polygon("fill", x, y + s * 0.36, x - s * 0.42, y - s * 0.18, x - s * 0.14, y - s * 0.30,
+            x, y - s * 0.34, x + s * 0.14, y - s * 0.30, x + s * 0.42, y - s * 0.18)
+        love.graphics.setColor(0.82, 0.60, 0.55)                                          -- ribs
+        love.graphics.setLineWidth(1)
+        for i = -2, 2 do love.graphics.line(x, y + s * 0.34, x + i * s * 0.13, y - s * 0.24) end
+
+    elseif kind == "starfish" then
+        love.graphics.setColor(0.96, 0.62, 0.26)
+        local arms = {}
+        for i = 0, 4 do
+            local a = -math.pi / 2 + i * (2 * math.pi / 5)
+            arms[#arms + 1] = x + math.cos(a) * s * 0.46
+            arms[#arms + 1] = y + math.sin(a) * s * 0.46
+            local a2 = a + math.pi / 5
+            arms[#arms + 1] = x + math.cos(a2) * s * 0.18
+            arms[#arms + 1] = y + math.sin(a2) * s * 0.18
+        end
+        love.graphics.polygon("fill", arms)
+        love.graphics.setColor(0.85, 0.50, 0.18)
+        love.graphics.circle("fill", x, y, s * 0.10)
+
+    elseif kind == "gem" then
+        love.graphics.setColor(0.36, 0.78, 0.82)                                          -- facets
+        love.graphics.polygon("fill", x, y - s * 0.36, x + s * 0.34, y - s * 0.08,
+            x, y + s * 0.40, x - s * 0.34, y - s * 0.08)
+        love.graphics.setColor(0.62, 0.92, 0.95)                                          -- top highlight
+        love.graphics.polygon("fill", x, y - s * 0.36, x + s * 0.34, y - s * 0.08, x, y - s * 0.04, x - s * 0.34, y - s * 0.08)
+        love.graphics.setColor(0.24, 0.58, 0.64)
+        love.graphics.line(x, y - s * 0.04, x, y + s * 0.40)
+
+    elseif kind == "pearl" then
+        love.graphics.setColor(0.86, 0.78, 0.66)                                          -- open clam
+        love.graphics.arc("fill", x, y + s * 0.06, s * 0.44, math.pi, 2 * math.pi)
+        love.graphics.setColor(0.92, 0.86, 0.74)
+        love.graphics.arc("fill", x, y + s * 0.10, s * 0.40, 0, math.pi)
+        love.graphics.setColor(0.97, 0.96, 0.98)                                          -- the pearl
+        love.graphics.circle("fill", x, y - s * 0.02, s * 0.16)
+        love.graphics.setColor(1, 1, 1, 0.8)
+        love.graphics.circle("fill", x - s * 0.05, y - s * 0.07, s * 0.05)
+
+    elseif kind == "chest" then
+        love.graphics.setColor(0.50, 0.33, 0.16)                                          -- box
+        love.graphics.rectangle("fill", x - s * 0.42, y - s * 0.08, s * 0.84, s * 0.42)
+        love.graphics.setColor(0.40, 0.26, 0.12)                                          -- lid
+        love.graphics.arc("fill", x, y - s * 0.08, s * 0.42, math.pi, 2 * math.pi)
+        love.graphics.setColor(0.85, 0.68, 0.28)                                          -- gold bands
+        love.graphics.rectangle("fill", x - s * 0.42, y - s * 0.02, s * 0.84, s * 0.07)
+        love.graphics.rectangle("fill", x - s * 0.05, y - s * 0.10, s * 0.10, s * 0.44)
+        love.graphics.setColor(0.95, 0.82, 0.36)                                          -- lock
+        love.graphics.rectangle("fill", x - s * 0.06, y + s * 0.06, s * 0.12, s * 0.12)
+
+    elseif kind == "book" then
+        love.graphics.setColor(0.62, 0.30, 0.24)                                          -- cover
+        love.graphics.rectangle("fill", x - s * 0.36, y - s * 0.42, s * 0.72, s * 0.84, 2, 2)
+        love.graphics.setColor(0.94, 0.90, 0.80)                                          -- pages
+        love.graphics.rectangle("fill", x - s * 0.28, y - s * 0.34, s * 0.60, s * 0.68)
+        love.graphics.setColor(0.85, 0.68, 0.28)                                          -- spine + star
+        love.graphics.rectangle("fill", x - s * 0.36, y - s * 0.42, s * 0.10, s * 0.84)
+        love.graphics.setColor(0.80, 0.55, 0.20)
+        for i = -1, 1 do love.graphics.line(x - s * 0.20, y + i * s * 0.16, x + s * 0.26, y + i * s * 0.16) end
+
     else                                                                                  -- generic crate
         love.graphics.setColor(0.60, 0.45, 0.28)
         love.graphics.rectangle("fill", x - s * 0.4, y - s * 0.4, s * 0.8, s * 0.8)

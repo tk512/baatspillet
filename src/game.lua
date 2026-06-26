@@ -18,6 +18,8 @@ local function defaultState()
         discoveredIslands = {},
         owned            = {},   -- one-time upgrades, e.g. owned.cannon = true
         food             = {},   -- consumable provisions, e.g. food.brod = 3
+        treasuresFound   = {},   -- chest ids dug up (collectibles in the album)
+        treasuresMapped  = {},   -- chest ids a harbourmaster has revealed
     }
 end
 
@@ -39,6 +41,9 @@ function Game:load()
         world   = require("src.scenes.world"),
     }
 
+    -- Dev profiler overlay (F3): rolling update/draw timings + FPS + draw stats.
+    self.profile = { on = false, upd = 0, drw = 0 }
+
     Assets.startMusic()
     self:setScene("menu")
 end
@@ -46,11 +51,51 @@ end
 function Game:update(dt)
     -- Cap dt so a hitch (e.g. window drag) never teleports the boat.
     if dt > 0.05 then dt = 0.05 end
-    if self.scene and self.scene.update then self.scene:update(dt) end
+    local p = self.profile
+    if p and p.on then
+        local t0 = love.timer.getTime()
+        if self.scene and self.scene.update then self.scene:update(dt) end
+        p.upd = p.upd * 0.9 + (love.timer.getTime() - t0) * 1000 * 0.1   -- ms, smoothed
+    elseif self.scene and self.scene.update then
+        self.scene:update(dt)
+    end
 end
 
 function Game:draw()
-    if self.scene and self.scene.draw then self.scene:draw() end
+    local p = self.profile
+    if p and p.on then
+        local t0 = love.timer.getTime()
+        if self.scene and self.scene.draw then self.scene:draw() end
+        p.drw = p.drw * 0.9 + (love.timer.getTime() - t0) * 1000 * 0.1   -- ms, smoothed
+        self:drawProfiler()
+    elseif self.scene and self.scene.draw then
+        self.scene:draw()
+    end
+end
+
+-- Compact dev overlay. Draw timings are CPU submit time (not GPU); FPS reflects
+-- real frame pacing, so if FPS sits at the vsync cap (e.g. 60) while scrolling,
+-- the bottleneck is elsewhere (vsync / scroll speed), not the frame budget.
+function Game:drawProfiler()
+    local f = (self.fonts and self.fonts.small) or love.graphics.getFont()
+    love.graphics.setFont(f)
+    local st  = love.graphics.getStats()
+    local lines = {
+        string.format("FPS %d    frame %.1f ms", love.timer.getFPS(),
+            love.timer.getAverageDelta() * 1000),
+        string.format("update %.2f ms   draw %.2f ms", self.profile.upd, self.profile.drw),
+        string.format("drawcalls %d  (batched %d)", st.drawcalls, st.drawcallsbatched),
+        string.format("tex %.1f MB   lua %.1f MB",
+            st.texturememory / 1048576, collectgarbage("count") / 1024),
+    }
+    local pad, lh, w = 8, f:getHeight() + 2, 0
+    for _, l in ipairs(lines) do w = math.max(w, f:getWidth(l)) end
+    local x, y = 14, love.graphics.getHeight() - (#lines * lh + pad * 2) - 40
+    love.graphics.setColor(0, 0, 0, 0.72)
+    love.graphics.rectangle("fill", x - pad, y - pad, w + pad * 2, #lines * lh + pad * 2, 4, 4)
+    love.graphics.setColor(0.45, 1.0, 0.55)
+    for i, l in ipairs(lines) do love.graphics.print(l, x, y + (i - 1) * lh) end
+    love.graphics.setColor(1, 1, 1)
 end
 
 function Game:setScene(name)
@@ -64,6 +109,17 @@ function Game:reloadScene()
     if self.scene and self.scene.load then
         self.scene:load(self)   -- re-run setup; global state (coins) persists
     end
+end
+
+-- Start a brand-new playthrough: wipe all progress back to the very first state
+-- (so the map must be re-discovered, gold re-earned, the cannon re-bought and
+-- every treasure re-found) and rebuild the world via the loading screen. Used by
+-- the win screen's "Spill igjen". FUTURE: rotate the map here for variety, e.g.
+--   config.WORLD_SEED = <next seed in a list>   -- then each finish is a new world
+function Game:newGame()
+    self.state = defaultState()
+    self:save()
+    self:setScene("menu")   -- back to the very beginning (title); "set sail" loads fresh
 end
 
 -- Fonts scale with the window; 800 is the design height.
@@ -115,6 +171,8 @@ function Game:loadSave()
             self.state.fog = data.fog or self.state.fog
             self.state.owned = data.owned or self.state.owned
             self.state.food = data.food or self.state.food
+            self.state.treasuresFound = data.treasuresFound or self.state.treasuresFound
+            self.state.treasuresMapped = data.treasuresMapped or self.state.treasuresMapped
         end
     end
 end
@@ -189,6 +247,8 @@ function Game:keypressed(key, scancode, isrepeat)
         self:reloadScene(); return
     elseif key == "f6" then
         self:reloadData(); return
+    elseif key == "f3" then
+        self.profile.on = not self.profile.on; return   -- toggle dev profiler
     elseif key == "m" then
         config.AUDIO_ON = not config.AUDIO_ON
         Assets.refreshAudio(); return

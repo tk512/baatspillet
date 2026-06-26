@@ -9,6 +9,7 @@ local config = require("src.config")
 local Assets = require("src.assets")
 local Retro  = require("src.ui.retro")
 local Icons  = require("src.ui.icons")
+local HarborMark = require("src.ui.harbormark")
 
 local PortScreen = {}
 PortScreen.__index = PortScreen
@@ -60,6 +61,7 @@ function PortScreen.new(world, port, info)
     self.earned    = info.earned or 0
     self.delivered = info.delivered or 0
     self.mission   = info.mission           -- current job (for the "busy" message)
+    self.mapGiven  = info.mapGiven          -- harbourmaster handed over a treasure map
     self.mood  = port.def.mood or "cosy"
     self.theme = THEMES[self.mood] or THEMES.cosy
     self.t = 0
@@ -72,7 +74,7 @@ function PortScreen.new(world, port, info)
     if self.mode == "deliver" then           -- raining gold coins
         self.coins = {}
         for i = 1, 70 do self.coins[i] = self:newCoin() end
-        self.coinSndT, self.coinSndN = 0, 0
+        self.clinkT = 0
     end
     return self
 end
@@ -97,6 +99,10 @@ end
 -- Briefing -> recorded "Du har et oppdrag!", wrong harbour -> "FEIL HAVN!",
 -- else a per-town clip (dock_<id>.ogg) if recorded, else a boat horn.
 function PortScreen:playVoice()
+    if self.mode == "findfirst" then               -- turned away: "find the treasure first!"
+        if not Assets.playNamedVoice("finn_skatten_forst") then Assets.playSfx("bump") end
+        return
+    end
     if self.mode == "offer" and Assets.playNamedVoice("oppdrag") then return end
     if self.mode == "busy" and Assets.playNamedVoice("feil_havn") then return end
     if Assets.playNamedVoice("dock_" .. self.port.id) then return end
@@ -116,6 +122,7 @@ function PortScreen:update(dt)
     end
 
     if self.coins then
+        self.clinkT = (self.clinkT or 0) - dt
         for _, co in ipairs(self.coins) do
             if not co.rest then
                 co.vy = co.vy + 900 * dt               -- gravity
@@ -124,6 +131,10 @@ function PortScreen:update(dt)
                 co.spin = co.spin + co.spinsp * dt
                 if co.y >= co.floor then
                     co.y = co.floor
+                    if self.clinkT <= 0 then           -- clink-klank as it hits the pile
+                        self.clinkT = 0.04 + love.math.random() * 0.07
+                        Assets.playPitched("coin_clink", 0.5, 0.7 + love.math.random() * 0.8)
+                    end
                     if co.vy > 80 then                 -- bounce, losing energy
                         co.vy = -co.vy * 0.45
                         co.vx = co.vx * 0.7
@@ -133,11 +144,6 @@ function PortScreen:update(dt)
                     end
                 end
             end
-        end
-        -- a quick cascade of coin blips right after delivery
-        self.coinSndT = self.coinSndT + dt
-        if self.coinSndN < 7 and self.coinSndT > self.coinSndN * 0.09 then
-            Assets.playSfx("coin"); self.coinSndN = self.coinSndN + 1
         end
     end
 end
@@ -162,7 +168,8 @@ function PortScreen:layout(vw, vh)
     local bodyY = py + titleH + pad
     local bodyH = ph - titleH - btnH - pad * 3
     local portraitW = math.floor(pw * 0.36)
-    local seilW = math.floor(pw * 0.30)
+    -- Widen the primary button when it carries the longer "Finn skatten!" label.
+    local seilW = math.floor(pw * (self.mapGiven and 0.40 or 0.30))
     local butW  = math.floor(pw * 0.28)
     local rowY  = py + ph - btnH - pad
     return {
@@ -196,6 +203,12 @@ function PortScreen:mousepressed(mx, my, button)
             self:confirm()
         end
         return
+    end
+
+    -- Focused screens (map handoff / turned-away / wrong harbour): no Butikk, the
+    -- only thing to do is go -- any click sets sail.
+    if self.mapGiven or self.mode == "findfirst" or self.mode == "busy" then
+        self:confirm(); return
     end
 
     if not self._L then return end
@@ -267,8 +280,10 @@ function PortScreen:confirm()
     self.world.dock = nil
 
     -- After the HURRA screen, offer the next mission right away so the reward
-    -- screen is never skipped and the child can keep sailing town to town.
-    if wasDeliver then
+    -- screen is never skipped and the child can keep sailing town to town -- BUT
+    -- if this delivery earned a treasure map, skip the new oppdrag and go straight
+    -- into the hunt (the "Finn skatten!" card pops once this screen closes).
+    if wasDeliver and not self.world.pendingMapReveal then
         local off = self.world.cargoSystem:offerAt(self.port.id)
         if off and self.world.boat:hasRoom() then
             self.world:openDock(self.port)
@@ -333,10 +348,8 @@ end
 function PortScreen:drawTitle(L, t)
     local th, T = self.theme, L.title
     bevel(T.x + t * 2, T.y + t * 2, T.w - t * 4, T.h - t * 2, th.title, th.hi, th.lo, t, true)
-    -- town flag swatch
-    local fy = T.y + T.h * 0.5
-    love.graphics.setColor(self.port.color)
-    love.graphics.rectangle("fill", T.x + L.pad * 2, T.y + T.h * 0.28, T.h * 0.28, T.h * 0.45)
+    -- town harbour badge (two gabled houses in the town colour)
+    HarborMark.draw(T.x + L.pad * 2, T.y + T.h * 0.25, T.h * 0.58, T.h * 0.5, self.port.color)
     -- town name (gold, with a hard shadow)
     local f = vfont(T.h * 0.42)
     love.graphics.setFont(f)
@@ -473,8 +486,9 @@ function PortScreen:drawBrief(L, t)
         local w2 = fb:getWidth(l2)
         love.graphics.setColor(o.color or th.text)
         love.graphics.print(l2, cx - w2 / 2, B.y + B.h * 0.78)
-        love.graphics.rectangle("fill", cx - w2 / 2 - fb:getHeight() * 0.9,
-            B.y + B.h * 0.78 + fb:getHeight() * 0.15, fb:getHeight() * 0.5, fb:getHeight() * 0.7)
+        local fH = fb:getHeight()
+        HarborMark.draw(cx - w2 / 2 - fH * 1.15, B.y + B.h * 0.78 + fH * 0.1,
+            fH * 0.85, fH * 0.78, o.color or th.text)
 
     elseif self.mode == "busy" then
         love.graphics.setFont(fh)
@@ -498,6 +512,9 @@ function PortScreen:drawBrief(L, t)
             love.graphics.print(l1, cx - fb:getWidth(l1) / 2, B.y + B.h * 0.5)
         end
 
+    elseif self.mode == "deliver" and self.mapGiven then
+        self:drawMapHandoff(B, cx, fh, fb, th)        -- epic treasure-map moment
+
     elseif self.mode == "deliver" then
         self:drawIconRow("smile", math.max(1, self.delivered), cx, B.y + B.h * 0.16, B.h * 0.16)
         -- big bouncing "HURRA!" so a toddler instantly gets that this is GOOD
@@ -517,12 +534,79 @@ function PortScreen:drawBrief(L, t)
         local t2 = "+" .. self.earned .. " gull"
         love.graphics.setColor(config.colors.gold)
         love.graphics.print(t2, cx - fb:getWidth(t2) / 2, B.y + B.h * 0.68)
+    elseif self.mode == "findfirst" then
+        -- turned away: the harbourmaster won't give a new oppdrag until the chest
+        -- is found. A treasure chest + "Finn skatten først!"
+        Icons.draw("chest", cx, B.y + B.h * 0.34, B.h * 0.36)
+        local t1 = "Finn skatten først!"
+        local f = (fh:getWidth(t1) <= B.w) and fh or fb
+        love.graphics.setFont(f)
+        local hop = math.abs(math.sin(self.t * 4)) * B.h * 0.03
+        love.graphics.setColor(0, 0, 0, 0.4)
+        love.graphics.print(t1, cx - f:getWidth(t1) / 2 + 2, B.y + B.h * 0.66 - hop + 2)
+        love.graphics.setColor(th.accent)
+        love.graphics.print(t1, cx - f:getWidth(t1) / 2, B.y + B.h * 0.66 - hop)
+
     else
         love.graphics.setFont(fh)
         local t = "Velkommen i havn!"
         love.graphics.setColor(th.text)
         love.graphics.print(t, cx - fh:getWidth(t) / 2, B.y + B.h / 2 - fh:getHeight() / 2)
     end
+end
+
+-- The harbourmaster presents a TREASURE MAP: a golden glow, the parchment map
+-- (assets/ui/treasuremap.png) tilting gently, a bouncing "SKATTEKART!" and a few
+-- sparkles -- the big, epic moment, with the gold reward small underneath.
+function PortScreen:drawMapHandoff(B, cx, fh, fb, th)
+    local t = self.t
+    local gcx, gcy = cx, B.y + B.h * 0.50
+
+    -- radiant golden glow behind the map
+    for i = 6, 1, -1 do
+        love.graphics.setColor(0.96, 0.80, 0.32, 0.05 * i)
+        love.graphics.circle("fill", gcx, gcy, B.h * (0.12 + i * 0.055))
+    end
+
+    -- bouncing title
+    love.graphics.setFont(fh)
+    local title = "Skattekart!"
+    local hop = math.abs(math.sin(t * 4)) * B.h * 0.05
+    love.graphics.setColor(0, 0, 0, 0.4)
+    love.graphics.print(title, cx - fh:getWidth(title) / 2 + 2, B.y + B.h * 0.02 - hop + 2)
+    love.graphics.setColor(th.accent)
+    love.graphics.print(title, cx - fh:getWidth(title) / 2, B.y + B.h * 0.02 - hop)
+
+    -- the parchment map, gently swaying (chest icon fallback if the art is absent)
+    local img = Assets.image("ui/treasuremap.png")
+    if img then
+        local mh = B.h * 0.52
+        local s = mh / img:getHeight()
+        love.graphics.setColor(0, 0, 0, 0.25)
+        love.graphics.draw(img, gcx + 4, gcy + 5, math.sin(t * 1.5) * 0.04, s, s, img:getWidth() / 2, img:getHeight() / 2)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(img, gcx, gcy, math.sin(t * 1.5) * 0.04, s, s, img:getWidth() / 2, img:getHeight() / 2)
+    else
+        Icons.draw("chest", gcx, gcy, B.h * 0.4)
+    end
+
+    -- sparkles twinkling around it
+    for k = 1, 7 do
+        local sp = (t * 1.2 + k * 0.43) % 1
+        local rr = 1 - sp
+        local a = k * 1.7
+        local sx = gcx + math.cos(a) * B.h * 0.34
+        local sy = gcy + math.sin(a) * B.h * 0.34 * 0.7
+        love.graphics.setColor(1, 0.96, 0.62, rr)
+        love.graphics.circle("fill", sx, sy, 1.5 + 3 * rr)
+    end
+
+    -- the gold reward, small, underneath
+    love.graphics.setFont(fb)
+    local g = "+" .. self.earned .. " gull"
+    love.graphics.setColor(config.colors.gold)
+    love.graphics.print(g, cx - fb:getWidth(g) / 2, B.y + B.h - fb:getHeight() - 2)
+    love.graphics.setColor(1, 1, 1)
 end
 
 -- A beveled, centered-label button. `primary` picks the green action palette
@@ -770,9 +854,20 @@ function PortScreen:drawIcon(kind, x, y, s)
 end
 
 function PortScreen:drawButtons(L, t)
-    -- Butikk (opens the store) and Seil! (cast off)
-    self:labelButton(L.butikk, "Butikk", t, false)
-    self:labelButton(L.seil, "Seil!", t, true)
+    -- Single centred button (no Butikk) for the focused screens: the map handoff,
+    -- the turned-away screen, and the wrong-harbour ("busy") screen.
+    local single =
+        (self.mapGiven and "Finn skatten!")
+        or (self.mode == "findfirst" and "Seil!")
+        or (self.mode == "busy" and "Seil videre")
+    if single then
+        local bw = math.floor(L.panel.w * 0.46)
+        local b = { x = L.panel.x + (L.panel.w - bw) / 2, y = L.seil.y, w = bw, h = L.seil.h }
+        self:labelButton(b, single, t, true)
+        return
+    end
+    self:labelButton(L.butikk, "Butikk", t, false)   -- open the store
+    self:labelButton(L.seil, "Seil!", t, true)       -- cast off
 end
 
 return PortScreen

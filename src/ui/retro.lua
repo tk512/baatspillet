@@ -29,4 +29,14 @@ function Retro.bevel(x, y, w, h, face, hi, lo, t, raised)
     love.graphics.rectangle("fill", x + w - t, y, t, h)
 end
 
+-- Wooden plaque (raised outer bevel + sunken inner well). Returns the inner
+-- content rect (x, y, w, h). Shared by the HUD plaques and the minimap frame.
+function Retro.plaque(x, y, w, h, t)
+    local W = Retro.WOOD
+    Retro.bevel(x, y, w, h, W.face, W.hi, W.lo, t, true)
+    Retro.bevel(x + t, y + t, w - 2 * t, h - 2 * t, W.deep, W.hi, W.lo,
+        math.max(1, math.floor(t * 0.6)), false)
+    return x + t * 2, y + t * 2, w - t * 4, h - t * 4
+end
+
 return Retro

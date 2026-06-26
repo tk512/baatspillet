@@ -1,14 +1,13 @@
 #!/bin/bash
 # Build distributables for Båtspillet:
-#   1. Båtspillet.love           — the game as one LÖVE file (needs LÖVE installed)
-#   2. Båtspillet.app + .dmg      — UNIVERSAL app (LÖVE 11.5, arm64+Intel) to hand out
-#   3. Båtspillet-Yosemite.app    — Intel app (LÖVE 11.3) for the old 2009/Yosemite iMac
+#   1. Båtspillet.love       — the game as one LÖVE file (needs LÖVE installed)
+#   2. Båtspillet.app + .dmg  — UNIVERSAL app (LÖVE 11.5, arm64+Intel) to hand out
 #
 #   ./build.sh
 #
-# It finds the two LÖVE builds (a .zip or an unpacked love.app). Defaults look in
-# ~/Downloads for the official zips; override with env vars:
-#   LOVE_UNIVERSAL=/path/love-11.5  LOVE_YOSEMITE=/path/love-11.3  ./build.sh
+# It finds the LÖVE build (a .zip or an unpacked love.app), defaulting to
+# ~/Downloads; override with env var:
+#   LOVE_UNIVERSAL=/path/love-11.5  ./build.sh
 #
 # By default the apps are AD-HOC signed (free, no account) — which macOS blocks
 # on download ("is damaged"); recipients must run:
@@ -32,7 +31,6 @@ cd "$(dirname "$0")"
 NAME="Båtspillet"
 LOVE="$NAME.love"
 LOVE_UNIVERSAL="${LOVE_UNIVERSAL:-$HOME/Downloads/love-11.5-macos.zip}"
-LOVE_YOSEMITE="${LOVE_YOSEMITE:-$HOME/Downloads/love-11.3-macos.zip}"
 
 # Signing identity: "-" = ad-hoc (default). Set SIGN_ID to a Developer ID to
 # enable real signing. Notarization runs when credentials are present.

@@ -14,12 +14,17 @@ local Terrain      = require("src.systems.terrain")
 local Objects      = require("src.systems.objects")
 local CargoSystem  = require("src.systems.cargo")
 local Fog          = require("src.systems.fog")
+local Treasure     = require("src.systems.treasure")
 local Loader       = require("src.systems.loader")
 local Boat         = require("src.entities.boat")
 local Port         = require("src.entities.port")
 local Pirate       = require("src.entities.pirate")
 local Shark        = require("src.entities.shark")
 local HUD          = require("src.ui.hud")
+local Minimap      = require("src.ui.minimap")
+local Album        = require("src.ui.album")
+local MapReveal    = require("src.ui.mapreveal")
+local WinScreen    = require("src.ui.winscreen")
 local PortScreen   = require("src.ui.portscreen")
 local Icons        = require("src.ui.icons")
 
@@ -82,6 +87,7 @@ function World:load(game)
 
     self:spawnAmbientShips()
     self:scatterAmbientBoats()
+    self:spawnVikingSky()      -- the real cruise ship at anchor outside Bergen
 
     self.cargoSystem = CargoSystem.new(self.ports)
 
@@ -90,6 +96,27 @@ function World:load(game)
     self.fog = Fog.new(game.state.fog)
     self.fog:revealAround(self.boat.x, self.boat.y, config.FOG_REVEAL)
     self._fogSaveT = 0
+
+    -- World map (top-right): a Civ-style top-down map of the explored ocean,
+    -- sharing the fog grid. Built last so terrain, ports and fog all exist.
+    self.minimap = Minimap.new(self)
+
+    -- Treasure hunt: chests on sandbanks off the biggest islands. Placement is
+    -- seeded; the save only remembers which are found / mapped.
+    local foundSet = {}
+    for _, id in ipairs(game.state.treasuresFound or {}) do foundSet[id] = true end
+    self.treasures = Treasure.build(self.terrain, foundSet)
+    self.mapped = {}
+    for _, id in ipairs(game.state.treasuresMapped or {}) do self.mapped[id] = true end
+    self.album       = nil    -- the album overlay, when open
+    self.mapReveal   = nil    -- the "Finn skatten!" reveal card, when up
+    self.winScreen   = nil    -- the grand all-found finale, when up
+    self.racer       = nil    -- a pirate racing you to the active chest, when one's out
+    self.treasureFX  = {}      -- chest-open coin bursts
+    -- The "Finn skatten!" card appears only when a map is freshly granted on a
+    -- delivery -- never on load and never during an active hunt (then the only job
+    -- is to go find the chest the X/arrow already point to).
+    self.pendingMapReveal = nil
 
     self.camera:snapTo(self.boat.x, self.boat.y)
     self.nearPort = nil
@@ -111,6 +138,14 @@ function World:load(game)
     self.sailDist = 0        -- distance sailed toward the next bite
 
     collectgarbage("collect")
+
+    -- TEMPORARY: jump straight to the all-found finale (menu "Se finale" button).
+    if game.previewWin then
+        game.previewWin = nil
+        self.pendingMapReveal = nil    -- no treasure card under the preview finale
+        for _, tr in ipairs(self.treasures) do tr.found = true end
+        self:openWinScreen()           -- closing it resets to the title, like a real win
+    end
 end
 
 -- Scatter houses around a port's pad to make it read as a town. Count + spread
@@ -214,6 +249,53 @@ function World:spawnAmbientShips()
             })
         end
     end
+end
+
+-- The real "Viking Sky" cruise liner, lying at anchor on the open water just
+-- outside Bergen. It's a photo billboard (assets/props/vikingsky.png) that holds
+-- still and bobs gently on the waves -- a big landmark, several times the ferry.
+-- If the art is missing the world just runs without it (placeholder-first).
+function World:spawnVikingSky()
+    local img = Assets.image("props/vikingsky.png")
+    if not img then return end
+    -- The PNG is pre-baked small (~160px) so it reads as a slightly-pixelated
+    -- retro sprite; nearest filtering (Assets default) keeps it crisp, no moiré.
+
+    local port = self:portById("bergen")
+    if not port then return end
+
+    -- Anchor it well out from the harbour and off to one side (not right on the
+    -- pier): step further out + along the shore until we hit open water.
+    local T = config.TILE
+    local sidex, sidey = -port.seaDy, port.seaDx      -- unit vector along the shore
+    local gx, gy
+    for _, d in ipairs({ 740, 860, 620, 980, 540 }) do
+        for _, side in ipairs({ 560, -560, 360, -360, 0 }) do
+            local x = port.x + port.seaDx * d + sidex * side
+            local y = port.y + port.seaDy * d + sidey * side
+            if x > 0 and y > 0 and x < config.WORLD_WIDTH and y < config.WORLD_HEIGHT
+                and self.terrain:isWater(x, y) then
+                gx, gy = x, y; break
+            end
+        end
+        if gx then break end
+    end
+    if not gx then return end
+
+    local groundY = Assets.imageGroundY("props/vikingsky.png") or img:getHeight()
+    local scale   = 115 / img:getWidth()          -- on-screen length (~0.8x the ferry's 140)
+    local shW     = img:getWidth() * scale         -- for the cast shadow
+    self.objects:add({
+        tx = math.floor(gx / T) + 1, ty = math.floor(gy / T) + 1, z = 0,
+        draw = function()
+            local bob = math.sin(love.timer.getTime() * 0.6) * 4   -- gentle wave bob
+            local sx, sy = Iso.project(gx, gy, 0)
+            love.graphics.setColor(0, 0, 0, 0.16)                  -- soft shadow on the water
+            love.graphics.ellipse("fill", sx, sy + 4, shW * 0.42, shW * 0.08)
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.draw(img, sx, sy + bob, 0, scale, scale, img:getWidth() / 2, groundY)
+        end,
+    })
 end
 
 -- Scatter idle boats of various sizes around the open sea, just bobbing, to
@@ -324,8 +406,27 @@ function World:drawClouds()
 end
 
 function World:update(dt)
-    -- While the docking screen is up, the world is frozen.
+    -- Safety net: never stay stuck in right-drag panning across a modal opening
+    -- or a loss of window focus (a release can be swallowed in either case).
+    if self.panning and (self.dock or self.album or self.mapReveal or self.winScreen
+        or not love.window.hasFocus()) then
+        self.panning = false
+    end
+
+    -- While a modal overlay is up (win/reveal/album/docking), the world is frozen.
+    if self.winScreen then self.winScreen:update(dt); return end
+    if self.mapReveal then self.mapReveal:update(dt); return end
+    if self.album then self.album:update(dt); return end
     if self.dock then self.dock:update(dt); return end
+
+    -- Dock just closed and a treasure map is waiting: pop the "Finn skatten!" card
+    -- now (deferred so it follows the harbourmaster, not stacked over the dock).
+    if self.pendingMapReveal then
+        local t = self.pendingMapReveal
+        self.pendingMapReveal = nil
+        self:openMapReveal(t)
+        return
+    end
 
     self.terrain:update(dt)
     self.boat:update(dt)
@@ -337,6 +438,7 @@ function World:update(dt)
     -- (serializing the whole grid every frame is costly).
     if self.fog:revealAround(self.boat.x, self.boat.y, config.FOG_REVEAL) then
         self._fogDirty = true
+        self.minimap:refresh()          -- paint the newly-revealed cells onto the map
     end
     self._fogSaveT = self._fogSaveT + dt
     if self._fogDirty and self._fogSaveT > 8 then
@@ -389,6 +491,8 @@ function World:update(dt)
         self.boat:updateCannon(dt, target, function() self:cannonHitPirate() end)
     end
 
+    self:updateTreasure(dt)
+
     -- Advance short-lived splash bursts.
     for i = #self.splashes, 1, -1 do
         local s = self.splashes[i]
@@ -399,6 +503,9 @@ function World:update(dt)
     self:updateEating(dt)
 
     self.camera:edgeScroll(dt, self.boat.x, self.boat.y)  -- scroll, but never lose the boat
+    if config.FOLLOW_CAMERA then
+        self.camera:keepAnchorInView(self.boat.x, self.boat.y)  -- boat near edge pans the map
+    end
     self.camera:update(dt)
 
     if self.toast.timer > 0 then
@@ -425,6 +532,209 @@ function World:isDiscovered(id)
         if d == id then return true end
     end
     return false
+end
+
+-- ===== Treasure hunt ====================================================
+-- Harbourmasters hand out maps; sail onto a mapped chest and a pirate sweeps in
+-- to contest it. With the cannon you scare him off and win the chest; with no
+-- cannon the pirates take it -- but it's never lost, the X just stays so you can
+-- come back once you've bought a cannon. Collectibles fill the album.
+
+-- A harbourmaster reveals the nearest un-found, un-mapped chest to this port. The
+-- caller only invokes it on a successful delivery, so maps are a reward for trade
+-- (not every visit), and only one is out at a time. No cannon needed to GET a map
+-- -- you just can't win the chest without one (the pirate takes it), which is how
+-- the player learns they need the cannon.
+-- Returns true if a map was actually handed over (so the dock screen can show
+-- the "Finn skatten!" choice).
+function World:revealTreasureMap(port)
+    if self:activeTreasure() then return false end          -- one treasure at a time
+    -- The very first map (never had one) is guaranteed so the hunt is introduced;
+    -- after that it's an occasional surprise on delivery, not every time.
+    local everHad = #self.game.state.treasuresMapped > 0 or #self.game.state.treasuresFound > 0
+    if everHad and love.math.random() >= config.TREASURE.MAP_CHANCE then return false end
+    local best, bestD
+    for _, t in ipairs(self.treasures) do
+        if not t.found and not self.mapped[t.id] then
+            local dx, dy = t.x - port.x, t.y - port.y
+            local d = dx * dx + dy * dy
+            if not bestD or d < bestD then bestD, best = d, t end
+        end
+    end
+    if not best then return false end
+    self.mapped[best.id] = true
+    table.insert(self.game.state.treasuresMapped, best.id)
+    self.game:save()
+    -- Defer the big "Finn skatten!" card until the dock screen closes, so it
+    -- reads as its own moment after the harbourmaster (see World:update).
+    self.pendingMapReveal = best
+    return true
+end
+
+function World:openMapReveal(t)
+    self.mapReveal = MapReveal.new(self, t)
+    self:showToast("Finn skatten!")
+    -- celebratory audio (Finn-Erik's voice can replace these later)
+    if not Assets.playNamedVoice("finn_skatten") and not Assets.playNamedVoice("skattekart") then
+        Assets.playSfx("deliver")
+    end
+    Assets.playSfx("horn", 0.5)
+end
+
+function World:closeMapReveal()
+    self.mapReveal = nil
+end
+
+-- The nearest mapped, un-found chest -- what the gold arrow points to.
+function World:activeTreasure()
+    local best, bestD
+    for _, t in ipairs(self.treasures) do
+        if self.mapped[t.id] and not t.found then
+            local dx, dy = t.x - self.boat.x, t.y - self.boat.y
+            local d = dx * dx + dy * dy
+            if not bestD or d < bestD then bestD, best = d, t end
+        end
+    end
+    return best
+end
+
+function World:updateTreasure(dt)
+    -- advance chest-open coin bursts
+    for i = #self.treasureFX, 1, -1 do
+        local fx = self.treasureFX[i]
+        fx.t = fx.t + dt
+        if fx.t > 1.4 then table.remove(self.treasureFX, i) end
+    end
+
+    -- A pirate races you to the active chest (spawns + moves here).
+    local active = self:activeTreasure()
+    self:updateRace(dt, active)
+
+    -- YOU grab any chest you reach -- checked first, so a tie goes to the player.
+    local R = config.TREASURE.REACH
+    for _, t in ipairs(self.treasures) do
+        if self.mapped[t.id] and not t.found then
+            local dx, dy = self.boat.x - t.x, self.boat.y - t.y
+            if (dx * dx + dy * dy) < R * R and not self.latching and not self.dock then
+                self:grabTreasure(t); return
+            end
+        end
+    end
+
+    -- ...otherwise, if the pirate got there first, it steals the chest.
+    if active and self.racer and self.racer.state ~= "retreat" then
+        local pdx, pdy = self.racer.x - active.x, self.racer.y - active.y
+        if (pdx * pdx + pdy * pdy) < R * R then self:pirateStealsTreasure(active) end
+    end
+end
+
+-- The treasure race: once you're closing in on the active chest a (slightly
+-- slower) pirate sets off for it too. This just spawns + steers the racer; who
+-- actually reaches it is decided in updateTreasure (player first).
+function World:updateRace(dt, active)
+    if not active then
+        if self.racer then                          -- no chest in play: send any racer off
+            if self.racer.state ~= "retreat" then self.racer:flee() end
+            self.racer:update(dt, self.boat, self.terrain)
+            if self.racer.dead then self.racer = nil; Assets.stopChase() end
+        end
+        return
+    end
+
+    if not self.racer and not self.dock and not self.latching then
+        local dx, dy = self.boat.x - active.x, self.boat.y - active.y
+        if (dx * dx + dy * dy) < config.TREASURE.RACE_TRIGGER * config.TREASURE.RACE_TRIGGER then
+            self:spawnRacer(active)
+        end
+    end
+    if self.racer then
+        self.racer.goal = active                    -- make for the chest
+        self.racer:update(dt, self.boat, self.terrain)
+        if self.racer.dead then self.racer = nil; Assets.stopChase() end
+    end
+end
+
+-- The pirate beat you to it: it makes off with the chest, so the X vanishes (no
+-- deadlock -- you're not stuck circling it). The chest goes back in the pool, so
+-- a later delivery can hand you its map again for another go.
+function World:pirateStealsTreasure(t)
+    self.mapped[t.id] = nil
+    for i, id in ipairs(self.game.state.treasuresMapped) do
+        if id == t.id then table.remove(self.game.state.treasuresMapped, i); break end
+    end
+    self.game:save()
+    if self.racer then self.racer:flee() end
+    self:showToast("Sjørøverne tok skatten!")
+    Assets.playSfx("cannon_hit", 0.6)
+end
+
+-- Drop a pirate into the race, out at roughly your own distance from the chest
+-- (it's slower, so a straight dash beats it; dawdle and it wins).
+function World:spawnRacer(t)
+    local b = self.boat
+    local pd = math.sqrt((b.x - t.x) ^ 2 + (b.y - t.y) ^ 2)
+    local r = math.max(500, math.min(1400, pd))
+    for _, rr in ipairs({ r, r * 0.8, r * 1.2 }) do
+        for k = 0, 11 do
+            local ang = (k / 12) * math.pi * 2 + love.math.random() * 0.5
+            local x = t.x + math.cos(ang) * rr
+            local y = t.y + math.sin(ang) * rr
+            if x > 40 and y > 40 and x < config.WORLD_WIDTH - 40 and y < config.WORLD_HEIGHT - 40
+                and self.terrain:isWater(x, y) then
+                self.racer = Pirate.new(x, y, self.boat.maxSpeed)
+                self.racer.goal = t
+                self.racer.angle = math.atan2(t.y - y, t.x - x)
+                Assets.playSfx("pirate_warn", 0.9)
+                Assets.startChase()
+                self:showToast("Sjørøvere! Kappløp om skatten!")
+                return
+            end
+        end
+    end
+end
+
+-- Reaching a chest grabs it: stop the boat, send any racer packing, win it.
+function World:grabTreasure(t)
+    self.boat:clearDestination()
+    if self.racer then self.racer = nil; Assets.stopChase() end
+    self:winTreasure(t)
+end
+
+function World:winTreasure(t)
+    t.found = true
+    table.insert(self.game.state.treasuresFound, t.id)
+    self.game:addCoins(config.TREASURE.GOLD)     -- persists the save
+    self.treasureFX[#self.treasureFX + 1] = { x = t.x, y = t.y, t = 0, good = t.good }
+    Assets.playSfx("deliver")
+    if not Assets.playNamedVoice("skatt") then Assets.playSfx("coin", 0.8) end
+    self:showToast("Skatt! +" .. config.TREASURE.GOLD .. " gull")
+
+    local all = true
+    for _, tr in ipairs(self.treasures) do if not tr.found then all = false; break end end
+    if all then self:openWinScreen() end
+end
+
+function World:openWinScreen()
+    self.winScreen = WinScreen.new(self)
+    self:showToast("Alle skatter funnet!")
+    if not Assets.playNamedVoice("du_vant") and not Assets.playNamedVoice("bra_jobba") then
+        Assets.playSfx("deliver")
+    end
+    Assets.playSfx("horn", 0.7)
+end
+
+function World:closeWinScreen()
+    self.winScreen = nil
+    self.game:newGame()   -- "Spill igjen": wipe progress and return to the title screen
+end
+
+function World:openAlbum()
+    if self.dock then return end
+    self.album = Album.new(self)
+end
+
+function World:closeAlbum()
+    self.album = nil
 end
 
 -- Pirates appear rarely while sailing the open sea with gold to lose. Once one
@@ -533,7 +843,7 @@ function World:updateEating(dt)
     self.eaten[#self.eaten + 1] = {
         icon = item and item.icon or "box",
         x = self.boat.x, y = self.boat.y, t = 0,
-        dx = (love.math.random() - 0.5) * 30,        -- slight sideways drift
+        fig = love.math.random(4),                   -- which passenger does the munching
     }
     if not Assets.playNamedVoice("nam") then Assets.playSfx("coin", 0.5) end
     self:showToast("Nam nam nam!")
@@ -545,16 +855,40 @@ function World:shopItem(id)
     end
 end
 
--- Draw the falling-food bites in world space: the eaten item icon pops up a
--- little, then tumbles down past the boat and fades.
+-- Draw the eating in world space so it's clearly a passenger MUNCHING the food
+-- (not dropping it): the snack floats up above the deck and a passenger leans in
+-- and chomps it down in three bites, with crumbs flying, while "Nam nam nam!"
+-- shows. Reads as eating from a glance.
 function World:drawEaten()
     for _, e in ipairs(self.eaten) do
-        local p = e.t / 1.1
-        local up = math.sin(math.min(p, 0.5) * math.pi) * 30      -- little pop up first
-        local fall = (p > 0.4) and (p - 0.4) * (p - 0.4) * 260 or 0 -- then accelerate down
-        local sx, sy = Iso.project(e.x + e.dx * p, e.y, 30 + up - fall)
-        love.graphics.setColor(1, 1, 1, 1 - p)
-        Icons.draw(e.icon, sx, sy, 26)
+        local p = e.t / 1.1                                    -- 0..1 over its life
+        local rise = math.sin(math.min(p, 0.5) / 0.5 * (math.pi / 2)) * 36  -- float up + hold
+        local sx, sy = Iso.project(e.x, e.y, 48 + rise)
+        local wob = math.sin(e.t * 22) * 2                     -- jiggle = being chewed
+
+        -- the eater: a passenger leaning in from the left
+        local figS = 34
+        Icons.draw("passenger" .. e.fig, sx - figS * 0.7, sy + wob, figS)
+
+        -- the snack, bitten down in 3 chomps then gone (to the right of the mouth)
+        local bites, frac = 3, p % (1 / 3) * 3                 -- frac = progress through this bite
+        local stage = math.floor(p * bites)
+        if stage < bites then
+            local fs = 30 * (1 - stage / bites) * (0.9 + 0.12 * math.sin(e.t * 18))
+            love.graphics.setColor(1, 1, 1)
+            Icons.draw(e.icon, sx + 10, sy - 4 + wob, fs)
+        end
+
+        -- crumbs bursting out on each chomp, fading as the bite completes
+        local cA = 1 - frac
+        if cA > 0 then
+            love.graphics.setColor(0.85, 0.70, 0.42, cA)
+            for k = 1, 5 do
+                local ang = k * 1.7 + e.t * 4
+                local d = frac * 18
+                love.graphics.circle("fill", sx + 10 + math.cos(ang) * d, sy - 4 + math.sin(ang) * d * 0.6, 2)
+            end
+        end
     end
     love.graphics.setColor(1, 1, 1)
 end
@@ -618,9 +952,24 @@ function World:openDock(port)
         mode = (offer and self.boat:hasRoom()) and "offer" or "visit"
     end
 
+    -- While you've a treasure map on the go, no new oppdrag -- the harbourmaster
+    -- turns you away: "Finn skatten først!" (find the treasure first). Deliveries
+    -- of cargo you already carry still go through.
+    if self:activeTreasure() and mode ~= "deliver" then
+        mode, offer = "findfirst", nil
+    end
+
+    -- A treasure map is a reward for a delivery -- but not every time (a chance,
+    -- with the very first one guaranteed so the hunt always gets introduced), and
+    -- only when no hunt is already on the go. Granted up front so the deliver
+    -- screen can offer the choice (Finn skatten! vs Butikk); the big card pops
+    -- once the dock closes.
+    local mapGiven = (mode == "deliver") and self:revealTreasureMap(port) or false
+
     self.dock = PortScreen.new(self, port, {
         mode = mode, offer = offer, earned = earned, delivered = delivered,
         mission = self.boat.cargo[1],       -- so "busy" can name where to go
+        mapGiven = mapGiven,                -- harbourmaster handed over a treasure map
     })
     self.dockSuppress = port.id    -- don't immediately re-pop while still in range
 end
@@ -649,11 +998,17 @@ function World:draw()
 
     HUD.draw(self)
 
-    if not self.dock then
-        self:drawMissionPointer()    -- "go this way!" hint
+    if not self.dock and not self.album and not self.mapReveal and not self.winScreen then
+        self:drawMissionPointer()    -- "go this way!" hint (cargo destination)
+        self:drawTreasurePointer()   -- orange "to the treasure!" arrow + ring
         self:drawPirateIndicator()   -- red "danger this way!" arrow when off-screen
+        self.minimap:draw()          -- world map + treasure X's
+        HUD.drawMusicButton(self)    -- tappable music on/off (bottom-right)
     end
-    if self.dock then self.dock:draw() end   -- docking modal on top of everything
+    if self.dock then self.dock:draw() end            -- docking modal
+    if self.album then self.album:draw() end          -- album overlay
+    if self.mapReveal then self.mapReveal:draw() end  -- "Finn skatten!" card
+    if self.winScreen then self.winScreen:draw() end  -- grand finale, on top of all
 end
 
 -- When a hunting pirate is off-screen, pin a pulsing red arrow to the screen
@@ -692,6 +1047,7 @@ end
 -- the destination town, plus a pulsing ring on that town, so a non-reader
 -- always knows where to go next.
 function World:drawMissionPointer()
+    if self:activeTreasure() then return end   -- on a hunt: the treasure is the goal, not a harbour
     local m = self.boat.cargo[1]
     if not m then return end
     local port = self:portById(m.toId)
@@ -737,6 +1093,90 @@ function World:drawMissionPointer()
     love.graphics.polygon("fill", arrow)
     love.graphics.setColor(0.10, 0.08, 0.05)             -- thick dark outline
     love.graphics.setLineWidth(6); love.graphics.polygon("line", arrow)
+    love.graphics.setLineWidth(1)
+    love.graphics.pop()
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- In-world treasure markers (camera-attached): each mapped, un-found chest rests
+-- on a little sandbank with a bobbing chest + pulsing ring so the spot is visible
+-- as you sail up. Plus the short coin-burst + rising sticker when a chest is won.
+function World:drawTreasures()
+    local t = love.timer.getTime()
+    for _, tr in ipairs(self.treasures) do
+        if self.mapped[tr.id] and not tr.found then
+            local sx, sy = Iso.project(tr.x, tr.y, 0)
+            local sand = config.colors.sand
+            -- a little sandbank poking out of the shallows: water halo, wet rim,
+            -- dry sandy top + a few speckles, so it clearly reads as a sand bank.
+            love.graphics.setColor(0.46, 0.62, 0.66, 0.45)
+            love.graphics.ellipse("fill", sx, sy + 2, 66, 34)        -- shallow-water halo
+            love.graphics.setColor(sand.lip)
+            love.graphics.ellipse("fill", sx, sy, 50, 25)            -- wet sand rim
+            love.graphics.setColor(sand.top)
+            love.graphics.ellipse("fill", sx, sy - 3, 39, 18)        -- dry sand top
+            love.graphics.setColor(sand.dot)
+            for k = 1, 7 do
+                local a = k * 1.9
+                love.graphics.circle("fill", sx + math.cos(a) * 22, sy - 3 + math.sin(a) * 9, 1.5)
+            end
+            local pr = 22 + math.sin(t * 4) * 4                       -- pulsing gold ring
+            love.graphics.setColor(config.colors.gold[1], config.colors.gold[2], config.colors.gold[3], 0.8)
+            love.graphics.setLineWidth(3); love.graphics.ellipse("line", sx, sy, pr + 8, (pr + 8) * 0.5)
+            love.graphics.setLineWidth(1)
+            local bob = math.sin(t * 2.2 + #tr.id) * 3               -- bobbing chest on the bank
+            Icons.draw("chest", sx, sy - 16 + bob, 34)
+        end
+    end
+
+    for _, fx in ipairs(self.treasureFX) do
+        local p = fx.t / 1.4
+        local sx, sy = Iso.project(fx.x, fx.y, 0)
+        love.graphics.setColor(1, 1, 1, 1 - p)                       -- collectible rises
+        Icons.draw(fx.good, sx, sy - 20 - p * 40, 30)
+        for k = 1, 8 do                                              -- coins fly out
+            local ang = (k / 8) * math.pi * 2
+            local d, up = p * 50, math.sin(math.min(p, 0.6) * math.pi) * 30
+            love.graphics.setColor(config.colors.gold[1], config.colors.gold[2], config.colors.gold[3], 1 - p)
+            love.graphics.circle("fill", sx + math.cos(ang) * d, sy + math.sin(ang) * d * 0.5 - up, 3 * (1 - p) + 1)
+        end
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- An always-on, distinctly-coloured "treasure" arrow above the boat toward the
+-- active chest, plus a pulsing ring on the chest when it's on screen -- so the
+-- youngest players can always find their way to the treasure.
+local TREASURE_ARROW = { 0.98, 0.46, 0.12 }   -- warm orange (not the gold mission arrow)
+function World:drawTreasurePointer()
+    local tr = self:activeTreasure()
+    if not tr then return end
+
+    local bx, by = self.camera:worldToScreen(self.boat.x, self.boat.y)
+    local tx, ty = self.camera:worldToScreen(tr.x, tr.y)
+    local ang = math.atan2(ty - by, tx - bx)
+    local t = love.timer.getTime()
+    local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+
+    -- pulsing ring on the chest when it's on screen
+    if tx > 0 and tx < sw and ty > 0 and ty < sh then
+        local pr = 28 + math.sin(t * 4) * 7
+        love.graphics.setColor(0, 0, 0, 0.45)
+        love.graphics.setLineWidth(6); love.graphics.circle("line", tx, ty, pr)
+        love.graphics.setColor(TREASURE_ARROW)
+        love.graphics.setLineWidth(3); love.graphics.circle("line", tx, ty, pr)
+        love.graphics.setLineWidth(1)
+    end
+
+    -- the arrow, bobbing above the boat
+    local hx, hy = bx, by - 84 + math.sin(t * 3) * 6
+    local s = (1 + 0.07 * math.sin(t * 5)) * 1.35
+    love.graphics.push(); love.graphics.translate(hx, hy); love.graphics.rotate(ang); love.graphics.scale(s, s)
+    local arrow = { 30, 0, 12, -17, 12, -7, -26, -7, -26, 7, 12, 7, 12, 17 }
+    love.graphics.setColor(0, 0, 0, 0.28)
+    love.graphics.push(); love.graphics.translate(3, 4); love.graphics.polygon("fill", arrow); love.graphics.pop()
+    love.graphics.setColor(TREASURE_ARROW); love.graphics.polygon("fill", arrow)
+    love.graphics.setColor(0.10, 0.06, 0.03); love.graphics.setLineWidth(5); love.graphics.polygon("line", arrow)
     love.graphics.setLineWidth(1)
     love.graphics.pop()
     love.graphics.setColor(1, 1, 1)
@@ -862,6 +1302,7 @@ function World:drawWorldSorted()
     for vi = 1, #vis do entry(vis[vi].depth, "object", vis[vi]) end
     entry(Iso.depth(self.boat.x, self.boat.y), "boat", nil)
     if self.pirate then entry(Iso.depth(self.pirate.x, self.pirate.y), "pirate", nil) end
+    if self.racer then entry(Iso.depth(self.racer.x, self.racer.y), "racer", nil) end
     if self.shark and self.shark.dive < 0.95 then
         entry(Iso.depth(self.shark.x, self.shark.y), "shark", nil)
     end
@@ -872,6 +1313,7 @@ function World:drawWorldSorted()
         if it.kind == "object" then Objects.draw(it.obj)
         elseif it.kind == "boat" then self.boat:draw()
         elseif it.kind == "pirate" then self.pirate:draw()
+        elseif it.kind == "racer" then self.racer:draw()
         elseif it.kind == "shark" then self.shark:draw()
         elseif it.kind == "dest" then self:drawDestinationMarker() end
     end
@@ -881,6 +1323,7 @@ function World:drawWorldSorted()
     if self.game:owns("cannon") then self.boat:drawCannonBalls() end
     self:drawSplashes()
     self:drawEaten()
+    self:drawTreasures()     -- chests on sandbanks + win bursts (camera-attached)
     love.graphics.setColor(1, 1, 1)
 end
 
@@ -921,9 +1364,14 @@ end
 -- While docked, all input goes to the docking screen. Docking itself is
 -- automatic (sail up to a port and the screen pops), so there's no load key.
 function World:keypressed(key)
+    if self.winScreen then self.winScreen:keypressed(key); return end
+    if self.mapReveal then self.mapReveal:keypressed(key); return end
+    if self.album then self.album:keypressed(key); return end
     if self.dock then self.dock:keypressed(key); return end
     if key == "c" then
         self.camera:centerOn(self.boat.x, self.boat.y)  -- recenter on the boat
+    elseif key == "b" then
+        self:openAlbum()                                -- open the treasure album
     -- DEV-ONLY playtest keys (remove before shipping):
     --   G = +50 gold (also makes a pirate eligible to spawn)
     --   P = summon a pirate in close, right now, to test the cannon fight
@@ -932,6 +1380,15 @@ function World:keypressed(key)
         self:showToast("+50 gull (dev)")
     elseif key == "p" then
         self:devSpawnPirateClose()
+    elseif key == "k" then
+        for _, t in ipairs(self.treasures) do      -- DEV: reveal every treasure map
+            if not t.found and not self.mapped[t.id] then
+                self.mapped[t.id] = true
+                table.insert(self.game.state.treasuresMapped, t.id)
+            end
+        end
+        self.game:save()
+        self:showToast("Alle skattekart (dev)")
     end
 end
 
@@ -959,8 +1416,21 @@ function World:devSpawnPirateClose()
 end
 
 function World:mousepressed(x, y, button)
+    if self.winScreen then self.winScreen:mousepressed(x, y, button); return end
+    if self.mapReveal then self.mapReveal:mousepressed(x, y, button); return end
+    if self.album then self.album:mousepressed(x, y, button); return end
     if self.dock then self.dock:mousepressed(x, y, button); return end
     if button == 1 then
+        local mb = self._musicBtnRect      -- tap the speaker to toggle music/sound
+        if mb and x >= mb.x and x <= mb.x + mb.w and y >= mb.y and y <= mb.y + mb.h then
+            config.AUDIO_ON = not config.AUDIO_ON
+            Assets.refreshAudio()
+            return
+        end
+        local r = self._skatterRect       -- clicking the "Skatter" bar opens the album
+        if r and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
+            self:openAlbum(); return
+        end
         if self.latching then return end   -- being pulled into the berth; ignore clicks
         local wx, wy = self.camera:screenToWorld(x, y)
         self.boat:setDestination(wx, wy)
@@ -970,14 +1440,14 @@ function World:mousepressed(x, y, button)
 end
 
 function World:mousereleased(x, y, button)
-    if self.dock then return end
-    if button == 2 then
-        self.panning = false
-    end
+    -- Always end panning on the right-button release, even if a modal is up --
+    -- otherwise a release swallowed while a screen is open leaves the map "stuck"
+    -- in drag mode after it closes.
+    if button == 2 then self.panning = false end
 end
 
 function World:mousemoved(x, y, dx, dy)
-    if self.dock then return end
+    if self.winScreen or self.mapReveal or self.album or self.dock then return end
     if self.panning then self.camera:drag(dx, dy) end
 end
 

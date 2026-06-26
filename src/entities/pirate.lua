@@ -44,12 +44,40 @@ function Pirate:flee()
     self.state = "retreat"
 end
 
-function Pirate:update(dt, boat, terrain, onHit)
-    local dx, dy = boat.x - self.x, boat.y - self.y
-    local dist = math.sqrt(dx * dx + dy * dy)
+-- Is the water clear for `look` units along `ang`? (a steering "whisker")
+function Pirate:clearAhead(terrain, ang, look)
+    for d = 70, look, 70 do
+        if not terrain:isWater(self.x + math.cos(ang) * d, self.y + math.sin(ang) * d) then
+            return false
+        end
+    end
+    return true
+end
 
-    -- steer toward the boat (chase) or away from it (retreat)
-    local targetAng = (self.state == "retreat") and math.atan2(-dy, -dx) or math.atan2(dy, dx)
+-- Pick a heading that goes toward `baseAng` but steers AROUND land: if straight
+-- ahead is blocked, fan out to the smallest left/right turn that's clear, so the
+-- pirate rounds an island instead of grinding into its coast.
+function Pirate:steerAround(terrain, baseAng)
+    local look = 230
+    if self:clearAhead(terrain, baseAng, look) then return baseAng end
+    for _, off in ipairs({ 0.5, -0.5, 0.9, -0.9, 1.4, -1.4, 1.9, -1.9, 2.5, -2.5 }) do
+        if self:clearAhead(terrain, baseAng + off, look) then return baseAng + off end
+    end
+    return baseAng    -- boxed in: hold course (the move step nudges it off the rock)
+end
+
+function Pirate:update(dt, boat, terrain, onHit)
+    -- A "racer" (self.goal set) makes for a fixed point (a treasure), ignoring the
+    -- boat; otherwise it chases the boat. A retreating pirate always flees the boat.
+    local racing = self.goal and self.state ~= "retreat"
+    local aimX = racing and self.goal.x or boat.x
+    local aimY = racing and self.goal.y or boat.y
+    local sdx, sdy = aimX - self.x, aimY - self.y
+    local dist = math.sqrt((boat.x - self.x) ^ 2 + (boat.y - self.y) ^ 2)   -- to the boat
+
+    -- steer toward the aim point (chase/race) or away (retreat), around islands
+    local baseAng   = (self.state == "retreat") and math.atan2(-sdy, -sdx) or math.atan2(sdy, sdx)
+    local targetAng = self:steerAround(terrain, baseAng)
     local diff = angleDiff(self.angle, targetAng)
     self.angle = self.angle + math.max(-1, math.min(1, diff * 2)) * self.turnRate * dt
 
@@ -69,9 +97,9 @@ function Pirate:update(dt, boat, terrain, onHit)
     self.x = math.max(20, math.min(config.WORLD_WIDTH - 20, self.x))
     self.y = math.max(20, math.min(config.WORLD_HEIGHT - 20, self.y))
 
-    -- cannon fire (only while chasing and within range)
+    -- cannon fire (an attacking chaser only -- never a racer, it just wants the chest)
     self.muzzle = math.max(0, self.muzzle - dt)
-    if self.state == "chase" then
+    if self.state == "chase" and not self.goal then
         self.fireT = self.fireT - dt
         if self.fireT <= 0 and dist < P.FIRE_RANGE then
             self.fireT = P.FIRE_INTERVAL
@@ -95,12 +123,14 @@ function Pirate:update(dt, boat, terrain, onHit)
         end
     end
 
-    -- losing interest / vanishing
-    if self.state == "chase" then
+    -- Lifecycle. A racer is managed by the world (it removes it once the race is
+    -- decided), so it never gives up on its own. An ambient chaser gives up if you
+    -- stay far away; a retreating pirate vanishes once well clear of the boat.
+    if self.state == "retreat" then
+        if dist > P.DESPAWN_DIST then self.dead = true end
+    elseif not self.goal then
         if dist > P.GIVEUP_DIST then self.farT = self.farT + dt else self.farT = 0 end
         if self.farT > P.GIVEUP_TIME then self:flee() end
-    elseif dist > P.DESPAWN_DIST then
-        self.dead = true
     end
 end
 

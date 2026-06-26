@@ -83,6 +83,10 @@ config.EDGE_SCROLL_SPEED  = 950 -- scroll speed (screen px / second)
 -- Edge-scrolling stops once the boat would leave the central band, so the kid
 -- can't lose it off-screen. Max boat offset from centre, as a screen fraction.
 config.EDGE_SCROLL_KEEP   = 0.34
+-- Follow camera: the boat sailing toward a screen edge pans the map to keep it in
+-- the central band (touch / iPad friendly). It still leaves room to look around
+-- (mouse edge / drag) within that band; press C to recentre.
+config.FOLLOW_CAMERA      = true
 
 -- Gameplay feel — kept gentle on purpose (see CLAUDE.md "child-friendly").
 config.PICKUP_RADIUS  = 95    -- docking distance, from the dock point in the water
@@ -151,6 +155,20 @@ config.CANNON = {
     SCARE_HITS    = 3,     -- hits needed to drive the pirate off (so it really chases
                            -- + shoots you first; 1 would scare it away too quickly)
 }
+
+-- Treasure hunt: a few chests rest on sandbanks (shallow water) off the coasts.
+-- Harbourmasters hand out the maps on deliveries; sail up to the X and the chest
+-- is yours -- no cannon needed. But a pirate RACES you to it: get there first and
+-- it's yours; dawdle and the (slightly slower) pirate grabs it and you try again.
+config.TREASURE = {
+    COUNT        = 4,    -- how many chests (placed off the 4 biggest islands)
+    MAP_CHANCE   = 0.5,  -- chance a delivery hands you a map (first one guaranteed)
+    REACH        = 140,  -- sail this close to the X to grab the chest
+    GOLD         = 40,   -- gold reward for a chest
+    RACE_TRIGGER = 1600, -- a pirate joins the race once you're this close to the chest
+}
+-- One collectible per chest, in placement order (sticker for the album).
+config.TREASURE_GOODS = { "shell", "starfish", "gem", "pearl" }
 
 -- Crew + passengers eat the food you've stocked as you sail: every EAT_DISTANCE
 -- ground-units travelled, one food unit aboard is eaten (longer voyage = more

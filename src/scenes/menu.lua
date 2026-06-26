@@ -649,12 +649,28 @@ function Menu:draw()
     -- footer hint
     love.graphics.setFont(self.game.fonts.small)
     love.graphics.setColor(WOOD.text)
-    local hint = "Trykk ENTER eller klikk for å starte   •   F11 = fullskjerm   •   M = lyd av/på"
+    local hint = "Trykk ENTER eller klikk for å starte   •   F11 = fullskjerm"
     love.graphics.print(hint, sw / 2 - self.game.fonts.small:getWidth(hint) / 2, sh * 0.93)
 
     self:drawArtist(sw, sh)   -- Finn-Erik, the game's artist, in the corner
 
+    -- TEMPORARY preview button (see previewBtnRect)
+    do
+        local bx, by, bw, bh, label = self:previewBtnRect()
+        local hover = self:pointInPreview(love.mouse.getPosition())
+        Retro.bevel(bx, by, bw, bh, hover and WOOD.hi or WOOD.face, WOOD.hi, WOOD.lo, 3, true)
+        love.graphics.setFont(self.game.fonts.small)
+        love.graphics.setColor(WOOD.text)
+        love.graphics.print(label, bx + (bw - self.game.fonts.small:getWidth(label)) / 2,
+            by + (bh - self.game.fonts.small:getHeight()) / 2)
+    end
+
     love.graphics.setColor(1, 1, 1)
+end
+
+function Menu:pointInPreview(mx, my)
+    local bx, by, bw, bh = self:previewBtnRect()
+    return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
 end
 
 -- Credit my boy Finn-Erik (the artist) peeking up from the bottom-right corner.
@@ -740,6 +756,17 @@ function Menu:pointInButton(mx, my)
     return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
 end
 
+-- TEMPORARY: a tiny dev button (bottom-left) that jumps straight to the all-found
+-- finale, so the win screen can be previewed without playing through. Remove this
+-- (and its draw + click handling + World:load's game.previewWin hook) later.
+function Menu:previewBtnRect()
+    local sh = love.graphics.getHeight()
+    local f  = self.game.fonts.small
+    local label = "Se finale (TEST)"
+    local pad = 10
+    return 16, sh - (f:getHeight() + pad) - 14, f:getWidth(label) + pad * 2, f:getHeight() + pad, label
+end
+
 -- Restore volume (it may have been ducked under the voice) and go via the
 -- loading screen so the world build happens behind a "Laster…".
 function Menu:start()
@@ -754,7 +781,11 @@ function Menu:keypressed(key)
 end
 
 function Menu:mousepressed(x, y, button)
-    if button == 1 and self:pointInButton(x, y) then
+    if button ~= 1 then return end
+    if self:pointInPreview(x, y) then          -- TEMPORARY: jump to the finale
+        self.game.previewWin = true
+        self.game:setScene("loading")
+    elseif self:pointInButton(x, y) then
         self:start()
     end
 end

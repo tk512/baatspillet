@@ -158,6 +158,34 @@ local function makeSounds()
         return (prev * 2.0 + boom) * amp
     end), "static")
 
+    -- Coin clink: a short bright metallic "tink" (a few high partials + a tick),
+    -- played with random pitch as coins land so a shower reads as "clirr klank".
+    Assets.sounds.coin_clink = love.audio.newSource(render(0.13, function(t)
+        local e    = env(t, 0.13, 0.001, 0.12)
+        local body = math.sin(TAU * 2350 * t) + 0.55 * math.sin(TAU * 3160 * t)
+                   + 0.35 * math.sin(TAU * 5400 * t)
+        local tick = (t < 0.008) and rnd() * 0.6 or 0
+        return (body * 0.22 + tick) * e
+    end), "static")
+
+    -- Firework: a quick rising launch whistle, then a boom and a tail of random
+    -- crackle/pops -- played repeatedly (random pitch) for the all-found finale.
+    Assets.sounds.firework = love.audio.newSource(render(1.0, function(t)
+        local whistle = 0
+        if t < 0.25 then
+            local f = 600 + 1500 * (t / 0.25)
+            whistle = math.sin(TAU * f * t) * 0.16 * (t / 0.25)
+        end
+        local bt = t - 0.25
+        local boom, crackle = 0, 0
+        if bt > 0 then
+            boom = (rnd() * 0.7 + math.sin(TAU * (95 - 65 * bt) * bt) * 0.5) * math.max(0, 1 - bt / 0.5)
+            local pop = (rnd() > 0.86) and rnd() or 0
+            crackle = pop * math.max(0, 1 - bt / 0.8) * 0.6
+        end
+        return (whistle + boom * 0.7 + crackle) * env(t, 1.0, 0.001, 0.2)
+    end), "static")
+
     -- "Casting off": three beeps (assets/sfx/leave.ogg overrides this).
     Assets.sounds.leave = love.audio.newSource(render(0.55, function(t)
         for i = 0, 2 do
@@ -389,6 +417,18 @@ function Assets.playNamedVoice(name)
     src:setVolume(1.0)
     src:play()
     return true
+end
+
+-- Play a one-shot effect at a given pitch (1 = normal). Used for the coin-shower
+-- clinks, where random pitches turn a stream of plays into "clirr klank klirr".
+function Assets.playPitched(name, vol, pitch)
+    if not config.AUDIO_ON then return end
+    local src = Assets.sounds[name]
+    if not src then return end
+    local s = src:clone()
+    s:setVolume(vol or config.SFX_VOLUME)
+    s:setPitch(pitch or 1)
+    s:play()
 end
 
 -- Play a one-shot effect. Clones the source so overlapping plays work.

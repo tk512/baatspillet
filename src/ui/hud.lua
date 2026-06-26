@@ -3,21 +3,16 @@
 -- mission, and short-lived toast messages. Laid out from measured text widths
 -- so labels never collide whatever the font size or town-name length.
 
-local config = require("src.config")
-local Retro  = require("src.ui.retro")
-local Icons  = require("src.ui.icons")
+local config     = require("src.config")
+local Retro      = require("src.ui.retro")
+local Icons      = require("src.ui.icons")
+local HarborMark = require("src.ui.harbormark")
 
 local HUD = {}
 local WOOD = Retro.WOOD
 
--- Wooden plaque (raised outer bevel + sunken inner well). Returns the inner
--- content rect (x, y, w, h).
-local function plaque(x, y, w, h, t)
-    Retro.bevel(x, y, w, h, WOOD.face, WOOD.hi, WOOD.lo, t, true)
-    Retro.bevel(x + t, y + t, w - 2 * t, h - 2 * t, WOOD.deep, WOOD.hi, WOOD.lo,
-        math.max(1, math.floor(t * 0.6)), false)
-    return x + t * 2, y + t * 2, w - t * 4, h - t * 4
-end
+-- Wooden plaque (raised outer bevel + sunken inner well); shared via Retro.
+local plaque = Retro.plaque
 
 local function coin(x, y, r)
     local c = config.colors
@@ -109,6 +104,16 @@ function HUD.draw(world)
         end
     end
 
+    -- Treasure tally on the side, under the gold plaque, once the hunt is in play
+    -- (cannon owned or a chest already found): filled / empty slots, like an album.
+    if world.treasures and #world.treasures > 0 then
+        local anyFound = false
+        for _, tr in ipairs(world.treasures) do if tr.found then anyFound = true; break end end
+        if world.game:owns("cannon") or anyFound then
+            HUD.drawTreasureBar(world, 16, 16 + ph + math.floor(gap * 1.5), t)
+        end
+    end
+
     -- Top-centre: current mission banner
     if world.boat.cargo[1] then
         HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
@@ -116,7 +121,7 @@ function HUD.draw(world)
 
     -- Bottom-left: controls hint
     love.graphics.setFont(fonts.small)
-    local hint = "Klikk = seil dit   •   Mus mot kanten = flytt kart   •   C = midtstill   •   ESC = meny"
+    local hint = "Klikk = seil dit   •   Mus mot kanten = flytt kart   •   ESC = meny"
     love.graphics.setColor(0, 0, 0, 0.45)
     love.graphics.print(hint, 17, sh - 25)
     love.graphics.setColor(c.text[1], c.text[2], c.text[3], 0.85)
@@ -129,13 +134,83 @@ function HUD.draw(world)
     love.graphics.setColor(1, 1, 1)
 end
 
+-- A speaker glyph (cone + waves when on, a red slash when muted), centred at
+-- (cx, cy), about `s` across.
+local function speaker(cx, cy, s, on)
+    love.graphics.setColor(WOOD.text)
+    love.graphics.rectangle("fill", cx - s * 0.55, cy - s * 0.16, s * 0.22, s * 0.32)   -- magnet box
+    love.graphics.polygon("fill", cx - s * 0.34, cy - s * 0.16, cx - s * 0.34, cy + s * 0.16,
+        cx - s * 0.02, cy + s * 0.42, cx - s * 0.02, cy - s * 0.42)                       -- cone
+    if on then
+        love.graphics.setColor(WOOD.accent)
+        love.graphics.setLineWidth(math.max(2, s * 0.08))
+        love.graphics.arc("line", "open", cx + s * 0.02, cy, s * 0.30, -0.7, 0.7)
+        love.graphics.arc("line", "open", cx + s * 0.02, cy, s * 0.50, -0.7, 0.7)
+        love.graphics.setLineWidth(1)
+    else
+        love.graphics.setColor(0.86, 0.30, 0.25)
+        love.graphics.setLineWidth(math.max(2, s * 0.10))
+        love.graphics.line(cx + s * 0.06, cy - s * 0.42, cx + s * 0.55, cy + s * 0.42)
+        love.graphics.setLineWidth(1)
+    end
+end
+
+-- Tappable music on/off button (bottom-right): a wooden key with the speaker
+-- glyph. Touch-friendly so no keyboard is needed (iPad). Stores its rect on the
+-- world for World:mousepressed to hit-test.
+function HUD.drawMusicButton(world)
+    local sw, sh = love.graphics.getDimensions()
+    local size = math.max(40, math.floor(sh * 0.075))
+    local x, y = sw - size - 16, sh - size - 16
+    local t = math.max(2, math.floor(size * 0.10))
+    Retro.bevel(x, y, size, size, WOOD.face, WOOD.hi, WOOD.lo, t, true)
+    speaker(x + size / 2, y + size * 0.46, size * 0.42, config.AUDIO_ON)
+    world._musicBtnRect = { x = x, y = y, w = size, h = size }
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- Side inventory of treasure chests: one slot per chest, the collectible sticker
+-- once dug up, an empty sunken slot until then. A quick at-a-glance "how many
+-- have I found" without opening the full album.
+function HUD.drawTreasureBar(world, x, y, t)
+    local fonts = world.game.fonts
+    local smH   = fonts.small:getHeight()
+    local pad   = math.max(6, math.floor(smH * 0.5))
+    local slot  = smH * 1.5
+    local gapi  = math.floor(slot * 0.22)
+    local list  = world.treasures
+    local n     = #list
+
+    local rowW     = n * slot + (n - 1) * gapi
+    local contentW = math.max(rowW, fonts.small:getWidth("Skatter"))
+    local pw = contentW + (pad + t * 2) * 2
+    local ph = (pad + t * 2) * 2 + smH + gapi + slot
+    local ix, iy = plaque(x, y, pw, ph, t)
+    world._skatterRect = { x = x, y = y, w = pw, h = ph }   -- click target -> album
+
+    love.graphics.setFont(fonts.small)
+    love.graphics.setColor(WOOD.accent)
+    love.graphics.print("Skatter", ix + pad, iy + pad)
+
+    local sy = iy + pad + smH + gapi
+    local st = math.max(1, math.floor(t * 0.5))
+    for k, tr in ipairs(list) do
+        local sx = ix + pad + (k - 1) * (slot + gapi)
+        Retro.bevel(sx, sy, slot, slot, WOOD.deep, WOOD.hi, WOOD.lo, st, false)  -- sunken slot
+        if tr.found then
+            Icons.draw("chest", sx + slot / 2, sy + slot / 2, slot * 0.86)       -- the chest image
+        end
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
 -- Top-centre banner: "Oppdrag <icon>×N → ▮ <BY>", destination in its town colour.
 function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     local m = world.boat.cargo[1]
     local pad  = math.max(8, math.floor(smH * 0.7))
     local gap  = math.floor(nmH * 0.55)
     local s    = nmH * 0.9                                 -- icon size
-    local flag = nmH * 0.8                                 -- flag swatch
+    local markW, markH = nmH * 1.05, nmH * 0.95            -- harbour badge (Bryggen emblem)
     local dest = m.toName
     local countStr = "×" .. m.count
 
@@ -144,7 +219,7 @@ function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     local wArrow = fonts.normal:getWidth("→")
     local wDest  = fonts.normal:getWidth(dest)
     local content = wLabel + gap + s + gap * 0.4 + wCount + gap + wArrow + gap
-                    + flag + gap * 0.5 + wDest
+                    + markW + gap * 0.5 + wDest
 
     local ph = nmH + (pad + t * 2)
     local pw = content + (pad + t * 2) * 2
@@ -168,9 +243,10 @@ function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     -- arrow
     love.graphics.print("→", cx, ty(nmH)); cx = cx + wArrow + gap
 
-    -- destination flag + name in town colour
+    -- destination harbour badge + name in town colour
+    HarborMark.draw(cx, cy - markH / 2, markW, markH, m.color or WOOD.text)
+    cx = cx + markW + gap * 0.5
     love.graphics.setColor(m.color or WOOD.text)
-    love.graphics.rectangle("fill", cx, cy - flag / 2, flag, flag); cx = cx + flag + gap * 0.5
     love.graphics.print(dest, cx, ty(nmH))
 
     love.graphics.setColor(1, 1, 1)
