@@ -141,6 +141,15 @@ local function makeSounds()
         return 0.35 * math.sin(TAU * 120 * t) * env(t, 0.15, 0.002, 0.1)
     end), "static")
 
+    -- Comical "doooink!" for clonking into a skerry: a wobbling tone that slides
+    -- down in pitch (override with a recorded "Oops!" at assets/sfx/doink.ogg).
+    Assets.sounds.doink = love.audio.newSource(render(0.4, function(t)
+        local f = 420 - 250 * (t / 0.4)                 -- pitch slides down
+        local wob = 1 + 0.07 * math.sin(TAU * 16 * t)   -- boingy wobble
+        local s = math.sin(TAU * f * wob * t)
+        return 0.5 * s * env(t, 0.4, 0.004, 0.16)
+    end), "static")
+
     -- Wave crash: swelling filtered noise that breaks and recedes, with a low boom.
     local prev = 0
     local seed = 99173
@@ -350,7 +359,7 @@ end
 -- Drop a real recording at assets/sfx/<name>.<ext> to override the synth.
 -- Any LÖVE-supported format works (ogg/mp3/flac/wav), tried in order.
 local function loadSfxFiles()
-    local names = { "leave", "cannon", "cannon_hit", "pirate_warn", "chopper" }
+    local names = { "leave", "cannon", "cannon_hit", "pirate_warn", "chopper", "doink" }
     local exts  = { ".ogg", ".mp3", ".flac", ".wav" }
     for _, name in ipairs(names) do
         for _, ext in ipairs(exts) do

@@ -649,7 +649,7 @@ function Menu:draw()
     -- footer hint
     love.graphics.setFont(self.game.fonts.small)
     love.graphics.setColor(WOOD.text)
-    local hint = "Trykk ENTER eller klikk for å starte   •   F11 = fullskjerm"
+    local hint = "Trykk for å starte"
     love.graphics.print(hint, sw / 2 - self.game.fonts.small:getWidth(hint) / 2, sh * 0.93)
 
     self:drawArtist(sw, sh)   -- Finn-Erik, the game's artist, in the corner
@@ -665,11 +665,36 @@ function Menu:draw()
             by + (bh - self.game.fonts.small:getHeight()) / 2)
     end
 
+    -- Avslutt (quit) button, bottom-right
+    do
+        local bx, by, bw, bh, label = self:quitBtnRect()
+        local hover = self:pointInQuit(love.mouse.getPosition())
+        Retro.bevel(bx, by, bw, bh, hover and WOOD.hi or WOOD.face, WOOD.hi, WOOD.lo, 3, true)
+        love.graphics.setFont(self.game.fonts.small)
+        love.graphics.setColor(WOOD.text)
+        love.graphics.print(label, bx + (bw - self.game.fonts.small:getWidth(label)) / 2,
+            by + (bh - self.game.fonts.small:getHeight()) / 2)
+    end
+
     love.graphics.setColor(1, 1, 1)
 end
 
 function Menu:pointInPreview(mx, my)
     local bx, by, bw, bh = self:previewBtnRect()
+    return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
+end
+
+-- "Avslutt" (quit) button in the bottom-right corner of the title screen.
+function Menu:quitBtnRect()
+    local sw, sh = love.graphics.getDimensions()
+    local f = self.game.fonts.small
+    local label, pad = "Avslutt", 10
+    local w, h = f:getWidth(label) + pad * 2, f:getHeight() + pad
+    return sw - w - 16, sh - h - 14, w, h, label
+end
+
+function Menu:pointInQuit(mx, my)
+    local bx, by, bw, bh = self:quitBtnRect()
     return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
 end
 
@@ -785,8 +810,10 @@ function Menu:mousepressed(x, y, button)
     if self:pointInPreview(x, y) then          -- TEMPORARY: jump to the finale
         self.game.previewWin = true
         self.game:setScene("loading")
-    elseif self:pointInButton(x, y) then
-        self:start()
+    elseif self:pointInQuit(x, y) then         -- quit the game
+        love.event.quit()
+    else
+        self:start()                            -- tap anywhere else to set sail (iPad-friendly)
     end
 end
 

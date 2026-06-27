@@ -27,8 +27,43 @@ local MapReveal    = require("src.ui.mapreveal")
 local WinScreen    = require("src.ui.winscreen")
 local PortScreen   = require("src.ui.portscreen")
 local Icons        = require("src.ui.icons")
+local ShipInfo     = require("src.ui.shipinfo")
+local PauseMenu    = require("src.ui.pausemenu")
 
 local World = {}
+
+-- Spread the town houses across the available OpenGFX cottage sprites, chosen
+-- deterministically from the tile coords so a given map always looks the same
+-- (worldgen is seeded; F6 must reproduce it). Missing art -> Objects.draw uses
+-- the code-drawn building fallback.
+local HOUSE_SPRITES = {
+    "props/houses/house_1.png", "props/houses/house_2.png", "props/houses/house_3.png",
+    "props/houses/house_4.png", "props/houses/house_5.png", "props/houses/house_6.png",
+    "props/houses/house_7.png",
+}
+local function houseSprite(i, j)
+    return HOUSE_SPRITES[(i * 7 + j * 13) % #HOUSE_SPRITES + 1]
+end
+
+-- Houses out in the countryside (away from the towns) bring back the original
+-- brick house (props/house.png) -- weighted so it's the common sight -- mixed with
+-- a few cottages for variety. Deterministic per tile.
+local COUNTRY_HOUSES = {
+    "props/house.png", "props/house.png", "props/house.png", "props/house.png",
+    "props/houses/house_1.png", "props/houses/house_2.png", "props/houses/house_7.png",
+}
+local function countryHouseSprite(i, j)
+    return COUNTRY_HOUSES[(i * 7 + j * 13) % #COUNTRY_HOUSES + 1]
+end
+
+-- Apartment blocks for the dense core of bigger towns (deterministic per tile).
+local BLOCK_SPRITES = {
+    "props/blocks/block_1.png", "props/blocks/block_2.png",
+    "props/blocks/block_3.png", "props/blocks/block_4.png",
+}
+local function blockSprite(i, j)
+    return BLOCK_SPRITES[(i * 5 + j * 11) % #BLOCK_SPRITES + 1]
+end
 
 function World:load(game)
     self.game    = game
@@ -66,13 +101,13 @@ function World:load(game)
             -- above the treeline: bare rock/snow, no forests or houses
         elseif p.kind == "forest" then
             self.objects:add({
-                tx = p.tx, ty = p.ty, z = pz,
+                tx = p.tx, ty = p.ty, z = pz, kind = "forest",
                 draw = function(_, g) Objects.drawForest(g, p.salt) end,
             })
-        elseif p.kind == "house" then
+        elseif p.kind == "house" and self:solidLand(p.tx, p.ty) then
             self.objects:add({
-                tx = p.tx, ty = p.ty, z = pz,
-                sprite = "props/house.png",
+                tx = p.tx, ty = p.ty, z = pz, kind = "house",
+                sprite = countryHouseSprite(p.tx, p.ty),
                 draw = function(_, g)  -- fallback if the PNG is missing
                     Objects.building(g.cx, g.cy, 16, 16, g.z, 22, 14,
                         config.colors.building_wall, config.colors.building_dk)
@@ -84,9 +119,15 @@ function World:load(game)
     for _, port in ipairs(self.ports) do
         self:scatterCity(port)
     end
+    self:spawnLighthouses()    -- a lighthouse on the seaward coast of each town
+    self:spawnPowerPlant()     -- the (in)famous Klokkarvik power plant
 
-    self:spawnAmbientShips()
-    self:scatterAmbientBoats()
+    self.ambientObstacles = {}  -- skerry bump circles (static)
+    self.ships = {}             -- all ambient ships (idle + moving), solid + clickable
+    self.shipPopup = nil        -- MarineTraffic-style info card, when a ship is tapped
+    self:buildShipPool()        -- choose photo billboards if any exist, else OpenGFX sprites
+    self:scatterAmbientBoats(26)
+    self:scatterSkerries(14)    -- rocky outcrops dotting the open sea
     self:spawnVikingSky()      -- the real cruise ship at anchor outside Bergen
 
     self.cargoSystem = CargoSystem.new(self.ports)
@@ -111,6 +152,7 @@ function World:load(game)
     self.album       = nil    -- the album overlay, when open
     self.mapReveal   = nil    -- the "Finn skatten!" reveal card, when up
     self.winScreen   = nil    -- the grand all-found finale, when up
+    self.pause       = nil    -- the pause/menu overlay, when up
     self.racer       = nil    -- a pirate racing you to the active chest, when one's out
     self.treasureFX  = {}      -- chest-open coin bursts
     -- The "Finn skatten!" card appears only when a map is freshly granted on a
@@ -153,18 +195,14 @@ end
 -- non-pad tiles, nearest-first, so they cluster around the harbour.
 function World:scatterCity(port)
     local spec = config.CITY_SIZES[port.def.size or "small"] or config.CITY_SIZES.small
-    local T = config.TILE
     local ti, tj, R = port.tx, port.ty, spec.spread
     local cands = {}
     for di = -R, R do
         for dj = -R, R do
             local i, j = ti + di, tj + dj
-            if i >= 1 and j >= 1 and i <= self.terrain.nx and j <= self.terrain.ny then
-                local pad = self.terrain.buildMask[i] and self.terrain.buildMask[i][j]
-                local gx, gy = (i - 0.5) * T, (j - 0.5) * T
-                if not pad and not self.terrain:isWater(gx, gy) then
-                    cands[#cands + 1] = { i = i, j = j, d = di * di + dj * dj }
-                end
+            -- solid land only, so town buildings never hang off the shoreline
+            if self:solidLand(i, j) then
+                cands[#cands + 1] = { i = i, j = j, d = di * di + dj * dj }
             end
         end
     end
@@ -178,8 +216,10 @@ function World:scatterCity(port)
     local fishing = port.def.produces and port.def.produces.mode == "cargo"
     local marks = {}
     if size ~= "tiny" then marks[#marks + 1] = { sprite = "props/church.png", fn = Objects.drawChurch } end
+    if size ~= "tiny" then marks[#marks + 1] = { sprite = "props/park.png", fn = Objects.drawPark } end
     if big then marks[#marks + 1] = { sprite = "props/market.png", fn = Objects.drawMarket } end
     if big then marks[#marks + 1] = { sprite = "props/crane.png",  fn = Objects.drawCrane } end
+    if big then marks[#marks + 1] = { sprite = "props/fountain.png", fn = Objects.drawFountain } end
     if fishing then marks[#marks + 1] = { sprite = "props/fishracks.png", fn = Objects.drawFishRacks } end
 
     -- Place landmarks on nearby tiles (spaced a tile apart so they don't merge),
@@ -197,19 +237,133 @@ function World:scatterCity(port)
             })
         end
     end
+    -- Big towns get a dense core of apartment blocks (cands are nearest-first, so
+    -- the blocks cluster at the centre) ringed by cottages further out.
+    local blockCore = big and math.floor(spec.houses * 0.4) or 0
     local placed = 0
     for k = 1, #cands do
         if not taken[k] and placed < spec.houses then
             placed = placed + 1
             local c = cands[k]
+            local sprite = (placed <= blockCore) and blockSprite(c.i, c.j) or houseSprite(c.i, c.j)
             self.objects:add({
-                tx = c.i, ty = c.j, z = self.terrain:tileZ(c.i, c.j), sprite = "props/house.png",
+                tx = c.i, ty = c.j, z = self.terrain:tileZ(c.i, c.j), sprite = sprite,
                 draw = function(_, g)
                     Objects.building(g.cx, g.cy, 16, 16, g.z, 22, 14,
                         config.colors.building_wall, config.colors.building_dk)
                 end,
             })
         end
+    end
+end
+
+-- A land tile that touches water on at least one side (so a lighthouse sits right
+-- on the shore, not inland).
+function World:tileIsCoast(i, j)
+    local T = config.TILE
+    local function water(a, b) return self.terrain:isWater((a - 0.5) * T, (b - 0.5) * T) end
+    if water(i, j) then return false end
+    return water(i + 1, j) or water(i - 1, j) or water(i, j + 1) or water(i, j - 1)
+end
+
+-- One lighthouse per town, on the most-seaward coastal tile near the harbour, so
+-- it stands at the river/fjord mouth greeting boats. Placeholder-first: missing
+-- art falls back to Objects.drawLighthouse.
+function World:spawnLighthouses()
+    local R = 9
+    for _, port in ipairs(self.ports) do
+        local best, bestScore
+        for di = -R, R do
+            for dj = -R, R do
+                local i, j = port.tx + di, port.ty + dj
+                if self:landTileFree(i, j) and self:tileIsCoast(i, j) then
+                    -- count land neighbours: more = more solidly attached (not a thin
+                    -- spit), so the lighthouse + its keeper's hut sit on land, not water.
+                    local landN = 0
+                    if self:isLandTile(i + 1, j) then landN = landN + 1 end
+                    if self:isLandTile(i - 1, j) then landN = landN + 1 end
+                    if self:isLandTile(i, j + 1) then landN = landN + 1 end
+                    if self:isLandTile(i, j - 1) then landN = landN + 1 end
+                    -- solidness first, then prefer seaward
+                    local score = landN * 100 + (di * port.seaDx + dj * port.seaDy)
+                    if not bestScore or score > bestScore then
+                        best, bestScore = { i, j }, score
+                    end
+                end
+            end
+        end
+        if best then
+            self.objects:add({
+                tx = best[1], ty = best[2], z = self.terrain:tileZ(best[1], best[2]),
+                sprite = "props/lighthouse.png",
+                draw = function(_, g) Objects.drawLighthouse(g) end,
+            })
+        end
+    end
+end
+
+-- A buildable land tile (in bounds, dry, not a harbour pad).
+function World:landTileFree(i, j)
+    if i < 1 or j < 1 or i > self.terrain.nx or j > self.terrain.ny then return false end
+    if self.terrain.buildMask[i] and self.terrain.buildMask[i][j] then return false end
+    local T = config.TILE
+    return not self.terrain:isWater((i - 0.5) * T, (j - 0.5) * T)
+end
+
+-- Any land tile (in bounds, dry -- a pad counts as land).
+function World:isLandTile(i, j)
+    if i < 1 or j < 1 or i > self.terrain.nx or j > self.terrain.ny then return false end
+    local T = config.TILE
+    return not self.terrain:isWater((i - 0.5) * T, (j - 0.5) * T)
+end
+
+-- Solid ground for a building: the tile is buildable AND its four neighbours are
+-- land, so a tile-filling building never sits at the shoreline hanging over water.
+function World:solidLand(i, j)
+    return self:landTileFree(i, j)
+        and self:isLandTile(i + 1, j) and self:isLandTile(i - 1, j)
+        and self:isLandTile(i, j + 1) and self:isLandTile(i, j - 1)
+end
+
+-- A big power plant on the land at Klokkarvik (an internal joke). Sits on a 2x2
+-- patch of dry land, preferring a spot inland from the harbour. Placeholder-first:
+-- a grey lot if the art is missing.
+function World:spawnPowerPlant()
+    if not Assets.image("props/powerplant.png") then return end
+    local port = self:portById("klokkarvik")
+    if not port then return end
+    -- Pick the most INTERIOR land tile near the port: the one with the most land in
+    -- its 3x3 neighbourhood, so the plant sits well inside the island and doesn't
+    -- hang over the water. Ties broken toward the port.
+    local R, best, bestScore = 9, nil, nil
+    for di = -R, R do
+        for dj = -R, R do
+            local i, j = port.tx + di, port.ty + dj
+            if self:landTileFree(i, j) then
+                local land = 0
+                for ni = -1, 1 do
+                    for nj = -1, 1 do
+                        if self:landTileFree(i + ni, j + nj) then land = land + 1 end
+                    end
+                end
+                local score = land * 100 - (di * di + dj * dj)
+                if not bestScore or score > bestScore then best, bestScore = { i, j }, score end
+            end
+        end
+    end
+    if best then
+        local i0, j0 = best[1], best[2]
+        -- Clear nearby trees/houses so nothing hides the plant.
+        self.objects:removeWhere(function(o)
+            return (o.kind == "forest" or o.kind == "house")
+                and o.tx >= i0 - 2 and o.tx <= i0 + 2 and o.ty >= j0 - 2 and o.ty <= j0 + 2
+        end)
+        -- Small footprint (~1 tile) so it tucks onto the little island.
+        self.objects:add({
+            tx = i0, ty = j0, w = 1, h = 1, z = self.terrain:tileZ(i0, j0),
+            sprite = "props/powerplant.png", spriteScale = 1.2, kind = "powerplant",
+            draw = function(_, g) Objects.drawLot(g, { 0.5, 0.5, 0.52 }) end,
+        })
     end
 end
 
@@ -230,43 +384,76 @@ function World:findStartWater(gx, gy)
     return gx, gy
 end
 
--- A couple of ambient ships bobbing in the sea just outside each harbor.
+-- Decide the look of ambient ships: if any photo boats (src/data/ships.lua) have
+-- their art present, the fleet is those stylized real-boat billboards; otherwise
+-- it falls back to the OpenGFX 8-direction sprite ships.
+function World:buildShipPool()
+    self.shipDefs = {}
+    for _, d in ipairs(self.game.data.ships or {}) do
+        if Assets.image("ships_photos/" .. d.photo .. ".png") then
+            self.shipDefs[#self.shipDefs + 1] = d
+        end
+    end
+    self.usePhotos = #self.shipDefs > 0
+end
+
+-- One ship's visual + metadata (a random pick from the active pool). A given boat
+-- always renders at ONE size (its def.scale, default 1) -- the same ship is never
+-- shown bigger in one place than another; variety comes from adding more boats.
+function World:pickShipLook()
+    if self.usePhotos then
+        local d = self.shipDefs[love.math.random(#self.shipDefs)]
+        return { billboard = true, img = "ships_photos/" .. d.photo .. ".png", def = d }
+    end
+    return {
+        billboard = false,
+        sprite = config.AMBIENT_SHIPS[love.math.random(#config.AMBIENT_SHIPS)],
+        col = config.SHIP_COLORS[love.math.random(#config.SHIP_COLORS)],
+        def = { name = "Skip", country = "", type = "Lasteskip" },
+    }
+end
+
+-- Register an ambient ship. opts: moving/speed/turn/turnDir, or an explicit `look`
+-- (e.g. the Viking Sky). Size is fixed per boat (look.def.scale, default 1).
+function World:addShip(gx, gy, angle, opts)
+    opts = opts or {}
+    local look = opts.look or self:pickShipLook()
+    local scale = (look.def and look.def.scale) or 1.0
+    local w = look.billboard and config.AMBIENT_PHOTO_WIDTH or config.AMBIENT_SHIP_WIDTH
+    local s = {
+        x = gx, y = gy, angle = angle, scale = scale,
+        r = w * scale * config.AMBIENT_SHIP_RADIUS_FRAC,
+        look = look,
+        moving = opts.moving or false,
+        speed = opts.speed or 0, turn = opts.turn, turnDir = opts.turnDir,
+    }
+    self.ships[#self.ships + 1] = s
+    return s
+end
+
+-- A couple of ambient ships sitting in the sea just outside each harbour.
 function World:spawnAmbientShips()
-    local T = config.TILE
-    for si, port in ipairs(self.ports) do
+    for _, port in ipairs(self.ports) do
         local gx = port.x + port.seaDx * 260
         local gy = port.y + port.seaDy * 260
         if self.terrain:isWater(gx, gy) then
-            local col = config.SHIP_COLORS[((si) % #config.SHIP_COLORS) + 1]
             local ang = math.atan2(-port.seaDx, port.seaDy)
-            local phase = si * 1.3
-            self.objects:add({
-                tx = math.floor(gx / T) + 1, ty = math.floor(gy / T) + 1, z = 0,
-                draw = function(_, g)
-                    local bob = math.sin(love.timer.getTime() * 1.2 + phase) * 2
-                    Objects.drawShip(g.cx, g.cy, ang, col, 1.0, bob)
-                end,
-            })
+            self:addShip(gx, gy, ang, { moving = false })
         end
     end
 end
 
--- The real "Viking Sky" cruise liner, lying at anchor on the open water just
--- outside Bergen. It's a photo billboard (assets/props/vikingsky.png) that holds
--- still and bobs gently on the waves -- a big landmark, several times the ferry.
--- If the art is missing the world just runs without it (placeholder-first).
+-- The real "Viking Sky" cruise liner, anchored on the open water just outside
+-- Bergen. It's now a normal (stationary) ship like the rest: flat on the water,
+-- no bob/shadow, and tappable for its info card (Viking Sky, Norge). A bit larger
+-- than the others, as the landmark. Missing art -> the world runs without it.
 function World:spawnVikingSky()
-    local img = Assets.image("props/vikingsky.png")
-    if not img then return end
-    -- The PNG is pre-baked small (~160px) so it reads as a slightly-pixelated
-    -- retro sprite; nearest filtering (Assets default) keeps it crisp, no moiré.
-
+    if not Assets.image("props/vikingsky.png") then return end
     local port = self:portById("bergen")
     if not port then return end
 
     -- Anchor it well out from the harbour and off to one side (not right on the
     -- pier): step further out + along the shore until we hit open water.
-    local T = config.TILE
     local sidex, sidey = -port.seaDy, port.seaDx      -- unit vector along the shore
     local gx, gy
     for _, d in ipairs({ 740, 860, 620, 980, 540 }) do
@@ -282,56 +469,177 @@ function World:spawnVikingSky()
     end
     if not gx then return end
 
-    local groundY = Assets.imageGroundY("props/vikingsky.png") or img:getHeight()
-    local scale   = 115 / img:getWidth()          -- on-screen length (~0.8x the ferry's 140)
-    local shW     = img:getWidth() * scale         -- for the cast shadow
-    self.objects:add({
-        tx = math.floor(gx / T) + 1, ty = math.floor(gy / T) + 1, z = 0,
-        draw = function()
-            local bob = math.sin(love.timer.getTime() * 0.6) * 4   -- gentle wave bob
-            local sx, sy = Iso.project(gx, gy, 0)
-            love.graphics.setColor(0, 0, 0, 0.16)                  -- soft shadow on the water
-            love.graphics.ellipse("fill", sx, sy + 4, shW * 0.42, shW * 0.08)
-            love.graphics.setColor(1, 1, 1)
-            love.graphics.draw(img, sx, sy + bob, 0, scale, scale, img:getWidth() / 2, groundY)
-        end,
+    self:addShip(gx, gy, 0, {
+        moving = false,
+        look = {
+            billboard = true,
+            img = "props/vikingsky.png",
+            def = { name = "Viking Sky", country = "Norge", type = "Cruiseskip", scale = 1.5 },
+        },
     })
 end
 
 -- Scatter idle boats of various sizes around the open sea, just bobbing, to
 -- make the world feel alive. Only on water tiles with water all around, so none
 -- end up jammed onto a coast.
+-- Water with clear water `m` units in all four directions: a spot a ship of that
+-- reach can sit (or sail through) without clipping a coast.
+function World:openSea(gx, gy, m)
+    return self.terrain:isWater(gx, gy)
+        and self.terrain:isWater(gx + m, gy) and self.terrain:isWater(gx - m, gy)
+        and self.terrain:isWater(gx, gy + m) and self.terrain:isWater(gx, gy - m)
+end
+
+-- Clonking into a skerry: shake the whole screen, a comical "doooink!", and a
+-- "Du traff et skjær!" toast. A short cooldown so grinding along one doesn't spam.
+function World:hitSkerry()
+    if self._skerryCd > 0 then return end
+    self._skerryCd = 1.2
+    self.camera:addShake(14)
+    Assets.playSfx("doink", 0.9)
+    self:showToast("Du traff et skjær!")
+end
+
+-- A random open-sea spot clear of the player's start AND every harbour (so a ship
+-- never sits on a port and steals the docking click). Returns nil if none found.
+function World:findShipSpot()
+    local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
+    for _ = 1, 800 do
+        local gx, gy = love.math.random() * W, love.math.random() * H
+        local sdx, sdy = gx - self.boat.x, gy - self.boat.y
+        if (sdx * sdx + sdy * sdy) > (600 * 600) and self:openSea(gx, gy, 70)
+            and not self:nearAnyPort(gx, gy, 560) then
+            return gx, gy
+        end
+    end
+end
+
+local function lookForDef(d)
+    return { billboard = true, img = "ships_photos/" .. d.photo .. ".png", def = d }
+end
+
+-- Populate the sea. With real photo boats we place exactly ONE of each (there's
+-- only one Aidaluna, one Viking Sky, etc. -- never the same ship twice); the sea
+-- fills out as more boats are added to src/data/ships.lua. Without photos we fall
+-- back to scattering `count` generic OpenGFX sprite ships (duplicates are fine).
 function World:scatterAmbientBoats(count)
+    if self.usePhotos then
+        for _, d in ipairs(self.shipDefs) do
+            local gx, gy = self:findShipSpot()
+            if gx then
+                self:addShip(gx, gy, love.math.random() * math.pi * 2,
+                    { moving = false, look = lookForDef(d) })
+            end
+        end
+        return
+    end
     count = count or 18
+    for _ = 1, count do
+        local gx, gy = self:findShipSpot()
+        if gx then self:addShip(gx, gy, love.math.random() * math.pi * 2, { moving = false }) end
+    end
+end
+
+-- Scatter rocky skerries across the open sea: little outcrops that dot the water
+-- and give the boat something to weave between. Solid (added to ambientObstacles,
+-- so the boat bumps off them), kept well clear of harbours and the start spot.
+function World:scatterSkerries(count)
+    count = count or 12
     local T = config.TILE
     local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
-    local function openWater(gx, gy)
-        return self.terrain:isWater(gx, gy)
-            and self.terrain:isWater(gx + 70, gy) and self.terrain:isWater(gx - 70, gy)
-            and self.terrain:isWater(gx, gy + 70) and self.terrain:isWater(gx, gy - 70)
-    end
     local placed, tries = 0, 0
-    while placed < count and tries < 600 do
+    while placed < count and tries < 800 do
         tries = tries + 1
         local gx, gy = love.math.random() * W, love.math.random() * H
-        -- keep them away from the player's starting spot so they don't crowd it
         local sdx, sdy = gx - self.boat.x, gy - self.boat.y
-        if (sdx * sdx + sdy * sdy) > (600 * 600) and openWater(gx, gy) then
+        if (sdx * sdx + sdy * sdy) > (500 * 500) and self:openSea(gx, gy, 90)
+            and not self:nearAnyPort(gx, gy, 600) then
             placed = placed + 1
-            local scale = 0.55 + love.math.random() * 1.05   -- tiny dinghy to big freighter
-            local col   = config.SHIP_COLORS[love.math.random(#config.SHIP_COLORS)]
-            local ang   = love.math.random() * math.pi * 2
-            local phase = love.math.random() * 6.28
-            local rate  = 0.8 + love.math.random() * 0.7      -- each bobs at its own pace
+            local salt = love.math.random() * 1000
+            self.ambientObstacles[#self.ambientObstacles + 1] = { x = gx, y = gy, r = 22 }
             self.objects:add({
                 tx = math.floor(gx / T) + 1, ty = math.floor(gy / T) + 1, z = 0,
-                draw = function(_, g)
-                    local bob = math.sin(love.timer.getTime() * rate + phase) * 2
-                    Objects.drawShip(g.cx, g.cy, ang, col, scale, bob)
-                end,
+                draw = function(_, g) Objects.drawSkerry(g, salt) end,
             })
         end
     end
+end
+
+-- A handful of ships that actually sail a slow, gentle course (cargo ships are
+-- slow), so the sea looks alive. They're drawn in the depth-sorted pass (like the
+-- boat) since they move; idle scattered boats stay in the static object layer.
+-- Each turns away from coasts/edges rather than beaching itself.
+function World:scatterMovingShips(count)
+    count = count or 6
+    local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
+    local placed, tries = 0, 0
+    while placed < count and tries < 800 do
+        tries = tries + 1
+        local gx, gy = love.math.random() * W, love.math.random() * H
+        local sdx, sdy = gx - self.boat.x, gy - self.boat.y
+        if (sdx * sdx + sdy * sdy) > (700 * 700) and self:openSea(gx, gy, 110) then
+            placed = placed + 1
+            self:addShip(gx, gy, love.math.random() * math.pi * 2, {
+                moving  = true,
+                speed   = config.AMBIENT_SHIP_SPEED * (0.7 + love.math.random() * 0.6),
+                turn    = 0.5 + love.math.random() * 0.4,       -- slow, lazy turns
+                turnDir = (love.math.random() < 0.5) and -1 or 1,
+            })
+        end
+    end
+end
+
+-- Sail each moving ship forward; if land or the world edge is close ahead, ease
+-- the heading around (its fixed turnDir) until open water lies ahead again. Slow
+-- and forgiving, never an obstacle the player must dodge.
+function World:updateMovingShips(dt)
+    local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
+    for _, s in ipairs(self.ships) do
+        if s.moving then
+            local lk = s.r + 70
+            local ax = s.x + math.cos(s.angle) * lk
+            local ay = s.y + math.sin(s.angle) * lk
+            local blocked = ax < 60 or ay < 60 or ax > W - 60 or ay > H - 60
+                or not self.terrain:isWater(ax, ay)
+            if blocked then
+                s.angle = s.angle + s.turnDir * s.turn * dt
+            else
+                s.x = s.x + math.cos(s.angle) * s.speed * dt
+                s.y = s.y + math.sin(s.angle) * s.speed * dt
+            end
+        end
+    end
+end
+
+-- The ambient ship under a screen tap (mx,my), or nil. Tested in SCREEN space
+-- against each ship's on-screen sprite box: the billboard rises UP from its
+-- waterline anchor, so a ground-circle test (which assumes z=0) would only catch
+-- clicks at the very base. Nearest sprite-centre wins on overlap.
+function World:shipAt(mx, my)
+    local zoom = self.camera.zoom
+    local best, bestD
+    for _, s in ipairs(self.ships) do
+        local ax, ay = self.camera:worldToScreen(s.x, s.y)   -- waterline anchor (bottom-centre)
+        local wWorld, aspect
+        if s.look.billboard then
+            local img = Assets.image(s.look.img)
+            wWorld = config.AMBIENT_PHOTO_WIDTH * s.scale
+            aspect = img and (img:getHeight() / img:getWidth()) or 0.5
+        else
+            wWorld = config.AMBIENT_SHIP_WIDTH * s.scale
+            aspect = 0.5
+        end
+        local onW = wWorld * zoom * 1.1                       -- a little finger-slack
+        local onH = wWorld * aspect * zoom
+        local left, right = ax - onW / 2, ax + onW / 2
+        local top, bottom = ay - onH, ay + onH * 0.2          -- waterline + slight slack below
+        if mx >= left and mx <= right and my >= top and my <= bottom then
+            local cx, cy = ax, ay - onH / 2
+            local d = (mx - cx) ^ 2 + (my - cy) ^ 2
+            if not bestD or d < bestD then best, bestD = s, d end
+        end
+    end
+    return best
 end
 
 -- True if (x,y) is within `r` of any town (so we don't park clouds over them).
@@ -408,12 +716,13 @@ end
 function World:update(dt)
     -- Safety net: never stay stuck in right-drag panning across a modal opening
     -- or a loss of window focus (a release can be swallowed in either case).
-    if self.panning and (self.dock or self.album or self.mapReveal or self.winScreen
+    if self.panning and (self.dock or self.album or self.mapReveal or self.winScreen or self.pause
         or not love.window.hasFocus()) then
         self.panning = false
     end
 
-    -- While a modal overlay is up (win/reveal/album/docking), the world is frozen.
+    -- While a modal overlay is up (pause/win/reveal/album/docking), the world is frozen.
+    if self.pause then self.pause:update(dt); return end
     if self.winScreen then self.winScreen:update(dt); self:updateWinAudio(dt); return end
     if self.mapReveal then self.mapReveal:update(dt); return end
     if self.album then self.album:update(dt); return end
@@ -431,6 +740,20 @@ function World:update(dt)
     self.terrain:update(dt)
     self.boat:update(dt)
     self.boat:blockLand(self.terrain)   -- keep the boat on the water
+    self:updateMovingShips(dt)
+
+    -- Sprite ships are solid: bump off them instead of sliding underneath. But
+    -- docking always wins -- while latching in (or already in a port's range) we
+    -- skip ship collision so a vessel near the harbour can't block the approach.
+    self._skerryCd = math.max(0, (self._skerryCd or 0) - dt)
+    if not self.latching and not self.nearPort then
+        for _, s in ipairs(self.ambientObstacles) do   -- skerries: clonk + shake on a real hit
+            if self.boat:collideCircle(s.x, s.y, s.r) then self:hitSkerry() end
+        end
+        for _, s in ipairs(self.ships) do              -- ambient ships
+            self.boat:collideCircle(s.x, s.y, s.r)
+        end
+    end
 
     for _, port in ipairs(self.ports) do port:update(dt) end
 
@@ -511,6 +834,11 @@ function World:update(dt)
     if self.toast.timer > 0 then
         self.toast.timer = self.toast.timer - dt
         self.toast.rise  = self.toast.rise + dt * 30
+    end
+
+    if self.shipPopup then           -- ship info card lingers a few seconds, then fades out
+        self.shipPopup.t = self.shipPopup.t + dt
+        if self.shipPopup.t > 9 then self.shipPopup = nil end
     end
 end
 
@@ -632,6 +960,22 @@ end
 -- slower) pirate sets off for it too. This just spawns + steers the racer; who
 -- actually reaches it is decided in updateTreasure (player first).
 function World:updateRace(dt, active)
+    -- A racer that just stole a chest sails off briefly, then vanishes (a splash).
+    if self._racerExitT then
+        if self.racer then
+            self.racer:update(dt, self.boat, self.terrain)
+            self._racerExitT = self._racerExitT - dt
+            if self._racerExitT <= 0 then
+                self.splashes[#self.splashes + 1] = { x = self.racer.x, y = self.racer.y, t = 0 }
+                self.racer = nil; Assets.stopChase()
+                self._racerExitT = nil
+            end
+        else
+            self._racerExitT = nil
+        end
+        return
+    end
+
     if not active then
         if self.racer then                          -- no chest in play: send any racer off
             if self.racer.state ~= "retreat" then self.racer:flee() end
@@ -641,12 +985,24 @@ function World:updateRace(dt, active)
         return
     end
 
-    if not self.racer and not self.dock and not self.latching then
-        local dx, dy = self.boat.x - active.x, self.boat.y - active.y
-        if (dx * dx + dy * dy) < config.TREASURE.RACE_TRIGGER * config.TREASURE.RACE_TRIGGER then
-            self:spawnRacer(active)
+    -- "Fort deg!" cue + send the pirate off, when you first come within range of
+    -- the chest. The cue is independent of the racer placement, so the voice
+    -- always fires on approach (re-arms once you've sailed well clear).
+    local dx, dy = self.boat.x - active.x, self.boat.y - active.y
+    local d2 = dx * dx + dy * dy
+    local trig2 = config.TREASURE.RACE_TRIGGER * config.TREASURE.RACE_TRIGGER
+    if d2 < trig2 then
+        if not active.cued and not self.dock and not self.latching then
+            active.cued = true
+            if not self.racer then self:spawnRacer(active) end
+            if not Assets.playNamedVoice("fort_deg") then Assets.playSfx("pirate_warn", 0.9) end
+            if self.racer then Assets.startChase() end
+            self:showToast("Fort deg, ta skatten før sjørøverne kommer!")
         end
+    elseif d2 > trig2 * 1.4 then
+        active.cued = nil                           -- sailed clear: arm the cue again
     end
+
     if self.racer then
         self.racer.goal = active                    -- make for the chest
         self.racer:update(dt, self.boat, self.terrain)
@@ -658,12 +1014,14 @@ end
 -- deadlock -- you're not stuck circling it). The chest goes back in the pool, so
 -- a later delivery can hand you its map again for another go.
 function World:pirateStealsTreasure(t)
+    t.cued = nil                       -- so it cues again if re-mapped later
     self.mapped[t.id] = nil
     for i, id in ipairs(self.game.state.treasuresMapped) do
         if id == t.id then table.remove(self.game.state.treasuresMapped, i); break end
     end
     self.game:save()
     if self.racer then self.racer:flee() end
+    self._racerExitT = 1.4              -- it sails off with the loot, then vanishes
     self:showToast("Sjørøverne tok skatten!")
     Assets.playSfx("cannon_hit", 0.6)
 end
@@ -684,9 +1042,6 @@ function World:spawnRacer(t)
                 self.racer = Pirate.new(x, y, self.boat.maxSpeed)
                 self.racer.goal = t
                 self.racer.angle = math.atan2(t.y - y, t.x - x)
-                if not Assets.playNamedVoice("fort_deg") then Assets.playSfx("pirate_warn", 0.9) end
-                Assets.startChase()
-                self:showToast("Fort deg, ta skatten før sjørøverne kommer!")
                 return
             end
         end
@@ -758,6 +1113,30 @@ end
 
 function World:closeAlbum()
     self.album = nil
+end
+
+-- Pause / menu overlay. Only opens when no other modal is up; ESC and the bottom-
+-- right menu button toggle it.
+function World:openPause()
+    if self.dock or self.album or self.mapReveal or self.winScreen then return end
+    self.shipPopup = nil
+    self.pause = PauseMenu.new(self)
+end
+
+function World:closePause()
+    self.pause = nil
+end
+
+function World:togglePause()
+    if self.pause then self:closePause() else self:openPause() end
+end
+
+-- Save and return to the title screen (what the old ESC did; now the pause menu's
+-- "Hovedmeny" button).
+function World:exitToMenu()
+    self:flushFog()              -- persist exploration
+    self.game:save()
+    self.game:setScene("menu")
 end
 
 -- Pirates appear rarely while sailing the open sea with gold to lose. Once one
@@ -1021,17 +1400,28 @@ function World:draw()
 
     HUD.draw(self)
 
-    if not self.dock and not self.album and not self.mapReveal and not self.winScreen then
+    if not self.dock and not self.album and not self.mapReveal and not self.winScreen
+        and not self.pause then
         self:drawMissionPointer()    -- "go this way!" hint (cargo destination)
         self:drawTreasurePointer()   -- orange "to the treasure!" arrow + ring
         self:drawPirateIndicator()   -- red "danger this way!" arrow when off-screen
         self.minimap:draw()          -- world map + treasure X's
-        HUD.drawMusicButton(self)    -- tappable music on/off (bottom-right)
+        self:drawShipPopup()         -- MarineTraffic-style card for a tapped ship
+        HUD.drawPauseButton(self)    -- tappable pause/menu (bottom-right)
     end
     if self.dock then self.dock:draw() end            -- docking modal
     if self.album then self.album:draw() end          -- album overlay
     if self.mapReveal then self.mapReveal:draw() end  -- "Finn skatten!" card
     if self.winScreen then self.winScreen:draw() end  -- grand finale, on top of all
+    if self.pause then self.pause:draw() end          -- pause/menu overlay, on top
+end
+
+-- The info card for a tapped ship, anchored above it (it follows a moving ship).
+function World:drawShipPopup()
+    if not self.shipPopup then return end
+    local s = self.shipPopup.ship
+    local sx, sy = self.camera:worldToScreen(s.x, s.y)
+    ShipInfo.draw(s, sx, sy, self.game.fonts)
 end
 
 -- When a hunting pirate is off-screen, pin a pulsing red arrow to the screen
@@ -1152,16 +1542,23 @@ function World:drawTreasures()
         end
     end
 
+    -- A few gold coins jump out of the opened chest and arc back down, then fade.
+    local gold = config.colors.gold
     for _, fx in ipairs(self.treasureFX) do
         local p = fx.t / 1.4
         local sx, sy = Iso.project(fx.x, fx.y, 0)
-        love.graphics.setColor(1, 1, 1, 1 - p)                       -- collectible rises
-        Icons.draw(fx.good, sx, sy - 20 - p * 40, 30)
-        for k = 1, 8 do                                              -- coins fly out
-            local ang = (k / 8) * math.pi * 2
-            local d, up = p * 50, math.sin(math.min(p, 0.6) * math.pi) * 30
-            love.graphics.setColor(config.colors.gold[1], config.colors.gold[2], config.colors.gold[3], 1 - p)
-            love.graphics.circle("fill", sx + math.cos(ang) * d, sy + math.sin(ang) * d * 0.5 - up, 3 * (1 - p) + 1)
+        local phase = fx.x % 1                                       -- per-chest variation
+        for k = 1, 6 do
+            local ang = (k / 6) * math.pi * 2 + phase * 6
+            local d = p * (16 + (k % 3) * 12)                        -- fan outward
+            local hop = math.sin(math.min(1, p) * math.pi) * (34 + (k % 2) * 16)  -- up then down
+            local cx = sx + math.cos(ang) * d
+            local cy = sy + math.sin(ang) * d * 0.5 - hop
+            local r = 4 * (1 - p) + 2
+            love.graphics.setColor(0.60, 0.45, 0.10, 1 - p)         -- dark rim
+            love.graphics.ellipse("fill", cx, cy, r + 1, r + 1)
+            love.graphics.setColor(gold[1], gold[2], gold[3], 1 - p) -- gold
+            love.graphics.ellipse("fill", cx, cy, r, r)
         end
     end
     love.graphics.setColor(1, 1, 1)
@@ -1323,6 +1720,15 @@ function World:drawWorldSorted()
     end
     if self.boat.destX then entry(Iso.depth(self.boat.destX, self.boat.destY), "dest", nil) end
     for vi = 1, #vis do entry(vis[vi].depth, "object", vis[vi]) end
+    if self.ships then
+        local mb = 120                                 -- cull ships well off-screen
+        for mi = 1, #self.ships do
+            local s = self.ships[mi]
+            if s.x > minGx - mb and s.x < maxGx + mb and s.y > minGy - mb and s.y < maxGy + mb then
+                entry(Iso.depth(s.x, s.y), "ship", s)
+            end
+        end
+    end
     entry(Iso.depth(self.boat.x, self.boat.y), "boat", nil)
     if self.pirate then entry(Iso.depth(self.pirate.x, self.pirate.y), "pirate", nil) end
     if self.racer then entry(Iso.depth(self.racer.x, self.racer.y), "racer", nil) end
@@ -1334,6 +1740,17 @@ function World:drawWorldSorted()
     for k = 1, no do
         local it = objs[k]
         if it.kind == "object" then Objects.draw(it.obj)
+        elseif it.kind == "ship" then
+            local s = it.obj
+            local ok
+            if s.look.billboard then
+                ok = Objects.drawShipBillboard(s.look.img, s.x, s.y, s.angle, s.scale)
+            else
+                ok = Objects.drawShipSprite(s.look.sprite, s.x, s.y, s.angle, s.scale)
+            end
+            if not ok then
+                Objects.drawShip(s.x, s.y, s.angle, s.look.col or { 0.6, 0.62, 0.66 }, s.scale, 0)
+            end
         elseif it.kind == "boat" then self.boat:draw()
         elseif it.kind == "pirate" then self.pirate:draw()
         elseif it.kind == "racer" then self.racer:draw()
@@ -1387,6 +1804,7 @@ end
 -- While docked, all input goes to the docking screen. Docking itself is
 -- automatic (sail up to a port and the screen pops), so there's no load key.
 function World:keypressed(key)
+    if self.pause then self.pause:keypressed(key); return end
     if self.winScreen then self.winScreen:keypressed(key); return end
     if self.mapReveal then self.mapReveal:keypressed(key); return end
     if self.album then self.album:keypressed(key); return end
@@ -1439,22 +1857,28 @@ function World:devSpawnPirateClose()
 end
 
 function World:mousepressed(x, y, button)
+    if self.pause then self.pause:mousepressed(x, y, button); return end
     if self.winScreen then self.winScreen:mousepressed(x, y, button); return end
     if self.mapReveal then self.mapReveal:mousepressed(x, y, button); return end
     if self.album then self.album:mousepressed(x, y, button); return end
     if self.dock then self.dock:mousepressed(x, y, button); return end
     if button == 1 then
-        local mb = self._musicBtnRect      -- tap the speaker to toggle music/sound
-        if mb and x >= mb.x and x <= mb.x + mb.w and y >= mb.y and y <= mb.y + mb.h then
-            config.AUDIO_ON = not config.AUDIO_ON
-            Assets.refreshAudio()
-            return
+        local pb = self._pauseBtnRect      -- bottom-right menu button -> pause overlay
+        if pb and x >= pb.x and x <= pb.x + pb.w and y >= pb.y and y <= pb.y + pb.h then
+            self:openPause(); return
         end
         local r = self._skatterRect       -- clicking the "Skatter" bar opens the album
         if r and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
             self:openAlbum(); return
         end
         if self.latching then return end   -- being pulled into the berth; ignore clicks
+        local ship = self:shipAt(x, y)      -- screen-space hit test on the sprite
+        if ship then                        -- tap a ship -> its info card (don't sail)
+            self.shipPopup = { ship = ship, t = 0 }
+            Assets.playSfx("coin", 0.5)
+            return
+        end
+        self.shipPopup = nil                -- tap open water -> close any card and sail
         local wx, wy = self.camera:screenToWorld(x, y)
         self.boat:setDestination(wx, wy)
     elseif button == 2 then

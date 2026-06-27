@@ -192,8 +192,23 @@ function Port:drawCrane(gx, gy, z)
     love.graphics.rectangle("fill", tx + 26, ty + 22, 8, 6)  -- hook block
 end
 
+-- Own font cache so the label never inherits whatever font was last set globally
+-- (the dock/shop screens leave a big title font active; without this the name
+-- flashes huge for a frame on entering/leaving a harbour). Sized to the screen so
+-- it stays consistent on any resolution.
+local labelFontCache = {}
+local function labelFont()
+    local px = math.max(10, math.floor(13 * love.graphics.getHeight() / 800))
+    if not labelFontCache[px] then
+        labelFontCache[px] = love.graphics.newFont(px)
+    end
+    return labelFontCache[px]
+end
+
 function Port:drawLabel(g)
-    local font = love.graphics.getFont()
+    local prev = love.graphics.getFont()
+    local font = labelFont()
+    love.graphics.setFont(font)
     local sx, sy = Iso.project(g.cx, g.cy, g.z + 96)
     local w = font:getWidth(self.name)
     local hh = font:getHeight()
@@ -202,6 +217,7 @@ function Port:drawLabel(g)
     love.graphics.rectangle("fill", sx - w / 2 - 6, sy - hh / 2 - 2, w + 12, hh + 4, 4, 4)
     love.graphics.setColor(c.text)
     love.graphics.print(self.name, sx - w / 2, sy - hh / 2)
+    love.graphics.setFont(prev)
 end
 
 return Port

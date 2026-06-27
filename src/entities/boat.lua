@@ -222,7 +222,9 @@ function Boat:collideCircle(cx, cy, cr)
         self.angle = math.atan2(rvy, rvx)
         self.speed = self.speed * config.BOUNCE_DAMPING
         self:softHit()
+        return true               -- a real bump (caller may react, e.g. skerry FX)
     end
+    return false
 end
 
 function Boat:softHit()

@@ -138,6 +138,7 @@ function Game:loadData()
         boats = require("src.data.boats"),
         ports = require("src.data.ports"),
         shop  = require("src.data.shop"),
+        ships = require("src.data.ships"),
     }
 end
 
@@ -146,6 +147,7 @@ function Game:reloadData()
     package.loaded["src.data.boats"] = nil
     package.loaded["src.data.ports"] = nil
     package.loaded["src.data.shop"]  = nil
+    package.loaded["src.data.ships"] = nil
     self:loadData()
     self:reloadScene()
 end
@@ -253,10 +255,10 @@ function Game:keypressed(key, scancode, isrepeat)
         config.AUDIO_ON = not config.AUDIO_ON
         Assets.refreshAudio(); return
     elseif key == "escape" then
-        if self.sceneName == "world" then
-            if self.scene.flushFog then self.scene:flushFog() end  -- persist exploration
-            self:save()
-            self:setScene("menu")
+        -- In the world, ESC opens the pause/menu overlay (which has its own
+        -- "Hovedmeny" to save + leave). Elsewhere it quits.
+        if self.sceneName == "world" and self.scene.togglePause then
+            self.scene:togglePause()
         else
             love.event.quit()
         end

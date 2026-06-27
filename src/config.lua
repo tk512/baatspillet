@@ -33,6 +33,7 @@ config.COAST_JAGGED = 0.6    -- shoreline fray (0 = clean steps)
 config.FOREST_SCALE   = 360    -- bigger = larger forests
 config.FOREST_THRESH  = 0.54   -- lower = more / bigger forests
 config.FOREST_DENSITY = 6      -- trees drawn per forest tile
+config.TREE_SPRITE_HEIGHT = 46 -- on-screen height of a tree sprite at scale 1.0
 
 -- Where land sits and how big each island is. Each roughly hosts the matching
 -- port in src/data/ports.lua. Spread far apart for open ocean between them.
@@ -228,10 +229,24 @@ config.BUILDING_COLORS = {
     {0.66, 0.56, 0.40},  -- ochre
 }
 
--- Accent colors for ambient/docked vessels.
+-- Accent colors for ambient/docked vessels (the code-drawn placeholder ships).
 config.SHIP_COLORS = {
     {0.70, 0.34, 0.28}, {0.34, 0.46, 0.58}, {0.74, 0.62, 0.34},
     {0.42, 0.54, 0.40}, {0.62, 0.50, 0.56},
 }
+
+-- Sprite ships the ambient sea traffic is drawn from: OpenGFX 8-view art under
+-- assets/ships/<name>/0..7.png (see tools/extract_opengfx_ships.py). Each ambient
+-- boat picks one at random; if the art is missing it falls back to the volumetric
+-- placeholder (Objects.drawShip), so the game still runs art-free.
+config.AMBIENT_SHIPS = {
+    "cargo_ship1", "cargo_ship2", "cargo_ship3", "cargo_ship4",
+    "toyland_ship1", "toyland_ship2",
+}
+config.AMBIENT_SHIP_WIDTH = 180  -- on-screen width of an OpenGFX sprite ship at scale 1.0
+config.AMBIENT_PHOTO_WIDTH = 115 -- on-screen width of a photo billboard ship (kept modest, ~Viking Sky size)
+config.AMBIENT_HARBOUR_SCALE = 0.8   -- harbour-mouth ships (smaller than the open-sea ones)
+config.AMBIENT_SHIP_RADIUS_FRAC = 0.22  -- collision radius as a fraction of on-screen width
+config.AMBIENT_SHIP_SPEED = 23   -- base speed of sailing ships (slow; the player boat does ~140)
 
 return config

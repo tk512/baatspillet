@@ -38,6 +38,14 @@ function Objects:add(obj)
     return obj
 end
 
+-- Drop every object matching `pred` (used to clear a yard for a big landmark).
+function Objects:removeWhere(pred)
+    local list = self.list
+    for i = #list, 1, -1 do
+        if pred(list[i]) then table.remove(list, i) end
+    end
+end
+
 -- Append every object whose footprint touches the visible tile range to `out`
 -- and return the new length. world.lua merges these with terrain tiles and the
 -- boat into one sorted pass.
@@ -197,7 +205,8 @@ end
 
 -- A dense forest tile: many overlapping trees so neighbouring forest tiles blend
 -- into one woodland. `salt` makes the layout deterministic per tile; layouts
--- never change, so each is computed once and cached.
+-- never change, so each is computed once and cached. All trees are the soft
+-- code-drawn kind (no pixel-art sprites) -- they read better at a glance.
 local forestCache = {}
 
 function Objects.drawForest(g, salt)
@@ -244,6 +253,29 @@ function Objects.drawRock(g)
     love.graphics.setColor(c.rock_light)
     love.graphics.circle("fill", sx - 3, sy - 5, 7)
     love.graphics.circle("fill", sx + 5, sy - 3, 5)
+end
+
+-- A skerry: a small rocky outcrop sitting in open water, ringed by a gentle
+-- pulsing foam wash at the waterline. `salt` varies the rock shape + foam phase
+-- per skerry. No per-frame allocations (hot draw path).
+function Objects.drawSkerry(g, salt)
+    local c = config.colors
+    local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
+    salt = salt or 0
+    local t = love.timer.getTime()
+    local pulse = 0.5 + 0.5 * math.sin(t * 1.4 + salt)
+    -- foam wash around the base
+    love.graphics.setColor(1, 1, 1, 0.16 + 0.10 * pulse)
+    love.graphics.ellipse("fill", sx, sy + 2, 22, 11)
+    love.graphics.setColor(1, 1, 1, 0.32)
+    love.graphics.ellipse("line", sx, sy + 2, 16 + pulse * 2, 8 + pulse)
+    -- a little rock cluster, shape jittered by salt
+    local j = (salt % 3) - 1
+    love.graphics.setColor(c.rock_dark)
+    love.graphics.ellipse("fill", sx, sy - 2, 11, 6)
+    love.graphics.setColor(c.rock_light)
+    love.graphics.circle("fill", sx - 3 + j, sy - 5, 6)
+    love.graphics.circle("fill", sx + 4, sy - 3 - j, 4)
 end
 
 -- City landmark placeholders (swap for pixel art later). Each is anchored on its
@@ -349,6 +381,37 @@ function Objects.drawFishRacks(g)
     end
 end
 
+-- Placeholder landmarks (used only if the matching PNG is missing). Kept simple;
+-- the real art is the OpenGFX sprite blitted by Objects.draw.
+function Objects.drawLighthouse(g)
+    local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
+    shadow(sx, sy, 12)
+    love.graphics.setColor(0.92, 0.92, 0.94)                       -- white tapered tower
+    love.graphics.polygon("fill", sx - 7, sy, sx + 7, sy, sx + 4, sy - 34, sx - 4, sy - 34)
+    love.graphics.setColor(0.78, 0.18, 0.16)                       -- red bands
+    love.graphics.rectangle("fill", sx - 6, sy - 11, 12, 5)
+    love.graphics.rectangle("fill", sx - 5, sy - 24, 10, 5)
+    love.graphics.setColor(0.20, 0.20, 0.24); love.graphics.rectangle("fill", sx - 5, sy - 44, 10, 10)  -- lamp room
+    love.graphics.setColor(1, 0.92, 0.5); love.graphics.circle("fill", sx, sy - 39, 3)                  -- the light
+end
+
+function Objects.drawPark(g)
+    local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
+    love.graphics.setColor(0.30, 0.46, 0.24); love.graphics.ellipse("fill", sx, sy, 22, 11)  -- lawn
+    shadow(sx, sy, 6)
+    love.graphics.setColor(0.30, 0.20, 0.12); love.graphics.rectangle("fill", sx - 2, sy - 14, 4, 14)   -- trunk
+    love.graphics.setColor(0.26, 0.40, 0.22); love.graphics.circle("fill", sx, sy - 20, 11)
+    love.graphics.setColor(0.34, 0.48, 0.28); love.graphics.circle("fill", sx - 3, sy - 23, 6)
+end
+
+function Objects.drawFountain(g)
+    local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
+    shadow(sx, sy, 12)
+    love.graphics.setColor(0.66, 0.66, 0.70); love.graphics.ellipse("fill", sx, sy, 14, 7)   -- stone basin
+    love.graphics.setColor(0.40, 0.62, 0.80); love.graphics.ellipse("fill", sx, sy, 10, 5)   -- water
+    love.graphics.setColor(0.72, 0.85, 0.95); love.graphics.rectangle("fill", sx - 1.5, sy - 12, 3, 12)  -- jet
+end
+
 -- A small isometric ship (volumetric hull + cabin), oriented by `angle`.
 -- Reused for docked ships in harbors and ambient ships at sea. `scale` ~1.0.
 local SHIP_HULL = { { 22, 0 }, { 8, -11 }, { -16, -11 }, { -20, 0 }, { -16, 11 }, { 8, 11 } }
@@ -388,6 +451,72 @@ function Objects.drawShip(gx, gy, angle, color, scale, z)
     local cxs, cys = Iso.project(gx, gy, z + 11 * scale)
     love.graphics.setColor(c.boat_cabin)
     love.graphics.rectangle("fill", cxs - 6 * scale, cys - 12 * scale, 12 * scale, 12 * scale, 2, 2)
+end
+
+-- Sprite ambient ship: OpenGFX 8-view dimetric art under assets/ships/<name>/0..7.png,
+-- the frame picked by heading. All 8 frames share one canvas + pivot (the extractor
+-- bakes the source draw-offsets in), so we anchor every frame at the same
+-- bottom-centre point -- the hull keeps its place as the boat turns. Returns false
+-- if the art is absent so the caller can fall back to drawShip (placeholder-first).
+-- gx,gy,angle are GROUND space; z is the bob height.
+local shipFramesCache = {}
+local function shipFrames(name)
+    local c = shipFramesCache[name]
+    if c == nil then
+        local f0 = Assets.image("ships/" .. name .. "/0.png")
+        if not f0 then shipFramesCache[name] = false; return nil end
+        c = { f0 }
+        for i = 1, 7 do c[i + 1] = Assets.image("ships/" .. name .. "/" .. i .. ".png") end
+        shipFramesCache[name] = c
+    end
+    return c or nil
+end
+
+-- Frame index for a ground heading. Project the heading to screen velocity, take
+-- its octant, and map to the OpenTTD direction-enum order baked on disk
+-- (0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW). screen octant 0 is due-East, so the
+-- enum frame is octant+2 (mod 8). If a play-test shows the bow points the wrong
+-- way, this +2 is the single knob to turn.
+local function headingFrame(angle)
+    local vsx = (math.cos(angle) - math.sin(angle)) * Iso.SX
+    local vsy = (math.cos(angle) + math.sin(angle)) * Iso.SY
+    local k = math.floor(math.atan2(vsy, vsx) / (math.pi / 4) + 0.5) % 8
+    return (k + 2) % 8
+end
+
+function Objects.drawShipSprite(name, gx, gy, angle, scale)
+    local frames = shipFrames(name)
+    if not frames then return false end
+    scale = scale or 1
+    local idx = headingFrame(angle)
+    local img = frames[idx + 1]
+    if not img then return false end
+
+    -- Lie flat on the water: no bob, no shadow -- just the hull at the waterline.
+    local w = config.AMBIENT_SHIP_WIDTH * scale
+    local s = w / img:getWidth()
+    local sx, sy = Iso.project(gx, gy, 0)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(img, sx, sy, 0, s, s, img:getWidth() / 2, img:getHeight())
+    return true
+end
+
+-- Photo billboard ambient ship (a stylized real-boat photo at assets/<imgPath>,
+-- bow pointing right). Like the player boat, there's no rotation: it faces the way
+-- it's travelling on screen and mirrors for the other direction, lying flat on the
+-- water (no bob, no shadow). Returns false if the photo is missing.
+function Objects.drawShipBillboard(imgPath, gx, gy, angle, scale)
+    local img = Assets.image(imgPath)
+    if not img then return false end
+    if img:getFilter() ~= "nearest" then img:setFilter("nearest", "nearest") end
+    local vsx = (math.cos(angle) - math.sin(angle)) * Iso.SX   -- screen-x travel
+    local flip = (vsx < 0) and -1 or 1
+    local w = config.AMBIENT_PHOTO_WIDTH * (scale or 1)
+    local s = w / img:getWidth()
+    local sx, sy = Iso.project(gx, gy, 0)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(img, sx, sy, 0, s * flip, s, img:getWidth() / 2, img:getHeight())
+    return true
 end
 
 return Objects

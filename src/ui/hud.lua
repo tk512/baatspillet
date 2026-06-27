@@ -34,6 +34,10 @@ function HUD.draw(world)
     local nmH   = fonts.normal:getHeight()
     local t     = math.max(2, math.floor(smH * 0.20))   -- bevel thickness (scaled)
 
+    -- Leave room at the very top-left for the menu button, then the info plaque.
+    local menuSize = math.max(40, math.floor(sh * 0.075))
+    local leftX = 16 + menuSize + 12
+
     -- Top-left: gold + boat + cargo plaque
     local pad  = math.max(6, math.floor(smH * 0.55))
     local gap  = math.floor(smH * 0.32)
@@ -67,7 +71,7 @@ function HUD.draw(world)
     local pw = contentW + (pad + t * 2) * 2
     local ph = (pad + t * 2) * 2 + nmH + gap + smH + gap + smH
     if #owned > 0 then ph = ph + gap + smH + gap + invRows * (invIcon + invGap) end
-    local ix, iy = plaque(16, 16, pw, ph, t)
+    local ix, iy = plaque(leftX, 16, pw, ph, t)
 
     -- row 1: coin + gold count
     coin(ix + pad + cr, iy + pad + nmH * 0.5, cr)
@@ -110,7 +114,7 @@ function HUD.draw(world)
         local anyFound = false
         for _, tr in ipairs(world.treasures) do if tr.found then anyFound = true; break end end
         if world.game:owns("cannon") or anyFound then
-            HUD.drawTreasureBar(world, 16, 16 + ph + math.floor(gap * 1.5), t)
+            HUD.drawTreasureBar(world, leftX, 16 + ph + math.floor(gap * 1.5), t)
         end
     end
 
@@ -118,14 +122,6 @@ function HUD.draw(world)
     if world.boat.cargo[1] then
         HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     end
-
-    -- Bottom-left: controls hint
-    love.graphics.setFont(fonts.small)
-    local hint = "Klikk = seil dit   •   Mus mot kanten = flytt kart   •   ESC = meny"
-    love.graphics.setColor(0, 0, 0, 0.45)
-    love.graphics.print(hint, 17, sh - 25)
-    love.graphics.setColor(c.text[1], c.text[2], c.text[3], 0.85)
-    love.graphics.print(hint, 16, sh - 26)
 
     if world.toast and world.toast.timer > 0 then
         HUD.drawToast(world, sw, sh, c, fonts)
@@ -166,6 +162,25 @@ function HUD.drawMusicButton(world)
     Retro.bevel(x, y, size, size, WOOD.face, WOOD.hi, WOOD.lo, t, true)
     speaker(x + size / 2, y + size * 0.46, size * 0.42, config.AUDIO_ON)
     world._musicBtnRect = { x = x, y = y, w = size, h = size }
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- Tappable pause button (top-left): a wooden key with the universal "pause" glyph
+-- (two bars), so it's instantly recognisable and easy to reach. Touch-friendly for
+-- iPad. Stores its rect on the world for World:mousepressed to hit-test.
+function HUD.drawPauseButton(world)
+    local sh = love.graphics.getHeight()
+    local size = math.max(40, math.floor(sh * 0.075))
+    local x, y = 16, 16
+    local t = math.max(2, math.floor(size * 0.10))
+    Retro.bevel(x, y, size, size, WOOD.face, WOOD.hi, WOOD.lo, t, true)
+    -- two vertical bars = pause
+    love.graphics.setColor(WOOD.accent)
+    local bw = size * 0.14
+    local by, bh = y + size * 0.28, size * 0.44
+    love.graphics.rectangle("fill", x + size * 0.34 - bw / 2, by, bw, bh, 1, 1)
+    love.graphics.rectangle("fill", x + size * 0.66 - bw / 2, by, bw, bh, 1, 1)
+    world._pauseBtnRect = { x = x, y = y, w = size, h = size }
     love.graphics.setColor(1, 1, 1)
 end
 
