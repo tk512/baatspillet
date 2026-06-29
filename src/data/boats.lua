@@ -31,6 +31,7 @@ return {
         turn     = 2.0,
         capacity = 4,
         cost     = 60,
+        premium  = true,               -- unlocked by the one premium pack (config.PREMIUM)
         sprite   = "boat2.png",
         color    = {0.30, 0.55, 0.85},
     },
@@ -42,7 +43,27 @@ return {
         turn     = 1.4,
         capacity = 8,
         cost     = 180,
+        premium  = true,
         sprite   = "boat3.png",
         color    = {0.95, 0.70, 0.20},
+    },
+    {
+        id       = "yacht",
+        name     = "Luksusyachten",    -- a fancy "3D" volumetric boat (premium)
+        speed    = 205,
+        accel    = 105,
+        turn     = 1.9,
+        capacity = 5,
+        cost     = 0,
+        premium  = true,
+        -- A real 3D model rendered to frames at assets/boats/yacht/0..N.png is used
+        -- when present (see tools/render_boat_frames.md); until then it falls back to
+        -- the code-drawn volumetric boat (model="yacht"). frameOffset/frameCW tune the
+        -- render's starting angle / spin direction without re-rendering.
+        frames     = "yacht",
+        frameOffset = 0,
+        frameCW    = true,
+        model      = "yacht",
+        color      = {0.20, 0.45, 0.80},
     },
 }

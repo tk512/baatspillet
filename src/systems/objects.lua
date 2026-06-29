@@ -453,6 +453,133 @@ function Objects.drawShip(gx, gy, angle, color, scale, z)
     love.graphics.rectangle("fill", cxs - 6 * scale, cys - 12 * scale, 12 * scale, 12 * scale, 2, 2)
 end
 
+-- A fancy volumetric "3D" motor yacht: a sleek hull in the boat's accent colour, a
+-- white two-tier superstructure with a window band, and a little flag. Rotates with
+-- `angle` -- used spinning in the boat-select preview and when steered in the world.
+local YACHT_HULL = { { 30, 0 }, { 16, -10 }, { -22, -10 }, { -30, 0 }, { -22, 10 }, { 16, 10 } }
+function Objects.drawYacht(gx, gy, angle, color, scale, z)
+    scale = scale or 1
+    z = z or 0
+    local co, si = math.cos(angle), math.sin(angle)
+    local function rot(px, py) return gx + (px * co - py * si) * scale, gy + (px * si + py * co) * scale end
+
+    -- soft shadow
+    local sxc, syc = Iso.project(gx, gy, z)
+    love.graphics.setColor(0, 0, 0, 0.18)
+    love.graphics.ellipse("fill", sxc, syc + 3 * scale, 30 * scale, 14 * scale)
+
+    -- hull (sides + deck)
+    local hullH = 10 * scale
+    local base, deck = {}, {}
+    for _, p in ipairs(YACHT_HULL) do
+        local wx, wy = rot(p[1], p[2])
+        local bx, by = Iso.project(wx, wy, z)
+        local dx, dy = Iso.project(wx, wy, z + hullH)
+        base[#base + 1] = { bx, by }; deck[#deck + 1] = { dx, dy }
+    end
+    love.graphics.setColor(color[1] * 0.55, color[2] * 0.55, color[3] * 0.55)
+    local n = #base
+    for i = 1, n do
+        local a, b = i, (i % n) + 1
+        love.graphics.polygon("fill", deck[a][1], deck[a][2], deck[b][1], deck[b][2],
+            base[b][1], base[b][2], base[a][1], base[a][2])
+    end
+    local poly = {}
+    for i = 1, n do poly[#poly + 1] = deck[i][1]; poly[#poly + 1] = deck[i][2] end
+    love.graphics.setColor(0.86, 0.82, 0.72)                 -- pale deck
+    love.graphics.polygon("fill", poly)
+
+    -- a rotated, projected box (superstructure tiers), with an optional window band
+    local function tier(x0, y0, x1, y1, zb, zt, col, windows)
+        local lo, hi = {}, {}
+        for _, c in ipairs({ { x0, y0 }, { x1, y0 }, { x1, y1 }, { x0, y1 } }) do
+            local wx, wy = rot(c[1], c[2])
+            local lx, ly = Iso.project(wx, wy, zb)
+            local hx, hy = Iso.project(wx, wy, zt)
+            lo[#lo + 1] = { lx, ly }; hi[#hi + 1] = { hx, hy }
+        end
+        local m = #lo
+        love.graphics.setColor(col[1] * 0.72, col[2] * 0.72, col[3] * 0.72)
+        for i = 1, m do
+            local a, b = i, (i % m) + 1
+            love.graphics.polygon("fill", hi[a][1], hi[a][2], hi[b][1], hi[b][2],
+                lo[b][1], lo[b][2], lo[a][1], lo[a][2])
+            if windows then            -- dark window band around the middle of the walls
+                love.graphics.setColor(0.18, 0.26, 0.34)
+                local wy0 = 0.45
+                love.graphics.polygon("fill",
+                    hi[a][1] + (lo[a][1] - hi[a][1]) * 0.3, hi[a][2] + (lo[a][2] - hi[a][2]) * 0.3,
+                    hi[b][1] + (lo[b][1] - hi[b][1]) * 0.3, hi[b][2] + (lo[b][2] - hi[b][2]) * 0.3,
+                    hi[b][1] + (lo[b][1] - hi[b][1]) * 0.6, hi[b][2] + (lo[b][2] - hi[b][2]) * 0.6,
+                    hi[a][1] + (lo[a][1] - hi[a][1]) * 0.6, hi[a][2] + (lo[a][2] - hi[a][2]) * 0.6)
+                love.graphics.setColor(col[1] * 0.72, col[2] * 0.72, col[3] * 0.72)
+            end
+        end
+        local rp = {}
+        for i = 1, m do rp[#rp + 1] = hi[i][1]; rp[#rp + 1] = hi[i][2] end
+        love.graphics.setColor(col); love.graphics.polygon("fill", rp)
+    end
+    local white = { 0.93, 0.94, 0.96 }
+    tier(-14, -7, 12, 7, z + hullH, z + hullH + 11 * scale, white, true)         -- lower cabin
+    tier(-6, -5, 8, 5, z + hullH + 11 * scale, z + hullH + 20 * scale, white, true)  -- bridge
+
+    -- mast + colour flag
+    local tx, ty = rot(2, 0)
+    local mx, my = Iso.project(tx, ty, z + hullH + 20 * scale)
+    love.graphics.setColor(0.30, 0.25, 0.20); love.graphics.setLineWidth(math.max(1, 2 * scale))
+    love.graphics.line(mx, my, mx, my - 16 * scale)
+    love.graphics.setColor(color)
+    love.graphics.polygon("fill", mx, my - 16 * scale, mx + 12 * scale, my - 12 * scale, mx, my - 8 * scale)
+    love.graphics.setLineWidth(1)
+end
+
+-- Rendered-frames boat: a real 3D model baked to N frames of a full turn (Blender,
+-- iso camera) living in assets/boats/<name>/0.png .. (N-1).png. The count is auto-
+-- detected; the frame is chosen by heading, so it "rotates" as you steer. Render
+-- convention: all frames the same size, boat centred and sitting near the bottom,
+-- frame 0 = bow pointing screen-right (east), turning clockwise. If a render starts
+-- elsewhere or turns the other way, fix it in data with frameOffset / frameCW (no
+-- re-render needed). See tools/render_boat_frames.md.
+local boatFramesCache = {}
+local function boatFrames(name)
+    local c = boatFramesCache[name]
+    if c == nil then
+        c = {}
+        local i = 0
+        while true do
+            local img = Assets.image("boats/" .. name .. "/" .. i .. ".png")
+            if not img then break end
+            c[#c + 1] = img
+            i = i + 1
+        end
+        if #c == 0 then c = false end
+        boatFramesCache[name] = c
+    end
+    return c or nil
+end
+
+function Objects.hasBoatFrames(name) return name ~= nil and boatFrames(name) ~= nil end
+
+-- anchorFrac: vertical anchor as a fraction of frame height (1 = bottom, the
+-- waterline, for sailing/thumbnails; ~0.5 = centred, for the big spinning preview).
+function Objects.drawBoatFrames(name, gx, gy, angle, width, offset, cw, tint, anchorFrac)
+    local frames = boatFrames(name)
+    if not frames then return false end
+    local N = #frames
+    local vsx = (math.cos(angle) - math.sin(angle)) * Iso.SX     -- screen-space heading
+    local vsy = (math.cos(angle) + math.sin(angle)) * Iso.SY
+    local step = (2 * math.pi) / N
+    local k = math.floor(math.atan2(vsy, vsx) / step + 0.5) % N
+    if cw == false then k = (N - k) % N end
+    local idx = (k + (offset or 0)) % N
+    local img = frames[idx + 1]
+    local s = (width or config.BOAT_SPRITE_WIDTH) / img:getWidth()
+    local sx, sy = Iso.project(gx, gy, 0)
+    love.graphics.setColor(tint or { 1, 1, 1 })
+    love.graphics.draw(img, sx, sy, 0, s, s, img:getWidth() / 2, img:getHeight() * (anchorFrac or 1))
+    return true
+end
+
 -- Sprite ambient ship: OpenGFX 8-view dimetric art under assets/ships/<name>/0..7.png,
 -- the frame picked by heading. All 8 frames share one canvas + pivot (the extractor
 -- bakes the source draw-offsets in), so we anchor every frame at the same

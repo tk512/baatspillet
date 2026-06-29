@@ -43,7 +43,7 @@ function HUD.draw(world)
     local gap  = math.floor(smH * 0.32)
     local cr   = nmH * 0.42                               -- coin radius
     local goldStr  = tostring(world.game.state.coins) .. " gull"
-    local boatStr  = "Båt: " .. world.boat.def.name
+    local boatStr  = "Båt: " .. (world.boat.displayName or world.boat.def.name)
     local cargoStr = "Last: " .. world.boat:cargoCount() .. " / " .. world.boat.capacity
 
     -- Bought goods (the "inventory") shown under the boat/cargo rows as a row of

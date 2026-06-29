@@ -249,4 +249,18 @@ config.AMBIENT_HARBOUR_SCALE = 0.8   -- harbour-mouth ships (smaller than the op
 config.AMBIENT_SHIP_RADIUS_FRAC = 0.22  -- collision radius as a fraction of on-screen width
 config.AMBIENT_SHIP_SPEED = 23   -- base speed of sailing ships (slow; the player boat does ~140)
 
+-- The single premium unlock ("one pack unlocks everything"): all the fancy boats,
+-- map variations and future extras. One non-consumable App Store purchase later;
+-- for now it's a pretend buy (Game:unlockPremium). Anything premium checks
+-- Game:isPremium() -- never per-item purchases.
+config.PREMIUM = {
+    name  = "Kaptein-pakken",
+    price = "kr 49,-",
+    perks = {
+        "Alle de fine båtene",
+        "Nye kart å utforske",
+        "Mer gøy som kommer!",
+    },
+}
+
 return config

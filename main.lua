@@ -16,6 +16,10 @@ function love.keypressed(key, scancode, isrepeat)
     Game:keypressed(key, scancode, isrepeat)
 end
 
+function love.textinput(t)
+    Game:textinput(t)
+end
+
 function love.mousepressed(x, y, button)
     Game:mousepressed(x, y, button)
 end

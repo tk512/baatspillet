@@ -15,6 +15,9 @@ local function defaultState()
     return {
         coins            = 0,
         unlockedBoats    = { "starter_boat" },
+        selectedBoat     = "starter_boat",  -- boat chosen on the start screen
+        boatName         = nil,             -- player's name for it (nil = use the boat's own)
+        premium          = false,           -- the one "Kaptein-pakken" unlock (all premium content)
         discoveredIslands = {},
         owned            = {},   -- one-time upgrades, e.g. owned.cannon = true
         food             = {},   -- consumable provisions, e.g. food.brod = 3
@@ -36,9 +39,10 @@ function Game:load()
     end
 
     self.scenes = {
-        menu    = require("src.scenes.menu"),
-        loading = require("src.scenes.loading"),
-        world   = require("src.scenes.world"),
+        menu      = require("src.scenes.menu"),
+        boatselect = require("src.scenes.boatselect"),
+        loading   = require("src.scenes.loading"),
+        world     = require("src.scenes.world"),
     }
 
     -- Dev profiler overlay (F3): rolling update/draw timings + FPS + draw stats.
@@ -160,6 +164,26 @@ function Game:getBoatDef(id)
     return self.data.boats[1]
 end
 
+-- Has the player bought the single premium pack (Kaptein-pakken)?
+function Game:isPremium() return self.state.premium == true end
+
+-- Do we own this boat? Free boats always; premium boats are all unlocked together
+-- by the one pack -- never bought individually.
+function Game:ownsBoat(id)
+    local def = self:getBoatDef(id)
+    if not def.premium then return true end
+    return self:isPremium()
+end
+
+-- Unlock the whole premium pack. PRETEND purchase for now (just flips the flag).
+-- TODO(IAP): replace with a real App Store / Google Play non-consumable purchase
+-- (and a "restore purchases"); call this only once the OS confirms it. Everything
+-- premium already keys off Game:isPremium(), so one unlock opens it all.
+function Game:unlockPremium()
+    self.state.premium = true
+    self:save()
+end
+
 function Game:loadSave()
     self.state = defaultState()
     if love.filesystem.getInfo(self.SAVE_FILE) then
@@ -175,6 +199,9 @@ function Game:loadSave()
             self.state.food = data.food or self.state.food
             self.state.treasuresFound = data.treasuresFound or self.state.treasuresFound
             self.state.treasuresMapped = data.treasuresMapped or self.state.treasuresMapped
+            self.state.selectedBoat = data.selectedBoat or self.state.selectedBoat
+            self.state.boatName = data.boatName or self.state.boatName
+            if data.premium ~= nil then self.state.premium = data.premium end
         end
     end
 end
@@ -274,6 +301,10 @@ function Game:toggleFullscreen()
     local isFs = love.window.getFullscreen()
     love.window.setFullscreen(not isFs, "desktop")
     self:resize(love.graphics.getWidth(), love.graphics.getHeight())
+end
+
+function Game:textinput(t)
+    if self.scene and self.scene.textinput then self.scene:textinput(t) end
 end
 
 function Game:mousepressed(x, y, button)

@@ -4,9 +4,10 @@
 -- back out (speed is only damped when moving INTO an obstacle). draw() prefers a
 -- side-view photo; drawVolumetric() is the code-drawn fallback when art is absent.
 
-local config = require("src.config")
-local Assets = require("src.assets")
-local Iso    = require("src.systems.iso")
+local config  = require("src.config")
+local Assets  = require("src.assets")
+local Iso     = require("src.systems.iso")
+local Objects = require("src.systems.objects")
 
 local Boat = {}
 Boat.__index = Boat
@@ -287,6 +288,17 @@ function Boat:drawWake(sx, sy, want)
 end
 
 function Boat:draw()
+    -- Rendered-frames boat (a real 3D model baked to frames): picks the frame by
+    -- heading, so it turns as you steer. Highest fidelity; takes priority.
+    if self.def.frames and Objects.hasBoatFrames(self.def.frames) then
+        local sx, sy = Iso.project(self.x, self.y, 0)
+        local want = self.def.spriteWidth or config.BOAT_SPRITE_WIDTH
+        self:drawWake(sx, sy, want)
+        Objects.drawBoatFrames(self.def.frames, self.x, self.y, self.angle, want,
+            self.def.frameOffset, self.def.frameCW)
+        return
+    end
+
     -- Side-profile billboard: a bow-right photo (def.sprite) and a bow-left one
     -- (def.spriteLeft / <base>_left.png), picked by on-screen heading. No
     -- rotation. With no left photo, mirror the right one.
@@ -313,6 +325,12 @@ function Boat:draw()
         love.graphics.setColor(1, 1, 1)
         love.graphics.draw(img, sx, sy, 0, scale * flip, scale,
             img:getWidth() / 2, img:getHeight() * 0.85)
+        return
+    end
+    if self.def.model == "yacht" then          -- premium code-drawn "3D" boat
+        local sxc, syc = Iso.project(self.x, self.y, 0)
+        self:drawVolumetricWake(sxc, syc)
+        Objects.drawYacht(self.x, self.y, self.angle, self.def.color, 1.0, 0)
         return
     end
     self:drawVolumetric()

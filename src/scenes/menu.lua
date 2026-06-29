@@ -796,7 +796,7 @@ end
 -- loading screen so the world build happens behind a "Laster…".
 function Menu:start()
     Assets.setMusicVolume(1.0)
-    self.game:setScene("loading")
+    self.game:setScene("boatselect")   -- choose your boat, then set sail
 end
 
 function Menu:keypressed(key)

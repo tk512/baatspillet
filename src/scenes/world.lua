@@ -80,11 +80,12 @@ function World:load(game)
     -- Build the procedurally heightmapped iso world (and place the ports).
     self.terrain = Terrain.new(self.ports)
 
-    -- Boat: the player's "best" unlocked boat, started on open water.
+    -- Boat: the one chosen on the start screen (falls back to the last unlocked).
     local unlocked = game.state.unlockedBoats
-    local boatDef  = game:getBoatDef(unlocked[#unlocked])
+    local boatDef  = game:getBoatDef(game.state.selectedBoat or unlocked[#unlocked])
     local sx, sy   = self:findStartWater(config.WORLD_WIDTH / 2, config.WORLD_HEIGHT / 2)
     self.boat = Boat.new(boatDef, sx, sy)
+    self.boat.displayName = game.state.boatName or boatDef.name   -- player's name for it
 
     -- Sprite-object layer: ports (3x3), props (1x1), ambient ships.
     self.objects = Objects.new()
@@ -187,7 +188,22 @@ function World:load(game)
         self.pendingMapReveal = nil    -- no treasure card under the preview finale
         for _, tr in ipairs(self.treasures) do tr.found = true end
         self:openWinScreen()           -- closing it resets to the title, like a real win
+    elseif self:allTreasuresFound() then
+        -- A completed save (every chest already found) would otherwise dead-end:
+        -- harbourmasters can't hand out maps and the finale never re-fires, so the
+        -- player is left hunting for a map that never comes. Show the finale -- they
+        -- won -- so "Spill igjen" starts a fresh hunt.
+        self:openWinScreen()
     end
+end
+
+-- True once every treasure has been dug up (the game is won).
+function World:allTreasuresFound()
+    if #self.treasures == 0 then return false end
+    for _, tr in ipairs(self.treasures) do
+        if not tr.found then return false end
+    end
+    return true
 end
 
 -- Scatter houses around a port's pad to make it read as a town. Count + spread
@@ -1064,9 +1080,7 @@ function World:winTreasure(t)
     if not Assets.playNamedVoice("skatt") then Assets.playSfx("coin", 0.8) end
     self:showToast("Skatt! +" .. config.TREASURE.GOLD .. " gull")
 
-    local all = true
-    for _, tr in ipairs(self.treasures) do if not tr.found then all = false; break end end
-    if all then self:openWinScreen() end
+    if self:allTreasuresFound() then self:openWinScreen() end
 end
 
 function World:openWinScreen()
