@@ -54,6 +54,12 @@ function HUD.draw(world)
         if it.food then
             local n = world.game:foodCount(it.id)
             if n > 0 then owned[#owned + 1] = { it = it, count = n } end
+        elseif it.ammo then
+            local n = world.game:ammoCount()
+            if n > 0 then owned[#owned + 1] = { it = it, count = n } end
+        elseif it.stack then
+            local n = world.game:cannonCount()
+            if n > 0 then owned[#owned + 1] = { it = it, count = n } end
         elseif world.game:owns(it.id) then
             owned[#owned + 1] = { it = it }
         end

@@ -21,6 +21,8 @@ local function defaultState()
         discoveredIslands = {},
         owned            = {},   -- one-time upgrades, e.g. owned.cannon = true
         food             = {},   -- consumable provisions, e.g. food.brod = 3
+        ammo             = 0,    -- cannonballs left (the cannon comes with some)
+        cannons          = 0,    -- cannons bought; extras fire a bit faster
         treasuresFound   = {},   -- chest ids dug up (collectibles in the album)
         treasuresMapped  = {},   -- chest ids a harbourmaster has revealed
     }
@@ -197,6 +199,16 @@ function Game:loadSave()
             self.state.fog = data.fog or self.state.fog
             self.state.owned = data.owned or self.state.owned
             self.state.food = data.food or self.state.food
+            self.state.ammo = data.ammo or self.state.ammo
+            self.state.cannons = data.cannons or self.state.cannons
+            -- Saves from before cannonballs/multi-cannon: a cannon owner starts
+            -- fully loaded, with that one cannon counted.
+            if data.ammo == nil and data.owned and data.owned.cannon then
+                self.state.ammo = config.CANNON.START_AMMO
+            end
+            if data.cannons == nil and data.owned and data.owned.cannon then
+                self.state.cannons = 1
+            end
             self.state.treasuresFound = data.treasuresFound or self.state.treasuresFound
             self.state.treasuresMapped = data.treasuresMapped or self.state.treasuresMapped
             self.state.selectedBoat = data.selectedBoat or self.state.selectedBoat
@@ -249,6 +261,55 @@ function Game:buyFood(id, price)
     self.state.coins = self.state.coins - price
     self.state.food = self.state.food or {}
     self.state.food[id] = (self.state.food[id] or 0) + 1
+    self:save()
+    return true
+end
+
+-- Cannons: the first purchase unlocks the auto-cannon (owned.cannon, which all
+-- the gating checks keep using); every further cannon fires the battery a bit
+-- faster (config.CANNON.EXTRA_RATE per extra, capped at MAX_RATE).
+function Game:cannonCount()
+    return self.state.cannons or (self:owns("cannon") and 1 or 0)
+end
+
+function Game:cannonRate()
+    local n = self:cannonCount()
+    if n < 1 then return 1 end
+    return math.min(1 + (n - 1) * config.CANNON.EXTRA_RATE, config.CANNON.MAX_RATE)
+end
+
+function Game:buyCannon(price)
+    if self.state.coins < price then return false end
+    self.state.coins = self.state.coins - price
+    self.state.owned = self.state.owned or {}
+    self.state.owned.cannon = true
+    self.state.cannons = self:cannonCount() + 1
+    self:save()
+    return true
+end
+
+-- Cannonballs: a stock like food, but spent by the auto-cannon (one per shot).
+-- Buy packs in the Butikk; each cannon comes with a starting stock.
+function Game:ammoCount()
+    return self.state.ammo or 0
+end
+
+function Game:addAmmo(n)
+    self.state.ammo = (self.state.ammo or 0) + n
+    self:save()
+end
+
+function Game:buyAmmo(price, n)
+    if self.state.coins < price then return false end
+    self.state.coins = self.state.coins - price
+    self:addAmmo(n)
+    return true
+end
+
+-- Spend one ball; false when the locker is empty (the cannon stays quiet).
+function Game:useAmmo()
+    if (self.state.ammo or 0) <= 0 then return false end
+    self.state.ammo = self.state.ammo - 1
     self:save()
     return true
 end

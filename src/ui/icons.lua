@@ -86,6 +86,19 @@ function Icons.draw(kind, x, y, s)
         love.graphics.setColor(0.05, 0.05, 0.06)                                          -- ball at muzzle
         love.graphics.circle("fill", x + s * 0.52, y - s * 0.01, s * 0.17)
 
+    elseif kind == "kanonkuler" then
+        love.graphics.setColor(0.20, 0.20, 0.23)                                          -- small cannon behind
+        love.graphics.rectangle("fill", x - s * 0.52, y - s * 0.30, s * 0.55, s * 0.22)
+        love.graphics.setColor(0.12, 0.12, 0.14)
+        love.graphics.circle("fill", x - s * 0.30, y - s * 0.04, s * 0.12)
+        love.graphics.setColor(0.05, 0.05, 0.06)                                          -- pyramid of balls
+        love.graphics.circle("fill", x + s * 0.02, y + s * 0.26, s * 0.16)
+        love.graphics.circle("fill", x + s * 0.34, y + s * 0.26, s * 0.16)
+        love.graphics.circle("fill", x + s * 0.18, y - s * 0.02, s * 0.16)
+        love.graphics.setColor(0.35, 0.36, 0.40)                                          -- glints
+        love.graphics.circle("fill", x + s * 0.13, y - s * 0.07, s * 0.04)
+        love.graphics.circle("fill", x - s * 0.03, y + s * 0.21, s * 0.04)
+
     elseif kind == "shell" then
         love.graphics.setColor(0.94, 0.80, 0.72)                                          -- fan shell
         love.graphics.polygon("fill", x, y + s * 0.36, x - s * 0.42, y - s * 0.18, x - s * 0.14, y - s * 0.30,

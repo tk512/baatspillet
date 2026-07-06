@@ -243,6 +243,11 @@ function PortScreen:tryBuy(item)
     local ok
     if item.food then
         ok = game:buyFood(item.id, item.price)        -- food: buy again and again
+    elseif item.ammo then
+        ok = game:buyAmmo(item.price, item.ammo)      -- cannonballs: a pack per buy
+    elseif item.stack then
+        ok = game:buyCannon(item.price)               -- another cannon for the battery
+        if ok then game:addAmmo(config.CANNON.START_AMMO) end   -- comes loaded
     elseif game:owns(item.id) then
         if not Assets.playNamedVoice("har_" .. item.id) then  -- e.g. har_kanon.ogg
             Assets.playSfx("bump")
@@ -766,8 +771,11 @@ function PortScreen:drawCrate(r, mx, my, t)
     local s = STORE
     local game = self.world.game
     local item = r.item
-    local owned  = (not item.food) and game:owns(item.id)   -- food is never "owned"
-    local stock  = item.food and game:foodCount(item.id) or 0
+    local rebuy  = item.food or item.ammo or item.stack     -- stocked, never "owned"
+    local owned  = (not rebuy) and game:owns(item.id)
+    local stock  = (item.food and game:foodCount(item.id))
+        or (item.ammo and game:ammoCount())
+        or (item.stack and game:cannonCount()) or 0
     local afford = game.state.coins >= item.price
     local hover  = inRect(r, mx, my)
 
@@ -795,8 +803,8 @@ function PortScreen:drawCrate(r, mx, my, t)
     love.graphics.setColor(afford and config.colors.gold or s.red)
     love.graphics.print(pr, r.x + r.w / 2 - prw / 2, py)
 
-    -- food stock badge ("xN") in the top-right corner, when you have some aboard
-    if item.food and stock > 0 then
+    -- stock badge ("xN") in the top-right corner, when you have some aboard
+    if rebuy and stock > 0 then
         local fb = vfont(r.h * 0.15)
         love.graphics.setFont(fb)
         local lbl = "x" .. stock

@@ -18,7 +18,7 @@ return {
     {
         id    = "bergen",
         name  = "Bergen",
-        master = "Arne",
+        master = "Farfar",
         x     = 3600, y = 3500,        -- SE coast of the big NW island
         color = {0.85, 0.30, 0.28},
         size  = "large",

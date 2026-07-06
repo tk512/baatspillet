@@ -442,7 +442,16 @@ function World:addShip(gx, gy, angle, opts)
         look = look,
         moving = opts.moving or false,
         speed = opts.speed or 0, turn = opts.turn, turnDir = opts.turnDir,
+        bounce = opts.bounce or false,
+        home = opts.home,        -- {x,y,r,min}: shuttle leash for a home-port boat
+        route = opts.route,      -- ferry stops [{x,y},...]; loops, dwelling at each
+        visits = opts.visits,    -- ports this liner calls at now and then
+        dwell = opts.dwell,      -- pause length at a stop (default AMBIENT_VISIT.DWELL)
     }
+    if s.route then              -- ferries begin lying at their first stop
+        s.routeI = 1
+        s.waitT = (s.dwell or config.AMBIENT_VISIT.DWELL) * (0.3 + love.math.random() * 0.7)
+    end
     self.ships[#self.ships + 1] = s
     return s
 end
@@ -490,7 +499,7 @@ function World:spawnVikingSky()
         look = {
             billboard = true,
             img = "props/vikingsky.png",
-            def = { name = "Viking Sky", country = "Norge", type = "Cruiseskip", scale = 1.5 },
+            def = { name = "Viking Sky", country = "Norge", type = "Cruiseskip", scale = 1.15 },
         },
     })
 end
@@ -534,18 +543,148 @@ local function lookForDef(d)
     return { billboard = true, img = "ships_photos/" .. d.photo .. ".png", def = d }
 end
 
+-- Open water all the way from (gx,gy) `dist` units out along `ang`?
+function World:clearAlong(gx, gy, ang, dist)
+    local c, s = math.cos(ang), math.sin(ang)
+    for t = 40, dist, 40 do
+        if not self.terrain:isWater(gx + c * t, gy + s * t) then return false end
+    end
+    return true
+end
+
+-- A spawn spot + heading for a cruise ship: open water at least `reach` in BOTH
+-- directions along the line, so its back-and-forth patrol is a real lane and it
+-- never ends up pacing a puddle. With `port` set the spot is a ring just outside
+-- that harbour (a boat with a `home`, e.g. Beffen off Bergen) -- still clear of
+-- the pier so it never steals the docking click. nil if no lane exists.
+function World:findCruiseLane(reach, port)
+    for _ = 1, 20 do
+        local gx, gy
+        if port then
+            local a = love.math.random() * math.pi * 2
+            local r = config.AMBIENT_HOME_MIN
+                + love.math.random() * (config.AMBIENT_HOME_LEASH - config.AMBIENT_HOME_MIN)
+            local x, y = port.x + math.cos(a) * r, port.y + math.sin(a) * r
+            if x > 60 and y > 60 and x < config.WORLD_WIDTH - 60
+                and y < config.WORLD_HEIGHT - 60 and self:openSea(x, y, 70)
+                and not self:nearAnyPort(x, y, 560, port) then
+                gx, gy = x, y
+            end
+        else
+            gx, gy = self:findShipSpot()
+            if not gx then return end
+        end
+        if gx then
+            for _ = 1, 8 do
+                local a = love.math.random() * math.pi * 2
+                if self:clearAlong(gx, gy, a, reach)
+                    and self:clearAlong(gx, gy, a + math.pi, reach) then
+                    return gx, gy, a
+                end
+            end
+        end
+    end
+end
+
+-- A little two-stop ferry route around `port`'s island: stop A just off the pier
+-- (outside the keep-out ring), stop B on another part of the island, with a
+-- straight all-water line between them so the pathfinding-less ferry can't
+-- beach. nil if the local coast is too tight.
+function World:buildFerryRoute(port)
+    local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
+    local base = math.atan2(port.seaDy, port.seaDx)
+    local ax, ay
+    for _, dist in ipairs({ 320, 380, 450 }) do
+        for _, side in ipairs({ 0, 0.5, -0.5, 1.0, -1.0 }) do
+            local a = base + side
+            local x, y = port.x + math.cos(a) * dist, port.y + math.sin(a) * dist
+            if x > 60 and y > 60 and x < W - 60 and y < H - 60 and self:openSea(x, y, 60) then
+                ax, ay = x, y; break
+            end
+        end
+        if ax then break end
+    end
+    if not ax then return end
+    local bx, by, bestD = nil, nil, 0
+    for _ = 1, 60 do                       -- farthest reachable spot wins
+        local a = love.math.random() * math.pi * 2
+        local r = 550 + love.math.random() * 500
+        local x, y = port.x + math.cos(a) * r, port.y + math.sin(a) * r
+        if x > 60 and y > 60 and x < W - 60 and y < H - 60 and self:openSea(x, y, 60)
+            and not self:nearAnyPort(x, y, 560, port) then
+            local dx, dy = x - ax, y - ay
+            local d = math.sqrt(dx * dx + dy * dy)
+            if d > 350 and d > bestD and self:clearAlong(ax, ay, math.atan2(dy, dx), d) then
+                bestD, bx, by = d, x, y
+            end
+        end
+    end
+    if not bx then return end
+    return { { x = ax, y = ay }, { x = bx, y = by } }
+end
+
+-- An anchorage off `port` for a visiting liner: in the ring outside the pier
+-- (docking stays clear), open water. nil if the coast is too tight.
+function World:findAnchorage(port)
+    local V = config.AMBIENT_VISIT
+    for _ = 1, 50 do
+        local a = love.math.random() * math.pi * 2
+        local r = V.RING_MIN + love.math.random() * (V.RING_MAX - V.RING_MIN)
+        local x, y = port.x + math.cos(a) * r, port.y + math.sin(a) * r
+        if x > 60 and y > 60 and x < config.WORLD_WIDTH - 60 and y < config.WORLD_HEIGHT - 60
+            and self:openSea(x, y, 60) and not self:nearAnyPort(x, y, 560, port) then
+            return x, y
+        end
+    end
+end
+
 -- Populate the sea. With real photo boats we place exactly ONE of each (there's
 -- only one Aidaluna, one Viking Sky, etc. -- never the same ship twice); the sea
 -- fills out as more boats are added to src/data/ships.lua. Without photos we fall
 -- back to scattering `count` generic OpenGFX sprite ships (duplicates are fine).
+-- Boats flagged `cruise` in ships.lua sail slowly instead of lying at anchor,
+-- turning around when land blocks the way. A `home` boat runs a ferry route
+-- (buildFerryRoute); a `visits` boat calls at its listed cities now and then.
 function World:scatterAmbientBoats(count)
     if self.usePhotos then
         for _, d in ipairs(self.shipDefs) do
             local gx, gy = self:findShipSpot()
-            if gx then
-                self:addShip(gx, gy, love.math.random() * math.pi * 2,
-                    { moving = false, look = lookForDef(d) })
+            local angle = love.math.random() * math.pi * 2
+            local opts = { moving = false, look = lookForDef(d) }
+            if d.cruise then
+                opts.moving = true
+                opts.speed = config.AMBIENT_CRUISE_SPEED
+                opts.bounce = true
+                if d.visits then                 -- liner calling at its cities
+                    local list = {}
+                    for _, pid in ipairs(d.visits) do
+                        local p = self:portById(pid)
+                        if p then list[#list + 1] = p end
+                    end
+                    if #list > 0 then opts.visits = list end
+                end
+                local home = d.home and self:portById(d.home)
+                local route = home and self:buildFerryRoute(home)
+                if route then                    -- ferry: spawn at stop A, bound for B
+                    opts.route = route
+                    opts.dwell = config.AMBIENT_HOME_DWELL
+                    gx, gy = route[1].x, route[1].y
+                    angle = math.atan2(route[2].y - route[1].y, route[2].x - route[1].x)
+                else
+                    local reach = home and config.AMBIENT_HOME_LANE or config.AMBIENT_CRUISE_LANE
+                    local cx, cy, ca = self:findCruiseLane(reach, home)
+                    if cx and home then          -- no route fits: leash a lane instead
+                        opts.home = { x = home.x, y = home.y,
+                                      r = config.AMBIENT_HOME_LEASH,
+                                      min = config.AMBIENT_HOME_MIN }
+                    end
+                    if not cx and home then      -- tight coast at home: any open lane
+                        cx, cy, ca = self:findCruiseLane(config.AMBIENT_CRUISE_LANE)
+                    end
+                    if cx then gx, gy, angle = cx, cy, ca end   -- else: any spot, still bounces
+                end
             end
+            if gx then self:addShip(gx, gy, angle, opts) end
         end
         return
     end
@@ -605,23 +744,166 @@ function World:scatterMovingShips(count)
     end
 end
 
--- Sail each moving ship forward; if land or the world edge is close ahead, ease
--- the heading around (its fixed turnDir) until open water lies ahead again. Slow
--- and forgiving, never an obstacle the player must dodge.
+-- Water (and world) clear along the ship's whole look-ahead ray on `ang`?
+-- Sampled at several points, not just the tip, so a thin headland between the
+-- ship and the far sample can't slip through (a coast-hugging liner would
+-- otherwise walk straight onto it).
+local function clearAt(self, s, c, sn, d, W, H)
+    local ax, ay = s.x + c * d, s.y + sn * d
+    return ax >= 60 and ay >= 60 and ax <= W - 60 and ay <= H - 60
+        and self.terrain:isWater(ax, ay)
+end
+
+-- `lk` overrides the look-ahead reach: ships stuck in a pocket smaller than
+-- their normal horizon (see escape mode below) probe just 20 units so they can
+-- creep back out of the channel they came in by.
+local function aheadClear(self, s, ang, W, H, lk)
+    lk = lk or (s.escape and 20 or s.r + 70)
+    local c, sn = math.cos(ang), math.sin(ang)
+    return clearAt(self, s, c, sn, 12, W, H)
+        and clearAt(self, s, c, sn, lk * 0.45, W, H)
+        and clearAt(self, s, c, sn, lk, W, H)
+end
+
+-- Steer a ship toward s.goal: ease the heading onto the target, swing aside
+-- (its fixed turnDir) when land blocks the way, creep along until open again.
+-- Arriving drops anchor for s.dwell seconds; the goal timeout gives up on
+-- unreachable spots so nobody circles a fjord forever.
+function World:steerShip(s, dt, W, H)
+    local V = config.AMBIENT_VISIT
+    local g = s.goal
+    local dx, dy = g.x - s.x, g.y - s.y
+    if (dx * dx + dy * dy) < 70 * 70 then                    -- arrived: lie at anchor
+        s.goal = nil
+        s.waitT = s.dwell or V.DWELL
+        return
+    end
+    s.goalT = (s.goalT or V.TIMEOUT) - dt
+    if s.goalT <= 0 then                                     -- unreachable: give up
+        s.goal, s.goalT = nil, nil
+        if s.route then s.waitT = s.dwell or V.DWELL end     -- ferry tries the next stop
+        return
+    end
+    -- While skirting land, commit to the swing for a moment (s.avoidT) instead
+    -- of re-aiming at the goal every frame -- otherwise the ship hugs the coast
+    -- at a crawl (turn in, turn out, repeat) and long legs time out.
+    if s.avoidT and s.avoidT > 0 then
+        s.avoidT = s.avoidT - dt
+    else
+        local want = math.atan2(dy, dx)
+        local diff = (want - s.angle + math.pi) % (math.pi * 2) - math.pi
+        local step = V.TURN_RATE * dt
+        s.angle = s.angle + math.max(-step, math.min(step, diff))
+    end
+    if not aheadClear(self, s, s.angle, W, H) then
+        s.avoidT = 1.2
+        s.angle = s.angle + (s.turnDir or 1) * V.TURN_RATE * 2.2 * dt
+        if not aheadClear(self, s, s.angle, W, H) then return end   -- hold this frame
+    end
+    -- the actual step is guarded too: noise coasts have slivers thinner than
+    -- any look-ahead sampling, and a ship must never end up ON land
+    local nx = s.x + math.cos(s.angle) * s.speed * dt
+    local ny = s.y + math.sin(s.angle) * s.speed * dt
+    if self.terrain:isWater(nx, ny) then s.x, s.y = nx, ny end
+end
+
+-- Sail each moving ship. Three modes, in priority order:
+--   waitT  -- lying at anchor on a stop; when it runs out a ferry heads for its
+--             next route stop, a visitor just resumes cruising
+--   goal   -- steering somewhere specific (ferry stop / city anchorage)
+--   free   -- the plain slow cruise: straight line, turn around (bounce) when
+--             land, the world edge, or the home leash blocks the way; `visits`
+--             liners schedule their next city call from here
+-- Slow and forgiving, never an obstacle the player must dodge.
 function World:updateMovingShips(dt)
     local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
+    local V = config.AMBIENT_VISIT
     for _, s in ipairs(self.ships) do
         if s.moving then
-            local lk = s.r + 70
-            local ax = s.x + math.cos(s.angle) * lk
-            local ay = s.y + math.sin(s.angle) * lk
-            local blocked = ax < 60 or ay < 60 or ax > W - 60 or ay > H - 60
-                or not self.terrain:isWater(ax, ay)
-            if blocked then
-                s.angle = s.angle + s.turnDir * s.turn * dt
+            if s.bounceCd and s.bounceCd > 0 then s.bounceCd = s.bounceCd - dt end
+            local ox, oy = s.x, s.y
+
+            if s.waitT then
+                s.waitT = s.waitT - dt
+                if s.waitT <= 0 then
+                    s.waitT = nil
+                    if s.route then                          -- next ferry stop
+                        s.routeI = (s.routeI or 1) % #s.route + 1
+                        s.goal = s.route[s.routeI]
+                        s.goalT = V.TIMEOUT
+                    end
+                end
+            elseif s.goal then
+                self:steerShip(s, dt, W, H)
             else
-                s.x = s.x + math.cos(s.angle) * s.speed * dt
-                s.y = s.y + math.sin(s.angle) * s.speed * dt
+                if s.visits then                             -- time for a city call?
+                    s.visitT = (s.visitT or (V.INTERVAL_MIN
+                        + love.math.random() * (V.INTERVAL_MAX - V.INTERVAL_MIN))) - dt
+                    if s.visitT <= 0 then
+                        s.visitT = V.INTERVAL_MIN
+                            + love.math.random() * (V.INTERVAL_MAX - V.INTERVAL_MIN)
+                        local port, bestD2                   -- call at the NEAREST city
+                        for _, p in ipairs(s.visits) do
+                            local px, py = p.x - s.x, p.y - s.y
+                            local d2 = px * px + py * py
+                            if not bestD2 or d2 < bestD2 then port, bestD2 = p, d2 end
+                        end
+                        local gx, gy = self:findAnchorage(port)
+                        if gx then
+                            -- allow the crossing time it actually needs (detours
+                            -- around islands included), TIMEOUT as the floor
+                            local eta = math.sqrt(bestD2) / math.max(1, s.speed)
+                            s.goal, s.goalT = { x = gx, y = gy }, math.max(V.TIMEOUT, eta * 1.8)
+                            s.dwell = V.DWELL
+                        end
+                    end
+                end
+
+                local blocked = not aheadClear(self, s, s.angle, W, H)
+                if not blocked and s.home then
+                    -- Shuttle inside the home ring: past the leash heading away, or
+                    -- inside the keep-out ring heading at the pier -> turn around.
+                    -- (The two can't both hold, so it can't freeze between them.)
+                    local hx, hy = s.x - s.home.x, s.y - s.home.y
+                    local d2 = hx * hx + hy * hy
+                    local outbound = (hx * math.cos(s.angle) + hy * math.sin(s.angle)) > 0
+                    if (d2 > s.home.r * s.home.r and outbound)
+                        or (s.home.min and d2 < s.home.min * s.home.min and not outbound) then
+                        blocked = true
+                    end
+                end
+                if blocked then
+                    if s.bounce then
+                        if not s.bounceCd or s.bounceCd <= 0 then
+                            s.angle = s.angle + math.pi
+                            s.bounceCd = 2.0
+                        end
+                    else
+                        s.angle = s.angle + s.turnDir * s.turn * dt
+                    end
+                else
+                    -- guard the step itself (see steerShip): never end up ON land
+                    local nx = s.x + math.cos(s.angle) * s.speed * dt
+                    local ny = s.y + math.sin(s.angle) * s.speed * dt
+                    if self.terrain:isWater(nx, ny) then s.x, s.y = nx, ny end
+                end
+            end
+
+            -- Escape mode: a ship that steered into a pocket smaller than its
+            -- look-ahead sees "land" every way and would spin in place forever.
+            -- A few stuck seconds shrink its horizon (aheadClear above) so it
+            -- can nose back out; open water ahead restores the full horizon.
+            if not s.waitT then
+                local mdx, mdy = s.x - ox, s.y - oy
+                if (mdx * mdx + mdy * mdy) < 1e-9 then
+                    s.stuckT = (s.stuckT or 0) + dt
+                    if s.stuckT > 5 then s.escape = true end
+                else
+                    s.stuckT = 0
+                    if s.escape and aheadClear(self, s, s.angle, W, H, s.r + 70) then
+                        s.escape = nil
+                    end
+                end
             end
         end
     end
@@ -659,10 +941,12 @@ function World:shipAt(mx, my)
 end
 
 -- True if (x,y) is within `r` of any town (so we don't park clouds over them).
-function World:nearAnyPort(x, y, r)
+function World:nearAnyPort(x, y, r, except)
     for _, p in ipairs(self.ports) do
-        local dx, dy = x - p.x, y - p.y
-        if dx * dx + dy * dy < r * r then return true end
+        if p ~= except then
+            local dx, dy = x - p.x, y - p.y
+            if dx * dx + dy * dy < r * r then return true end
+        end
     end
     return false
 end
@@ -827,7 +1111,15 @@ function World:update(dt)
     -- be so it can sail away. Balls already in flight still finish their arc.
     if self.game:owns("cannon") then
         local target = (self.pirate and self.pirate.state == "chase") and self.pirate or nil
-        self.boat:updateCannon(dt, target, function() self:cannonHitPirate() end)
+        self.boat:updateCannon(dt, target, function() self:cannonHitPirate() end, self.game)
+        -- Out of balls with a pirate attacking: say so once per encounter, so the
+        -- quiet cannon reads as "buy kuler", not a bug. (You can still just dodge.)
+        if target and self.game:ammoCount() <= 0 and not self._ammoWarned then
+            self._ammoWarned = true
+            self:showToast("Tomt for kanonkuler! Kjøp flere i butikken.")
+            if not Assets.playNamedVoice("tomt_for_kuler") then Assets.playSfx("bump", 0.7) end
+        end
+        if not self.pirate then self._ammoWarned = false end
     end
 
     self:updateTreasure(dt)
@@ -1197,7 +1489,7 @@ function World:spawnPirate()
     if not px then return end          -- nowhere clear to appear; try again next roll
     self.pirate = Pirate.new(px, py, self.boat.maxSpeed)
     self.pirate.angle = math.atan2(self.boat.y - py, self.boat.x - px)
-    Assets.playSfx("pirate_warn", 0.95)
+    Assets.playSfx("pirate_warn", 0.85)
     Assets.startChase()
     self:showToast("Sjørøvere!")
 end
@@ -1861,7 +2153,7 @@ function World:devSpawnPirateClose()
                 and self.terrain:isWater(x, y) then
                 self.pirate = Pirate.new(x, y, self.boat.maxSpeed)
                 self.pirate.angle = math.atan2(b.y - y, b.x - x)
-                Assets.playSfx("pirate_warn", 0.95)
+                Assets.playSfx("pirate_warn", 0.85)
                 Assets.startChase()
                 self:showToast("Sjørøvere! (dev)")
                 return

@@ -155,6 +155,10 @@ config.CANNON = {
     SPREAD        = 0.24,  -- random aim error in radians (bigger = wilder, more misses)
     SCARE_HITS    = 3,     -- hits needed to drive the pirate off (so it really chases
                            -- + shoots you first; 1 would scare it away too quickly)
+    START_AMMO    = 15,    -- balls included with each cannon; more via the Butikk's
+                           -- Kanonkuler pack (shop.lua `ammo = N`)
+    EXTRA_RATE    = 0.2,   -- each cannon beyond the first fires 20% faster...
+    MAX_RATE      = 1.8,   -- ...capped here, so a pile of cannons stays gentle
 }
 
 -- Treasure hunt: a few chests rest on sandbanks (shallow water) off the coasts.
@@ -248,6 +252,31 @@ config.AMBIENT_PHOTO_WIDTH = 115 -- on-screen width of a photo billboard ship (k
 config.AMBIENT_HARBOUR_SCALE = 0.8   -- harbour-mouth ships (smaller than the open-sea ones)
 config.AMBIENT_SHIP_RADIUS_FRAC = 0.22  -- collision radius as a fraction of on-screen width
 config.AMBIENT_SHIP_SPEED = 23   -- base speed of sailing ships (slow; the player boat does ~140)
+config.AMBIENT_CRUISE_SPEED = 12 -- photo boats with cruise=true (extra slow, stately)
+config.AMBIENT_CRUISE_LANE = 420 -- min open water either way along a cruise ship's
+                                 -- spawn heading (so it patrols a lane, not a puddle)
+config.AMBIENT_HOME_LANE = 220   -- shorter lane for boats tied to a home port
+                                 -- (little Beffen shuttling just outside Bergen)
+config.AMBIENT_HOME_MIN = 280    -- keep-out ring around the home pier: never closer
+                                 -- than this (docking is PICKUP_RADIUS=95, so the
+                                 -- quay stays clear), bounce back out if headed in
+config.AMBIENT_HOME_LEASH = 600  -- how far a home-port boat may stray before it
+                                 -- turns around and shuttles back
+config.AMBIENT_HOME_DWELL = 15   -- a route ferry's pause at each of its stops
+
+-- Ambient ships calling at harbours (ships.lua `visits = {...}`): every so often
+-- a listed liner steers to an anchorage off one of its cities, lies still a
+-- while, then sails on. The anchorage ring keeps the quay itself clear (player
+-- docking triggers at PICKUP_RADIUS=95, and 560 is the tap-safety ring).
+config.AMBIENT_VISIT = {
+    INTERVAL_MIN = 70,   -- seconds of open-sea cruising between visits...
+    INTERVAL_MAX = 160,  -- ...picked randomly in this range
+    DWELL        = 30,   -- how long a visitor lies at anchor off the pier
+    RING_MIN     = 330,  -- anchorage distance from the pier
+    RING_MAX     = 520,
+    TIMEOUT      = 240,  -- give up steering there after this long (odd geometry)
+    TURN_RATE    = 0.6,  -- rad/s homing turn while steering to a goal
+}
 
 -- The single premium unlock ("one pack unlocks everything"): all the fancy boats,
 -- map variations and future extras. One non-consumable App Store purchase later;

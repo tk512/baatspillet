@@ -52,7 +52,9 @@ end
 -- to pass close to the (moving) pirate. Most shots miss; landing one calls
 -- onHit, which scares the pirate off rather than sinking it. Only called by the
 -- world while the cannon is owned and the pirate is still attacking.
-function Boat:updateCannon(dt, target, onHit)
+-- Each shot spends one cannonball (game:useAmmo); with the locker empty the
+-- cannon stays quiet -- balls already in flight still finish their arc.
+function Boat:updateCannon(dt, target, onHit, game)
     local C = config.CANNON
     self.cannonT = math.max(0, self.cannonT - dt)
 
@@ -78,8 +80,9 @@ function Boat:updateCannon(dt, target, onHit)
     if target and self.cannonT <= 0 then
         local dx, dy = target.x - self.x, target.y - self.y
         local dist = math.sqrt(dx * dx + dy * dy)
-        if dist < C.FIRE_RANGE then
-            self.cannonT = C.FIRE_INTERVAL
+        if dist < C.FIRE_RANGE and (not game or game:useAmmo()) then
+            -- more cannons aboard = a slightly quicker battery (game:cannonRate)
+            self.cannonT = C.FIRE_INTERVAL / (game and game:cannonRate() or 1)
             self:fireCannon(target, dist)
         end
     end

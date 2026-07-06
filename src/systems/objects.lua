@@ -630,14 +630,26 @@ end
 
 -- Photo billboard ambient ship (a stylized real-boat photo at assets/<imgPath>,
 -- bow pointing right). Like the player boat, there's no rotation: it faces the way
--- it's travelling on screen and mirrors for the other direction, lying flat on the
--- water (no bob, no shadow). Returns false if the photo is missing.
+-- it's travelling on screen. Sailing screen-left it uses the dedicated
+-- <name>_left.png if that exists (hull text stays readable), otherwise it just
+-- mirrors the right-facing photo. Lies flat on the water (no bob, no shadow).
+-- Returns false if the photo is missing.
+local leftPathFor = {}                       -- imgPath -> "<name>_left.png" (cached)
 function Objects.drawShipBillboard(imgPath, gx, gy, angle, scale)
     local img = Assets.image(imgPath)
     if not img then return false end
     if img:getFilter() ~= "nearest" then img:setFilter("nearest", "nearest") end
     local vsx = (math.cos(angle) - math.sin(angle)) * Iso.SX   -- screen-x travel
     local flip = (vsx < 0) and -1 or 1
+    if flip == -1 then
+        local lp = leftPathFor[imgPath]
+        if not lp then
+            lp = imgPath:gsub("%.png$", "_left.png")
+            leftPathFor[imgPath] = lp
+        end
+        local left = Assets.image(lp)
+        if left then img, flip = left, 1 end
+    end
     local w = config.AMBIENT_PHOTO_WIDTH * (scale or 1)
     local s = w / img:getWidth()
     local sx, sy = Iso.project(gx, gy, 0)

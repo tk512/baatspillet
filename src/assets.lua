@@ -232,21 +232,18 @@ local function makeSounds()
         return (thud * 0.7 + splash * 0.6 + sad) * env(t, 0.45, 0.002, 0.12)
     end), "static")
 
-    -- Pirate warning: three low detuned impact hits (D2, A#1, F#1) sinking in
-    -- pitch over a growling drone, with a swelling dissonant high cluster.
-    local warnRumble = 0
+    -- Pirate warning: a distant two-blast foghorn, dropping a minor third
+    -- (Bb2 down to G2) -- dark enough to mean trouble, soft enough not to
+    -- startle. Slow attack, gentle vibrato, deliberately quiet.
     Assets.sounds.pirate_warn = love.audio.newSource(render(1.7, function(t)
-        local notes = { 73.4, 58.3, 46.2 }
-        local idx = math.min(3, math.floor(t / 0.46) + 1)
-        local lt  = t - (idx - 1) * 0.46
-        local f   = notes[idx]
-        local hit = (math.sin(TAU * f * t) + 0.5 * math.sin(TAU * f * 2.02 * t))
-                    * env(lt, 0.46, 0.004, 0.2)
-        warnRumble = warnRumble * 0.88 + rnd() * 0.12
-        local crash   = warnRumble * math.max(0, 1 - lt / 0.14) * 0.7
-        local growl   = 0.3 * math.sin(TAU * 46 * t) * (0.6 + 0.4 * math.sin(TAU * 8 * t))
-        local tension = (math.sin(TAU * 415 * t) + math.sin(TAU * 440 * t)) * 0.11 * math.min(1, t / 1.3)
-        return (hit * 0.85 + crash + growl + tension) * env(t, 1.7, 0.01, 0.3)
+        local lt = (t < 0.85) and t or (t - 0.95)
+        if lt < 0 then return 0 end                     -- breath between blasts
+        local f   = (t < 0.85) and 116.5 or 98
+        local vib = 1 + 0.008 * math.sin(TAU * 4.5 * t)
+        local s = math.sin(TAU * f * vib * t)
+                + 0.4  * math.sin(TAU * f * 2.01 * vib * t)
+                + 0.15 * math.sin(TAU * f * 3.02 * t)
+        return 0.28 * s * env(lt, 0.75, 0.09, 0.22)
     end), "static")
 end
 

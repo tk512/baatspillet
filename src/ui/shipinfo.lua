@@ -35,6 +35,25 @@ local function flag(country, x, y, w, h)
         love.graphics.setColor(0.97, 0.97, 0.99); love.graphics.rectangle("fill", x, y, w, h)
         love.graphics.setColor(0.80, 0.12, 0.14); love.graphics.rectangle("fill", x + w / 2, y, w / 2, h / 2)
         love.graphics.setColor(0.10, 0.20, 0.55); love.graphics.rectangle("fill", x, y + h / 2, w / 2, h / 2)
+    elseif country == "Sør-Afrika" then
+        -- red over blue; a white-edged green "Y" lying on its side; black
+        -- triangle at the hoist with a gold border
+        love.graphics.setColor(0.87, 0.11, 0.13); love.graphics.rectangle("fill", x, y, w, h / 2)
+        love.graphics.setColor(0.00, 0.10, 0.53); love.graphics.rectangle("fill", x, y + h / 2, w, h / 2)
+        local fx, fy = x + w * 0.45, y + h * 0.5             -- where the Y forks
+        love.graphics.setColor(0.97, 0.97, 0.99)             -- white edges of the Y
+        love.graphics.setLineWidth(h * 0.40)
+        love.graphics.line(x, y, fx, fy); love.graphics.line(x, y + h, fx, fy)
+        love.graphics.line(fx, fy, x + w, fy)
+        love.graphics.setColor(0.00, 0.47, 0.23)             -- the green Y itself
+        love.graphics.setLineWidth(h * 0.22)
+        love.graphics.line(x, y, fx, fy); love.graphics.line(x, y + h, fx, fy)
+        love.graphics.line(fx, fy, x + w, fy)
+        love.graphics.setColor(0.99, 0.71, 0.08)             -- gold border...
+        love.graphics.polygon("fill", x, y + h * 0.06, x + w * 0.30, y + h * 0.5, x, y + h * 0.94)
+        love.graphics.setColor(0.05, 0.05, 0.06)             -- ...around the black hoist triangle
+        love.graphics.polygon("fill", x, y + h * 0.20, x + w * 0.21, y + h * 0.5, x, y + h * 0.80)
+        love.graphics.setLineWidth(1)
     else
         love.graphics.setColor(0.30, 0.45, 0.62); love.graphics.rectangle("fill", x, y, w, h)
     end
@@ -48,7 +67,7 @@ function ShipInfo.draw(ship, sx, sy, fonts)
     local name = def.name or "Skip"
     local typ  = def.type or ""
     local country = def.country or ""
-    local speedText = (ship.moving and ship.speed > 1)
+    local speedText = (ship.moving and ship.speed > 1 and not ship.waitT)
         and (math.floor(ship.speed * 0.5 + 0.5) .. " knop") or "Ligger stille"
 
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
