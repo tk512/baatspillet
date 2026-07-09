@@ -68,21 +68,6 @@ function Assets.portPortrait(id)
     return portraitCache[id] or nil
 end
 
--- Town photo: assets/ports/photos/<id>.png, or nil for a procedural postcard.
-local photoCache = {}
-function Assets.portPhoto(id)
-    if photoCache[id] == nil then
-        local full = "assets/ports/photos/" .. id .. ".png"
-        if love.filesystem.getInfo(full) then
-            local ok, img = pcall(love.graphics.newImage, full)
-            photoCache[id] = ok and img or false
-        else
-            photoCache[id] = false
-        end
-    end
-    return photoCache[id] or nil
-end
-
 local RATE = 22050 -- low on purpose: small + lo-fi 90s feel
 
 -- Build a SoundData from a per-sample function f(t, i) -> amplitude (-1..1).
@@ -133,7 +118,8 @@ local function makeSounds()
         local vib = 1 + 0.01 * math.sin(TAU * 5 * t)
         local s = math.sin(TAU * base * vib * t)
                 + 0.5 * math.sin(TAU * base * 2 * vib * t)
-        return 0.4 * s * env(t, 0.9, 0.03, 0.25)
+        return 0.62 * s * env(t, 0.9, 0.03, 0.25)   -- proud, not faint: it's the
+                                                    -- kid's own toot button now
     end), "static")
 
     -- Soft "bonk" for bouncing off land/edges.
@@ -157,6 +143,21 @@ local function makeSounds()
         seed = (seed * 1103515245 + 12345) % 2147483648
         return (seed / 2147483648) * 2 - 1
     end
+    -- "Blubb": a few round bubbles popping up the scale, for the submarine
+    -- rising / sinking (override with a real blub at assets/sfx/blubb.ogg).
+    Assets.sounds.blubb = love.audio.newSource(render(0.7, function(t)
+        local a = 0
+        for k = 0, 3 do
+            local t0 = k * 0.16
+            if t >= t0 and t < t0 + 0.12 then
+                local u = (t - t0) / 0.12
+                local f = 210 + k * 70 + u * 50          -- each bubble chirps up
+                a = a + math.sin(2 * math.pi * f * t) * (1 - u)
+            end
+        end
+        return a * 0.5
+    end), "static")
+
     Assets.sounds.wave_crash = love.audio.newSource(render(1.5, function(t)
         local raw = rnd()
         prev = prev * 0.85 + raw * 0.15        -- low-pass -> "shhhh" of water
@@ -356,7 +357,7 @@ end
 -- Drop a real recording at assets/sfx/<name>.<ext> to override the synth.
 -- Any LÖVE-supported format works (ogg/mp3/flac/wav), tried in order.
 local function loadSfxFiles()
-    local names = { "leave", "cannon", "cannon_hit", "pirate_warn", "chopper", "doink" }
+    local names = { "leave", "cannon", "cannon_hit", "pirate_warn", "chopper", "doink", "blubb" }
     local exts  = { ".ogg", ".mp3", ".flac", ".wav" }
     for _, name in ipairs(names) do
         for _, ext in ipairs(exts) do
@@ -501,6 +502,7 @@ function Assets.playSfx(name, vol)
     local s = src:clone()
     s:setVolume(vol or config.SFX_VOLUME)   -- optional louder override
     s:play()
+    return s   -- so a caller can cap/stop it (e.g. the horn's short toot)
 end
 
 -- Loop the chase bed and duck the music while a pirate hunts; stopChase restores it.

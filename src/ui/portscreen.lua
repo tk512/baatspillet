@@ -281,6 +281,11 @@ function PortScreen:confirm()
         Assets.playSfx("horn")
         self.world:showToast("Ombord!")
     end
+    if wasDeliver then
+        -- the town celebrates the delivery with mini fireworks once you're
+        -- back on the water (deferred like the map card; see World:update)
+        self.world.pendingFireworks = self.port
+    end
     Assets.stopDockMood()
     self.world.dock = nil
 
@@ -722,9 +727,18 @@ function PortScreen:drawStorePanel(pw, ph)
     love.graphics.setColor(config.colors.gold); love.graphics.circle("fill", pw / 2 - gw / 2 - cr * 1.6, gy + fG:getHeight() / 2, cr)
     love.graphics.setColor(config.colors.gold); love.graphics.print(gold, pw / 2 - gw / 2, gy)
 
-    -- the goods grid (3 columns)
+    -- The goods grid (3 columns). Kanonkuler only exist once a cannon is
+    -- aboard: without one the crate isn't even shown (nothing to explain,
+    -- nothing to mis-buy). Filtered here at draw time so buying the cannon
+    -- makes the kuler crate appear in the SAME store visit.
+    local items = {}
+    for _, it in ipairs(self.shop) do
+        if not (it.ammo and game:cannonCount() < 1) then
+            items[#items + 1] = it
+        end
+    end
     local cols = 3
-    local n = #self.shop
+    local n = #items
     local rows = math.max(1, math.ceil(n / cols))
     local gridX, gridY = ix + iw * 0.04, iy + ih * 0.23
     local gridW, gridH = iw * 0.92, ih * 0.56
@@ -735,7 +749,7 @@ function PortScreen:drawStorePanel(pw, ph)
     for i = 1, n do
         local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
         local rect = { x = gridX + col * (cw + gap), y = gridY + row * (ch + rowGap),
-                       w = cw, h = ch, item = self.shop[i] }
+                       w = cw, h = ch, item = items[i] }
         self._crates[i] = rect
         self:drawCrate(rect, mx, my, t)
     end
@@ -784,19 +798,23 @@ function PortScreen:drawCrate(r, mx, my, t)
     bevel(r.x + t * 2, r.y + t * 2, r.w - t * 4, r.h - t * 4, s.wood, s.cratehi, s.cratelo,
           math.max(1, math.floor(t * 0.6)), false)
 
-    Icons.draw(item.icon, r.x + r.w / 2, r.y + r.h * 0.34, r.h * 0.34)
+    -- BIG goods picture (it's the point of the store -- and replaceable with
+    -- real photos at assets/icons/<icon>.png later; drawFit sizes photo and
+    -- placeholder glyph the same, so it stays big either way)
+    Icons.drawFit(item.icon, r.x + r.w / 2, r.y + r.h * 0.36,
+        math.min(r.w * 0.66, r.h * 0.62))
 
-    local fn = vfont(r.h * 0.13)
+    local fn = vfont(r.h * 0.115)
     love.graphics.setFont(fn)
     love.graphics.setColor(s.text)
-    love.graphics.print(item.name, r.x + r.w / 2 - fn:getWidth(item.name) / 2, r.y + r.h * 0.60)
+    love.graphics.print(item.name, r.x + r.w / 2 - fn:getWidth(item.name) / 2, r.y + r.h * 0.685)
 
-    local fp = vfont(r.h * 0.16)
+    local fp = vfont(r.h * 0.145)
     love.graphics.setFont(fp)
     local pr = tostring(item.price)
     local prw = fp:getWidth(pr)
-    local py = r.y + r.h * 0.76
-    local cr = r.h * 0.075
+    local py = r.y + r.h * 0.815
+    local cr = r.h * 0.068
     local coinX = r.x + r.w / 2 - prw / 2 - cr * 1.5
     love.graphics.setColor(0.6, 0.45, 0.1); love.graphics.circle("fill", coinX, py + fp:getHeight() / 2, cr + 1)
     love.graphics.setColor(config.colors.gold); love.graphics.circle("fill", coinX, py + fp:getHeight() / 2, cr)

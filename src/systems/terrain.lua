@@ -46,10 +46,12 @@ function Terrain.new(ports)
     self:generateLand()          -- corner land/water flags (irregular coasts)
     self:snapPorts(ports)        -- place ports on the coast + mark their pads
     self:classifyTiles()         -- water / sand / grass / rock per tile
+    self:buildShoreDist()        -- corner→waterline distances (the beach band)
     self:buildHeightfield()      -- per-tile elevation level
     self:scatterProps()
     self:buildCoastMesh()
     self:buildLandMesh()
+    self:buildRoadMesh()         -- country roads between neighbouring houses
 
     for i, isl in ipairs(config.ISLANDS) do
         self.islandCenters[i] = { x = isl.x, y = isl.y, radius = isl.radius, id = "island" .. i }
@@ -224,13 +226,28 @@ function Terrain:buildHeightfield()
         local row = self.tiles[i]; local t = row and row[j]
         return (t and t.level) or 0
     end
+    -- A corner touching the flat beach strip (coastal tile), open water or the
+    -- map edge is PINNED to sea level. The beach/water tiles are drawn flat at
+    -- z=0 (coastMesh / water base), so a lifted shared corner would hoist the
+    -- land mesh's edge off them and expose the blue clear color underneath as
+    -- long triangular gaps. Pinning makes the land always rise from BEHIND the
+    -- beach, and the two meshes meet exactly.
+    local function flatTile(i, j)
+        local row = self.tiles[i]; local t = row and row[j]
+        return (not t) or t.water or t.land < 4
+    end
     self.cz = {}
     for ci = 1, self.nx + 1 do
         self.cz[ci] = {}
         Loader.tick()
         for cj = 1, self.ny + 1 do
-            local s = tlvl(ci - 1, cj - 1) + tlvl(ci, cj - 1) + tlvl(ci - 1, cj) + tlvl(ci, cj)
-            self.cz[ci][cj] = (s * 0.25) * M.STEP
+            if flatTile(ci - 1, cj - 1) or flatTile(ci, cj - 1)
+                or flatTile(ci - 1, cj) or flatTile(ci, cj) then
+                self.cz[ci][cj] = 0
+            else
+                local s = tlvl(ci - 1, cj - 1) + tlvl(ci, cj - 1) + tlvl(ci - 1, cj) + tlvl(ci, cj)
+                self.cz[ci][cj] = (s * 0.25) * M.STEP
+            end
         end
     end
 
@@ -290,6 +307,86 @@ function Terrain:classifyTiles()
     end
 end
 
+-- Chamfer distance (in corner steps, capped at 3) from every grid corner to the
+-- nearest sea corner: the "how far inland am I" field that drives the dithered
+-- sand→grass band (isBeach). Two forward/backward sweeps are exact here because
+-- the cap is tiny.
+function Terrain:buildShoreDist()
+    local sd = {}
+    for ci = 1, self.nx + 1 do
+        sd[ci] = {}
+        for cj = 1, self.ny + 1 do
+            sd[ci][cj] = (self.corner[ci][cj] == 0) and 0 or 9
+        end
+    end
+    local function relax(ci, cj, di, dj, cost)
+        local row = sd[ci + di]
+        local v = row and row[cj + dj]
+        if v and v + cost < sd[ci][cj] then sd[ci][cj] = v + cost end
+    end
+    for _ = 1, 2 do
+        for ci = 1, self.nx + 1 do
+            Loader.tick()
+            for cj = 1, self.ny + 1 do
+                relax(ci, cj, -1, 0, 1);    relax(ci, cj, 0, -1, 1)
+                relax(ci, cj, -1, -1, 1.4); relax(ci, cj, 1, -1, 1.4)
+                if sd[ci][cj] > 3 then sd[ci][cj] = 3 end
+            end
+        end
+        for ci = self.nx + 1, 1, -1 do
+            Loader.tick()
+            for cj = self.ny + 1, 1, -1 do
+                relax(ci, cj, 1, 0, 1);    relax(ci, cj, 0, 1, 1)
+                relax(ci, cj, 1, 1, 1.4);  relax(ci, cj, -1, 1, 1.4)
+                if sd[ci][cj] > 3 then sd[ci][cj] = 3 end
+            end
+        end
+    end
+    self.shoreD = sd
+end
+
+-- Bilinear corner height at a world point (the land mesh's smooth surface).
+function Terrain:heightAt(gx, gy)
+    local T = config.TILE
+    local ci, cj = gx / T + 1, gy / T + 1
+    local i0 = math.max(1, math.min(self.nx, math.floor(ci)))
+    local j0 = math.max(1, math.min(self.ny, math.floor(cj)))
+    local fx, fy = ci - i0, cj - j0
+    local a, b = self.cz[i0][j0], self.cz[i0 + 1][j0]
+    local c, d = self.cz[i0][j0 + 1], self.cz[i0 + 1][j0 + 1]
+    local top = a + (b - a) * fx
+    local bot = c + (d - c) * fx
+    return top + (bot - top) * fy
+end
+
+-- Bilinear shore distance at a world point (0 right at the waterline).
+function Terrain:shoreDistAt(gx, gy)
+    local T = config.TILE
+    local ci, cj = gx / T + 1, gy / T + 1
+    local i0 = math.max(1, math.min(self.nx, math.floor(ci)))
+    local j0 = math.max(1, math.min(self.ny, math.floor(cj)))
+    local fx, fy = ci - i0, cj - j0
+    local a, b = self.shoreD[i0][j0], self.shoreD[i0 + 1][j0]
+    local c, d = self.shoreD[i0][j0 + 1], self.shoreD[i0 + 1][j0 + 1]
+    local top = a + (b - a) * fx
+    local bot = c + (d - c) * fx
+    return top + (bot - top) * fy
+end
+
+-- Is the ground at (gx,gy) beach sand (true) or grass (false)? Solid sand near
+-- the waterline, solid grass inland, and a speckled per-pixel dither in the
+-- band between (config.BEACH), so the sand→grass edge frays naturally instead
+-- of tracing the tile diamonds. Used by BOTH ground meshes at bake time.
+function Terrain:isBeach(gx, gy)
+    local B = config.BEACH
+    local s = self:shoreDistAt(gx, gy)
+        + (fbm(gx / 55, gy / 55, config.WORLD_SEED + 40) - 0.5) * B.WOBBLE
+    if s < B.INNER then return true end
+    if s >= B.OUTER then return false end
+    return hashf(gx * 0.37, gy * 0.37, config.WORLD_SEED + 77)
+        < (B.OUTER - s) / (B.OUTER - B.INNER)
+end
+
 function Terrain:hasLandNeighbor(i, j)
     for di = -1, 1 do for dj = -1, 1 do
         local n = self.tiles[i + di] and self.tiles[i + di][j + dj]
@@ -314,8 +411,6 @@ function Terrain:scatterProps()
                     elseif (i * 31 + j * 7) % 13 == 0 then
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "house", z = 0 }
                     end
-                elseif t.type == "rock" and ((i * 53 + j * 97) % 7 == 0) then
-                    self.props[#self.props + 1] = { tx = i, ty = j, kind = "rock", z = 0 }
                 end
             end
         end
@@ -409,16 +504,31 @@ function Terrain:buildCoastMesh()
                         local u, vv = (a + 0.5) / N, (b + 0.5) / N
                         local top = lu + (ru - lu) * u
                         local bot = ld + (rd - ld) * u
-                        local val = top + (bot - top) * vv
+                        local base = top + (bot - top) * vv
                         local gx, gy = x0 + (a + 0.5) * sub, y0 + (b + 0.5) * sub
-                        val = val + (fbm(gx / 90, gy / 90, seed) - 0.5) * jag
+                        -- Fray the coast only AT the waterline: the noise fades
+                        -- out where the corners say "solidly land", so it can't
+                        -- punch holes through the beach to the blue water base
+                        -- behind the wet lip (no blue speckles inland).
+                        local damp = 1 - math.min(1, math.max(0, (base - 0.55) / 0.25))
+                        local val = base + (fbm(gx / 90, gy / 90, seed) - 0.5) * jag * damp
                         if val > 0.5 then
                             if val < 0.58 then                  -- wet sand at the edge
                                 quad(x0 + a * sub, y0 + b * sub, fac.lip[1], fac.lip[2], fac.lip[3], 1)
                             else
                                 local tint = 0.9 + 0.2 * fbm(gx / 35, gy / 35, seed + 7)
+                                local dry = fac.top
+                                -- dry ground above the wet lip: grass creeps into
+                                -- the beach strip through the dithered band
+                                -- (isBeach), so the sand→grass edge never traces
+                                -- the tile diamonds. 0.96 ≈ flat-land lighting in
+                                -- buildLandMesh, so the greens match across meshes.
+                                if tile.type == "sand" and not self:isBeach(gx, gy) then
+                                    dry = config.colors.grass.top
+                                    tint = tint * 0.96
+                                end
                                 quad(x0 + a * sub, y0 + b * sub,
-                                    fac.top[1] * tint, fac.top[2] * tint, fac.top[3] * tint, 1)
+                                    dry[1] * tint, dry[2] * tint, dry[3] * tint, 1)
                             end
                         elseif val > 0.43 then                  -- foam/surf off the beach
                             local aF = (val - 0.43) / 0.07
@@ -438,7 +548,9 @@ end
 -- Bake all full-land tiles into one static mesh at sub-tile pixel resolution.
 -- Each tile is split into SUBPIX^2 cells, corner heights bilinearly interpolated
 -- for a smooth surface, each cell coloured from its height + fine noise (grass ->
--- snow by height, rock on slopes). One flat-shaded normal per tile for relief.
+-- snow by height, rock on slopes). Shade + rockiness come from a per-cell
+-- gradient of the smoothed height field (sampled across tile borders, noisy
+-- threshold), so slopes fringe and dither instead of flipping per tile.
 -- Emitted back-to-front (by i+j) so the mesh self-occludes.
 function Terrain:buildLandMesh()
     local T = config.TILE
@@ -478,24 +590,28 @@ function Terrain:buildLandMesh()
     end
     table.sort(order, function(a, b) return (a[1] + a[2]) < (b[1] + b[2]) end)
 
+    local sandTop = config.colors.sand.top
+    local beachReach = config.BEACH.OUTER + config.BEACH.WOBBLE * 0.5
+    local SD = T * 0.6   -- gradient sampling radius: crosses tile borders, so
+                         -- slope (rock tint) and shade fringe smoothly instead
+                         -- of switching per tile ("square" brown patches)
+
     for _, ij in ipairs(order) do
         Loader.tick()
         local i, j = ij[1], ij[2]
         local x0 = (i - 1) * T
         local y0 = (j - 1) * T
+        -- Low, un-built tiles near the waterline can carry the beach's dithered
+        -- sand edge (isBeach below); everything further inland skips the test.
+        local tile = self.tiles[i][j]
+        local sdMin = math.min(self.shoreD[i][j], self.shoreD[i + 1][j],
+                               self.shoreD[i][j + 1], self.shoreD[i + 1][j + 1])
+        -- (the per-subcell `cz < 5` gate below keeps the sand near sea level,
+        -- so the band can climb the very FOOT of a shoreside ramp and stop)
+        local beachable = not tile.build and sdMin < beachReach
         local zA, zB = self.cz[i][j], self.cz[i + 1][j]      -- corners: A(0,0) B(1,0)
         local zC, zD = self.cz[i + 1][j + 1], self.cz[i][j + 1] --          C(1,1) D(0,1)
         local function H(u, w) return (zA + (zB - zA) * u) + ((zD + (zC - zD) * u) - (zA + (zB - zA) * u)) * w end
-
-        -- tile shade + rockiness from its overall slope (one normal per tile)
-        local nx = (zA - zB) + (zD - zC)
-        local ny = (zA - zD) + (zB - zC)
-        local nz = 2 * T
-        local nl = math.sqrt(nx * nx + ny * ny + nz * nz); if nl < 1e-6 then nl = 1 end
-        local d = (nx * Lx + ny * Ly + nz * Lz) / nl; if d < 0 then d = 0 end
-        local sh = 0.50 + 0.60 * d
-        local slope = math.sqrt(nx * nx + ny * ny) / nl
-        local rk = (slope - 0.05) / 0.18; if rk < 0 then rk = 0 elseif rk > 1 then rk = 1 end
 
         for a = 0, N - 1 do
             for b = 0, N - 1 do
@@ -506,7 +622,32 @@ function Terrain:buildLandMesh()
                 local h00, h10 = H(u0, w0), H(u1, w0)
                 local h11, h01 = H(u1, w1), H(u0, w1)
                 local cz = H((u0 + u1) / 2, (w0 + w1) / 2)
-                local mr, mg, mb = material(cz, (gx0 + gx1) / 2, (gy0 + gy1) / 2)
+                local cgx, cgy = (gx0 + gx1) / 2, (gy0 + gy1) / 2
+
+                -- Per-PIXEL shade + rockiness from the smoothed height field
+                -- (central differences over SD, sampled across tile borders):
+                -- brown creeps around ramp edges organically, with a noisy
+                -- threshold so the grass/sand→rock line dithers, never a
+                -- clean tile-diamond switch. Flat ground can't rock up from
+                -- the noise alone (slope 0 stays below the cut).
+                local gdx = (self:heightAt(cgx + SD, cgy) - self:heightAt(cgx - SD, cgy)) / (2 * SD)
+                local gdy = (self:heightAt(cgx, cgy + SD) - self:heightAt(cgx, cgy - SD)) / (2 * SD)
+                local nl = math.sqrt(gdx * gdx + gdy * gdy + 1)
+                local d = (-gdx * Lx - gdy * Ly + Lz) / nl; if d < 0 then d = 0 end
+                local sh = 0.50 + 0.60 * d
+                local slope = math.sqrt(gdx * gdx + gdy * gdy) / nl
+                local rk = (slope + (fbm(cgx / 33, cgy / 33, seed + 500) - 0.5) * 0.10 - 0.05) / 0.18
+                if rk < 0 then rk = 0 elseif rk > 1 then rk = 1 end
+
+                local mr, mg, mb
+                if beachable and cz < 5 and self:isBeach(cgx, cgy) then
+                    -- the beach reaches into this tile: sand, same grain noise
+                    local n = fbm(cgx / 21, cgy / 21, seed + 900)
+                    local f = 0.84 + 0.26 * n
+                    mr, mg, mb = sandTop[1] * f, sandTop[2] * f, sandTop[3] * f
+                else
+                    mr, mg, mb = material(cz, cgx, cgy)
+                end
                 mr = (mr + (rock[1] - mr) * rk) * sh
                 mg = (mg + (rock[2] - mg) * rk) * sh
                 mb = (mb + (rock[3] - mb) * rk) * sh
@@ -517,6 +658,205 @@ function Terrain:buildLandMesh()
     end
     if #v > 0 then
         self.landMesh = love.graphics.newMesh(v, "triangles", "static")
+    end
+end
+
+-- Bake thin dirt "country roads" between neighbouring countryside houses into
+-- one static mesh. Each drawn house links to its nearest drawn neighbour
+-- (within ROADS.MAX_LINK); the path meanders a little (ends pinned on the
+-- houses), drapes over the height field, and is dropped entirely if it would
+-- cross water, a port pad or climb past the treeline. Purely decorative --
+-- nothing drives on them (yet).
+function Terrain:buildRoadMesh()
+    local T = config.TILE
+    local R = config.ROADS
+    local seed = config.WORLD_SEED
+    local dirt = config.colors.dirt
+    local M = config.MOUNTAINS
+
+    -- The same filter world.lua applies before drawing a house prop (solid
+    -- land, below the treeline, off the pads), so every road really ends at a
+    -- visible house.
+    local function landAt(i, j)
+        local row = self.tiles[i]; local t = row and row[j]
+        return t and not t.water
+    end
+    local function houseDrawn(tx, ty)
+        local t = self.tiles[tx] and self.tiles[tx][ty]
+        if not t or t.water or t.build then return false end
+        if (t.level or 0) >= M.TREELINE_LEVEL then return false end
+        if self.buildMask[tx] and self.buildMask[tx][ty] then return false end
+        return landAt(tx + 1, ty) and landAt(tx - 1, ty)
+           and landAt(tx, ty + 1) and landAt(tx, ty - 1)
+    end
+
+    local houses = {}
+    for _, p in ipairs(self.props) do
+        if p.kind == "house" and houseDrawn(p.tx, p.ty) then
+            houses[#houses + 1] = { x = (p.tx - 0.5) * T, y = (p.ty - 0.5) * T }
+        end
+    end
+    if #houses < 2 then return end
+
+    -- nearest neighbour per house, deduped: at most one path per pair
+    local edges, seen = {}, {}
+    for i = 1, #houses do
+        Loader.tick()
+        local best, bestD2
+        for j = 1, #houses do
+            if j ~= i then
+                local dx = houses[j].x - houses[i].x
+                local dy = houses[j].y - houses[i].y
+                local d2 = dx * dx + dy * dy
+                if not bestD2 or d2 < bestD2 then best, bestD2 = j, d2 end
+            end
+        end
+        if best and bestD2 < R.MAX_LINK * R.MAX_LINK then
+            local a, b = math.min(i, best), math.max(i, best)
+            if not seen[a * 100000 + b] then
+                seen[a * 100000 + b] = true
+                edges[#edges + 1] = { houses[a], houses[b] }
+            end
+        end
+    end
+
+    -- Route one path: the straight line plus a noise meander (pinned at both
+    -- ends), sampled every few units. Any bad sample (water, pad, too high)
+    -- drops the whole path -- better no road than a road into the sea.
+    local function route(A, B)
+        local dx, dy = B.x - A.x, B.y - A.y
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len < 30 then return end
+        local px, py = -dy / len, dx / len
+        local n = math.ceil(len / 9)
+        local pts = {}
+        for k = 0, n do
+            local t = k / n
+            local gx, gy = A.x + dx * t, A.y + dy * t
+            local w = (fbm(gx / 70, gy / 70, seed + 600) - 0.5) * 2
+                    * R.WOBBLE * math.sin(t * math.pi)
+            gx, gy = gx + px * w, gy + py * w
+            local ti, tj = self:tileIndexAt(gx, gy)
+            local tile = self.tiles[ti][tj]
+            if tile.water then return end
+            if (tile.level or 0) >= M.TREELINE_LEVEL then return end
+            if self.buildMask[ti] and self.buildMask[ti][tj] then return end
+            pts[#pts + 1] = { gx, gy }
+        end
+        return pts
+    end
+
+    -- Two layers baked into one mesh: soft translucent "trodden verge" quads
+    -- first, the pale track fill after (mesh triangles draw in order). The
+    -- verge is dark earth at ~30% alpha, so it blends the track into the
+    -- grass like worn ground -- not a hard black outline.
+    local rim, fill = {}, {}
+    local edgeC = config.colors.dirt_edge
+    local function emit(arr, gx, gy, r, g, b, al)
+        -- lifted a hair above the ground so it never z-fights the land mesh
+        local sx, sy = Iso.project(gx, gy, self:heightAt(gx, gy) + 0.5)
+        arr[#arr + 1] = { sx, sy, 0, 0, r, g, b, al }
+    end
+    local function strip(arr, ax, ay, bx, by, qx, qy, hw, r, g, b, al)
+        emit(arr, ax + qx * hw, ay + qy * hw, r, g, b, al)
+        emit(arr, ax - qx * hw, ay - qy * hw, r, g, b, al)
+        emit(arr, bx - qx * hw, by - qy * hw, r, g, b, al)
+        emit(arr, ax + qx * hw, ay + qy * hw, r, g, b, al)
+        emit(arr, bx - qx * hw, by - qy * hw, r, g, b, al)
+        emit(arr, bx + qx * hw, by + qy * hw, r, g, b, al)
+    end
+
+    -- One worn track along `pts` (shared by house paths and the ring roads).
+    -- Long legs are chopped into ~14-unit chunks so width and tint wander and
+    -- the occasional grassy break stays small: a track worn by feet and carts,
+    -- not a painted line.
+    local function emitPath(pts)
+        for k = 1, #pts - 1 do
+            local ax, ay = pts[k][1], pts[k][2]
+            local bx, by = pts[k + 1][1], pts[k + 1][2]
+            local ddx, ddy = bx - ax, by - ay
+            local dl = math.sqrt(ddx * ddx + ddy * ddy)
+            if dl > 1e-3 then
+                local qx, qy = -ddy / dl, ddx / dl
+                local nsub = math.ceil(dl / 14)
+                for sgi = 0, nsub - 1 do
+                    local x1, y1 = ax + ddx * (sgi / nsub), ay + ddy * (sgi / nsub)
+                    local x2, y2 = ax + ddx * ((sgi + 1) / nsub), ay + ddy * ((sgi + 1) / nsub)
+                    if hashf(x1 * 2.1, y1 * 2.1, seed + 640) <= 0.94 then  -- worn grassy breaks
+                        local hw = R.WIDTH * (0.4 + 0.3 * hashf(x1, y1, seed + 610))
+                        local f = 0.92 + 0.16 * hashf(x1 * 0.7, y1 * 0.7, seed + 620)
+                        local rw = hw + 1.5 + 2.5 * hashf(x1 * 1.3, y1 * 1.3, seed + 630)
+                        strip(rim, x1, y1, x2, y2, qx, qy, rw,
+                            edgeC[1], edgeC[2], edgeC[3], 0.30 * f)
+                        strip(fill, x1, y1, x2, y2, qx, qy, hw,
+                            dirt[1] * f, dirt[2] * f, dirt[3] * f, 1)
+                    end
+                end
+            end
+        end
+    end
+
+    for _, e in ipairs(edges) do
+        Loader.tick()
+        local pts = route(e[1], e[2])
+        if pts and #pts > 1 then emitPath(pts) end
+    end
+
+    -- A coast road around each island, just behind the beach. For every
+    -- bearing from the island's centre we march inward to the OUTERMOST point
+    -- comfortably past the sand (shoreDist >= RING_IN) -- so the road follows
+    -- the real coastline shape, not a circle -- then smooth the radius so it
+    -- flows. Stretches that would cross water, pads or high ground are simply
+    -- left out: a ring with natural breaks beats a road forced through a fjord.
+    for _, isl in ipairs(config.ISLANDS) do
+        local nS = math.max(48, math.floor(isl.radius * math.pi * 2 / 70))
+        local rad = {}
+        for k = 0, nS - 1 do
+            Loader.tick()
+            local a = k / nS * math.pi * 2
+            local ca, sa = math.cos(a), math.sin(a)
+            for t = isl.radius * 1.25, isl.radius * 0.2, -14 do
+                local gx, gy = isl.x + ca * t, isl.y + sa * t
+                if gx > 0 and gy > 0 and gx < config.WORLD_WIDTH and gy < config.WORLD_HEIGHT
+                    and self:shoreDistAt(gx, gy) >= R.RING_IN then
+                    rad[k] = t
+                    break
+                end
+            end
+        end
+        for _ = 1, 2 do    -- smooth: the road flows instead of stair-stepping
+            local out = {}
+            for k = 0, nS - 1 do
+                local a, b, c = rad[(k - 1) % nS], rad[k], rad[(k + 1) % nS]
+                out[k] = (a and b and c) and (a + 2 * b + c) * 0.25 or rad[k]
+            end
+            rad = out
+        end
+        local arc = {}
+        local function flush()
+            if #arc >= 5 then emitPath(arc) end
+            arc = {}
+        end
+        for k = 0, nS do                    -- ..nS: a fully-valid ring closes
+            local kk = k % nS
+            local ok, gx, gy = false, nil, nil
+            if rad[kk] then
+                local a = kk / nS * math.pi * 2
+                gx = isl.x + math.cos(a) * rad[kk]
+                gy = isl.y + math.sin(a) * rad[kk]
+                local ti, tj = self:tileIndexAt(gx, gy)
+                local tile = self.tiles[ti][tj]
+                ok = (not tile.water) and (tile.level or 0) < M.TREELINE_LEVEL
+                    and not (self.buildMask[ti] and self.buildMask[ti][tj])
+            end
+            if ok then arc[#arc + 1] = { gx, gy } else flush() end
+        end
+        flush()
+    end
+
+    if #rim > 0 then
+        for k = 1, #fill do rim[#rim + 1] = fill[k] end
+        self.roadMesh = love.graphics.newMesh(rim, "triangles", "static")
     end
 end
 

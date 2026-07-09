@@ -206,10 +206,13 @@ end
 -- Soft circular collision (islands). Speed is only damped when moving INTO the
 -- obstacle, and the destination is kept, so the boat can always sail back out.
 function Boat:collideCircle(cx, cy, cr)
+    -- squared-distance early-out: this runs once per ship/skerry per frame, and
+    -- nearly all of them are nowhere near the boat -- skip the sqrt for those
     local dx, dy = self.x - cx, self.y - cy
-    local dist = math.sqrt(dx * dx + dy * dy)
     local minDist = cr + self.radius
-    if dist >= minDist then return end
+    local d2 = dx * dx + dy * dy
+    if d2 >= minDist * minDist then return end
+    local dist = math.sqrt(d2)
     if dist < 0.001 then dx, dy, dist = 1, 0, 1 end
 
     local nx, ny = dx / dist, dy / dist

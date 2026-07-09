@@ -33,7 +33,8 @@ function Objects:add(obj)
     obj.w = obj.w or 1
     obj.h = obj.h or 1
     obj.z = obj.z or 0     -- ground height (units) the object stands on
-    obj.depth = Iso.footprintDepth(obj.tx, obj.ty, obj.w, obj.h, config.TILE)
+    -- a preset depth wins (the pier sorts by its shore end, see toDockObject)
+    obj.depth = obj.depth or Iso.footprintDepth(obj.tx, obj.ty, obj.w, obj.h, config.TILE)
     self.list[#self.list + 1] = obj
     return obj
 end
@@ -242,17 +243,6 @@ function Objects.drawForest(g, salt)
         love.graphics.setColor(c.tree_leaf_hi)
         love.graphics.circle("fill", sx - 3 * sc, sy - 21 * sc, 6 * sc)
     end
-end
-
--- A 1x1 rock cluster (also used as a decorative sea hazard marker).
-function Objects.drawRock(g)
-    local c = config.colors
-    local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
-    love.graphics.setColor(c.rock_dark)
-    love.graphics.ellipse("fill", sx, sy - 2, 12, 7)
-    love.graphics.setColor(c.rock_light)
-    love.graphics.circle("fill", sx - 3, sy - 5, 7)
-    love.graphics.circle("fill", sx + 5, sy - 3, 5)
 end
 
 -- A skerry: a small rocky outcrop sitting in open water, ringed by a gentle
@@ -635,7 +625,8 @@ end
 -- mirrors the right-facing photo. Lies flat on the water (no bob, no shadow).
 -- Returns false if the photo is missing.
 local leftPathFor = {}                       -- imgPath -> "<name>_left.png" (cached)
-function Objects.drawShipBillboard(imgPath, gx, gy, angle, scale)
+local sinkQuad                               -- shared quad for part-sunk ships (no per-frame alloc)
+function Objects.drawShipBillboard(imgPath, gx, gy, angle, scale, sink)
     local img = Assets.image(imgPath)
     if not img then return false end
     if img:getFilter() ~= "nearest" then img:setFilter("nearest", "nearest") end
@@ -654,6 +645,18 @@ function Objects.drawShipBillboard(imgPath, gx, gy, angle, scale)
     local s = w / img:getWidth()
     local sx, sy = Iso.project(gx, gy, 0)
     love.graphics.setColor(1, 1, 1)
+    if sink and sink > 0 then
+        -- Partly under the waterline (the submarine rising/sinking): draw only
+        -- the top (1-sink) of the sprite with its bottom ON the waterline, so
+        -- the hull slides down into the sea instead of clipping through it.
+        local iw, ih = img:getWidth(), img:getHeight()
+        local vh = math.floor(ih * (1 - sink) + 0.5)
+        if vh <= 0 then return true end          -- fully under: nothing to draw
+        sinkQuad = sinkQuad or love.graphics.newQuad(0, 0, 1, 1, 1, 1)
+        sinkQuad:setViewport(0, 0, iw, vh, iw, ih)
+        love.graphics.draw(img, sinkQuad, sx, sy, 0, s * flip, s, iw / 2, vh)
+        return true
+    end
     love.graphics.draw(img, sx, sy, 0, s * flip, s, img:getWidth() / 2, img:getHeight())
     return true
 end

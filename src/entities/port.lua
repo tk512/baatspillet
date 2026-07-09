@@ -79,6 +79,11 @@ function Port:toDockObject()
         tx = math.floor(dpx / T) + 1, ty = math.floor(dpy / T) + 1, w = 1, h = 1, z = 0,
         sprite = "ports/dock.png",
         data = self,
+        -- Depth-sort the jetty by its SHORE end, not the seaward tip: the boat
+        -- berths right at the tip, and sorting by the tip painted the pier
+        -- over the boat ("the boat slides under the bryggen"). Anchored at the
+        -- shore, the berthed boat draws on top, as it should.
+        depth = Iso.depth(dpx - self.seaDx * T, dpy - self.seaDy * T),
         draw = function(_, g) self:drawDock() end,
     }
 end

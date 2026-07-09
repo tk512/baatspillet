@@ -250,12 +250,6 @@ function Game:foodCount(id)
     return (self.state.food and self.state.food[id]) or 0
 end
 
-function Game:totalFood()
-    local n = 0
-    if self.state.food then for _, c in pairs(self.state.food) do n = n + c end end
-    return n
-end
-
 function Game:buyFood(id, price)
     if self.state.coins < price then return false end
     self.state.coins = self.state.coins - price
@@ -378,10 +372,6 @@ end
 
 function Game:mousemoved(x, y, dx, dy)
     if self.scene and self.scene.mousemoved then self.scene:mousemoved(x, y, dx, dy) end
-end
-
-function Game:wheelmoved(dx, dy)
-    if self.scene and self.scene.wheelmoved then self.scene:wheelmoved(dx, dy) end
 end
 
 function Game:resize(w, h)

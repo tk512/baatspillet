@@ -19,6 +19,10 @@
 --   visits   OPTIONAL list of port ids: every so often the boat steers to an
 --            anchorage off one of these cities, lies still a while, then sails
 --            on (the big liners calling at Bergen/Oslo).
+--   submarine OPTIONAL true = a submarine: it cruises DEEP (invisible, not
+--            solid, not clickable) and only now and then rises through the
+--            waterline with a "blubb" + bubbles, runs surfaced a while, then
+--            sinks away again. Timings in config.SUBMARINE.
 --
 -- Add a boat: make a "<Name> - <Country> - sprite.png" (background removed),
 -- run tools/make_ships.py, paste its stub here and fill in `type` (and `scale`).
@@ -31,4 +35,6 @@ return {
     { photo = "msc_santhya", name = "MSC Santhya", country = "Panama", type = "Containerskip", scale = 1.15, cruise = true },
     { photo = "vasiliy_golovnin", name = "Vasiliy Golovnin", country = "Sør-Afrika", type = "Isbryter", cruise = true },
     { photo = "hurtigruten_nordlys", name = "MS Nordlys", country = "Norge", type = "Hurtigruteskip", cruise = true, visits = { "bergen", "oslo" } },
+    { photo = "rem_inspektor", name = "Rem Inspektør", country = "Norge", type = "Arbeidsskip", cruise = true },
+    { photo = "norsk_ubat", name = "Norsk ubåt", country = "Norge", type = "Ubåt", cruise = true, submarine = true },
 }

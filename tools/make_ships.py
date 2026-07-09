@@ -10,9 +10,10 @@ Each is shot roughly side-on. The game wants the BOW POINTING RIGHT in
 <slug>.png; photos shot bow-left go in BOW_LEFT below, and are mirrored to make
 the right-facing sprite while the untouched original is saved as <slug>_left.png
 (used when the ship sails screen-left, so hull text stays readable). A dedicated
-photo of the other side, "<Name> - <Country> - sprite left.png", beats the
-mirror and becomes <slug>_left.png directly. Without any left image the game
-just mirrors the right-facing sprite at runtime.
+photo of the other side, "<Name> - <Country> - sprite left.png" (or a hand-made
+"... - sprite mirrored.png"), beats the mirror and becomes <slug>_left.png
+directly. Without any left image the game just mirrors the right-facing sprite
+at runtime.
 Crops to the boat and shrinks to TARGET_W so it reads as chunky retro pixels under
 the game's nearest filter.
 
@@ -22,7 +23,7 @@ fill in the `type` yourself, e.g. "Passasjerskip").
 
 Run:  python3 tools/make_ships.py
 """
-import os, glob, re
+import os, glob, re, unicodedata
 from PIL import Image
 
 HERE = os.path.dirname(__file__)
@@ -37,11 +38,16 @@ COLORS = 64               # palette size: PNG-8, dithered -- posterized sprite l
 # Slugs whose source photo has the bow pointing LEFT (accommodation aft-right).
 # Beffen is a double-ended ferry, so its facing doesn't matter.
 BOW_LEFT = {"aidaluna", "msc_santhya", "italeni", "vasiliy_golovnin",
-            "hurtigruten_nordlys"}
+            "hurtigruten_nordlys", "rem_inspektor"}
 
 
 def slugify(name):
-    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    # NFC first: macOS filenames arrive decomposed ("å" = "a" + ring), which
+    # would slip past the replacements below and slug as "_".
+    name = unicodedata.normalize("NFC", name).lower()
+    for a, b in (("æ", "ae"), ("ø", "o"), ("å", "a")):
+        name = name.replace(a, b)
+    return re.sub(r"[^a-z0-9]+", "_", name).strip("_")
 
 
 def process():
@@ -68,9 +74,11 @@ def process():
 
         im = load(p)
         left = None
-        left_src = p[:-len(" - sprite.png")] + " - sprite left.png"
-        if os.path.exists(left_src):            # real photo of the port side
-            left = load(left_src)
+        for suffix in (" - sprite left.png", " - sprite mirrored.png"):
+            left_src = p[:-len(" - sprite.png")] + suffix
+            if os.path.exists(left_src):        # real photo / hand-made mirror
+                left = load(left_src)
+                break
         if slug in BOW_LEFT:                    # photo faces left: mirror for the
             left = left or im                   # right-facing sprite, keep the
             im = im.transpose(Image.FLIP_LEFT_RIGHT)  # original as the left view

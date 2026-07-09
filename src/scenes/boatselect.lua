@@ -6,6 +6,7 @@
 local config  = require("src.config")
 local Assets  = require("src.assets")
 local Retro   = require("src.ui.retro")
+local Scene   = require("src.ui.pixelscene")
 local Objects = require("src.systems.objects")
 local utf8    = require("utf8")
 
@@ -60,6 +61,84 @@ function BoatSelect:displayName() return upperFirst(self.name) end
 function BoatSelect:update(dt)
     self.t = self.t + dt
     if self.bought > 0 then self.bought = self.bought - dt end
+end
+
+-- The chooser's backdrop: the title screen's pixel language (dithered sky +
+-- sea, sun, clouds, horizon islands) baked ONCE onto a virtual-res canvas and
+-- upscaled with a nearest filter; rebaked only when the window size changes.
+-- The only per-frame extras (drawBackground) are three tiny sailboats and a
+-- handful of wave-glint rectangles -- positions are pure functions of time, so
+-- nothing is stored or allocated per frame.
+function BoatSelect:buildBackground(sw, sh)
+    local VH = Scene.VRES_H
+    local scale = sh / VH
+    local VW = math.max(4, math.floor(sw / scale + 0.5))
+    local horizon = math.floor(VH * 0.30)
+
+    local cv = love.graphics.newCanvas(VW, VH)
+    cv:setFilter("nearest", "nearest")
+    love.graphics.setCanvas(cv)
+    love.graphics.clear(0, 0, 0, 0)
+
+    Scene.dithGradient(0, 0, VW, horizon, { 0.36, 0.60, 0.88 }, { 0.82, 0.90, 0.96 }, 10)
+    Scene.dithGradient(0, horizon, VW, VH - horizon,
+        config.colors.water_top, config.colors.water_deep, 8)
+
+    -- horizon islands (grass crest over a sandy base), like the title screen's
+    local grass, gdk = config.colors.grass.top, config.colors.grass.lip
+    local sand = config.colors.sand.top
+    local function island(cx, halfW, height)
+        Scene.hill(cx, horizon + math.floor(VH * 0.008), halfW, math.floor(height * 0.35), sand, sand)
+        Scene.hill(cx, horizon, halfW * 0.84, height, gdk, grass)
+    end
+    island(VW * 0.11, VW * 0.085, VH * 0.10)
+    island(VW * 0.68, VW * 0.055, VH * 0.07)
+    island(VW * 0.92, VW * 0.095, VH * 0.13)
+
+    Scene.cloud(VW * 0.22, VH * 0.10, VW * 0.07)
+    Scene.cloud(VW * 0.52, VH * 0.055, VW * 0.045)
+    Scene.cloud(VW * 0.70, VH * 0.14, VW * 0.055)
+
+    local sunX, sunY, sunR = VW * 0.85, VH * 0.115, math.floor(VH * 0.06)
+    Scene.sun(sunX, sunY, sunR)
+    Scene.sunReflection(sunX, horizon, VH, sunR, VH * 0.016)
+
+    love.graphics.setCanvas()
+    love.graphics.setColor(1, 1, 1)
+    self.bg, self.bgW, self.bgH = cv, sw, sh
+    self.bgScale, self.bgHorizon = scale, horizon * scale
+end
+
+function BoatSelect:drawBackground(sw, sh)
+    if not self.bg or self.bgW ~= sw or self.bgH ~= sh then
+        self:buildBackground(sw, sh)
+    end
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(self.bg, 0, 0, 0, self.bgScale, self.bgScale)
+
+    -- tiny sailboats drifting across the horizon band
+    local t = self.t
+    local hy = self.bgHorizon
+    local k = sh / 800
+    for i = 1, 3 do
+        local ph = (t * (0.011 + i * 0.004) + i * 0.37) % 1.15 - 0.075
+        Scene.miniBoat(ph * sw, hy + (10 + i * 24) * k, (0.45 + i * 0.2) * k,
+            config.SHIP_COLORS[(i % #config.SHIP_COLORS) + 1])
+    end
+
+    -- wave glints twinkling on the water
+    local wv = config.colors.wave
+    local blk = math.max(2, math.floor(sh / Scene.VRES_H) * 2)
+    for i = 1, 26 do
+        local tw = 0.5 + 0.5 * math.sin(t * (0.9 + (i % 5) * 0.23) + i * 2.1)
+        if tw > 0.55 then
+            local gx = ((i * 0.381966 + 0.13) % 1) * sw
+            local gy = hy + ((i * 0.618034 + 0.29) % 1) * (sh - hy) * 0.96
+            love.graphics.setColor(wv[1], wv[2], wv[3], (tw - 0.55) * 1.1)
+            love.graphics.rectangle("fill", gx, gy, blk * (2 + (i % 3)), blk * 0.5)
+        end
+    end
+    love.graphics.setColor(1, 1, 1)
 end
 
 function BoatSelect:cycle(d)
@@ -385,15 +464,17 @@ function BoatSelect:draw()
     local def = self:def()
 
     love.graphics.clear(config.colors.water_deep)
-    local wv = config.colors.wave
-    love.graphics.setColor(wv[1], wv[2], wv[3], 0.35)
-    for yy = 0, sh, math.floor(28 * L.k) do
-        love.graphics.rectangle("fill", 0, yy, sw, math.floor(3 * L.k))
-    end
+    self:drawBackground(sw, sh)
 
-    love.graphics.setFont(fonts.title); love.graphics.setColor(W.text)
+    -- title with a soft shadow so it pops against the pale sky
+    love.graphics.setFont(fonts.title)
     local title = "Velg båten din"
-    love.graphics.print(title, L.cx - fonts.title:getWidth(title) / 2, math.floor(sh * 0.06))
+    local tx = L.cx - fonts.title:getWidth(title) / 2
+    local ty = math.floor(sh * 0.06)
+    love.graphics.setColor(0.13, 0.11, 0.09, 0.5)
+    love.graphics.print(title, tx + math.max(2, 3 * L.k), ty + math.max(2, 3 * L.k))
+    love.graphics.setColor(W.text)
+    love.graphics.print(title, tx, ty)
 
     self:drawPreview(L, def)
 

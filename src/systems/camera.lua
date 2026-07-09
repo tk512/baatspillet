@@ -94,11 +94,6 @@ function Camera:drag(dx, dy)
     self:panScreen(-dx, -dy)
 end
 
-function Camera:zoomBy(amount)
-    self.zoom = math.max(config.CAMERA_MIN_ZOOM,
-                math.min(config.CAMERA_MAX_ZOOM, self.zoom + amount))
-end
-
 function Camera:attach()
     local cx, cy = Iso.project(self.gx, self.gy)
     -- Snap to whole pixels so tile edges don't shimmer as the map scrolls.

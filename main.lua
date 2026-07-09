@@ -32,10 +32,6 @@ function love.mousemoved(x, y, dx, dy)
     Game:mousemoved(x, y, dx, dy)
 end
 
-function love.wheelmoved(dx, dy)
-    Game:wheelmoved(dx, dy)
-end
-
 function love.resize(w, h)
     Game:resize(w, h)
 end

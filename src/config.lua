@@ -30,10 +30,18 @@ config.ROCK_THRESH  = 0.62   -- cover noise above this becomes rocky ground
 config.COAST_PIXELS = 10
 config.COAST_JAGGED = 0.6    -- shoreline fray (0 = clean steps)
 
+-- The sand→grass edge of every beach: instead of tracing the tile diamonds,
+-- grass takes over through a speckled per-pixel dither band (the same trick the
+-- waterline uses). Distances are in corner steps inland (~1 = one tile).
+config.BEACH = {
+    INNER  = 1.1,   -- solid sand until this far inland...
+    OUTER  = 1.7,   -- ...solid grass from here on; dithered mix in between
+    WOBBLE = 0.7,   -- the band wanders by about +/- half this (no neat rings)
+}
+
 config.FOREST_SCALE   = 360    -- bigger = larger forests
 config.FOREST_THRESH  = 0.54   -- lower = more / bigger forests
 config.FOREST_DENSITY = 6      -- trees drawn per forest tile
-config.TREE_SPRITE_HEIGHT = 46 -- on-screen height of a tree sprite at scale 1.0
 
 -- Where land sits and how big each island is. Each roughly hosts the matching
 -- port in src/data/ports.lua. Spread far apart for open ocean between them.
@@ -74,8 +82,8 @@ config.CITY_SIZES = {
     large  = { houses = 40, spread = 15 },
 }
 
-config.CAMERA_MIN_ZOOM = 0.55   -- furthest out (wheel down)
-config.CAMERA_MAX_ZOOM = 3.2    -- closest in (wheel up)
+-- The one zoom the world runs at. Wheel zoom was removed on purpose: the kid
+-- kept zooming all the way out and losing the boat.
 config.CAMERA_DEFAULT_ZOOM = 1.4
 -- The camera does not follow the boat. Scroll with the mouse at the screen edges
 -- (or right-drag); press C to recenter on the boat.
@@ -180,6 +188,16 @@ config.TREASURE_GOODS = { "shell", "starfish", "gem", "pearl" }
 -- eaten). The eaten item drops with a "Nam nam nam!". Bigger = food lasts longer.
 config.EAT_DISTANCE = 3500
 
+-- Country roads: thin dirt paths connecting neighbouring countryside houses
+-- (purely decorative; baked into a static mesh with the rest of the terrain).
+config.ROADS = {
+    MAX_LINK = 560,   -- only houses closer than this (ground units) get a path
+    WIDTH    = 10,    -- road width in ground units (~a sixth of a tile)
+    WOBBLE   = 40,    -- how far a path meanders off the straight line
+    RING_IN  = 2.0,   -- the coast road hugs the shore this far inland
+                      -- (in corner steps; the beach band ends ~1.7)
+}
+
 config.MUSIC_VOLUME = 0.35
 config.SFX_VOLUME   = 0.6
 config.AUDIO_ON     = true
@@ -201,6 +219,8 @@ config.colors = {
     building_wall= {0.80, 0.74, 0.62},
     building_dk  = {0.60, 0.52, 0.43},
     road         = {0.46, 0.44, 0.40},
+    dirt         = {0.64, 0.54, 0.37},  -- country-road fill (pale worn earth)
+    dirt_edge    = {0.30, 0.24, 0.16},  -- trodden verge (drawn ~30% alpha, blends into grass)
     dock_top     = {0.55, 0.42, 0.28},
     dock_side    = {0.40, 0.30, 0.20},
     stone        = {0.56, 0.55, 0.50},
@@ -249,7 +269,6 @@ config.AMBIENT_SHIPS = {
 }
 config.AMBIENT_SHIP_WIDTH = 180  -- on-screen width of an OpenGFX sprite ship at scale 1.0
 config.AMBIENT_PHOTO_WIDTH = 115 -- on-screen width of a photo billboard ship (kept modest, ~Viking Sky size)
-config.AMBIENT_HARBOUR_SCALE = 0.8   -- harbour-mouth ships (smaller than the open-sea ones)
 config.AMBIENT_SHIP_RADIUS_FRAC = 0.22  -- collision radius as a fraction of on-screen width
 config.AMBIENT_SHIP_SPEED = 23   -- base speed of sailing ships (slow; the player boat does ~140)
 config.AMBIENT_CRUISE_SPEED = 12 -- photo boats with cruise=true (extra slow, stately)
@@ -276,6 +295,45 @@ config.AMBIENT_VISIT = {
     RING_MAX     = 520,
     TIMEOUT      = 240,  -- give up steering there after this long (odd geometry)
     TURN_RATE    = 0.6,  -- rad/s homing turn while steering to a goal
+}
+
+-- Dolphins! A little pod that joins the boat when it holds full sail for a
+-- moment, porpoising alongside the bow, then diving away again. Pure ambient
+-- joy: never solid, never blocking, only on open water. Voice hook:
+-- assets/voice/delfiner.ogg plays as they arrive.
+config.DOLPHINS = {
+    TRIGGER_FRAC = 0.75, -- they come when you sail faster than this × top speed
+    PLAY_TIME    = 14,   -- how long they frolic alongside (s)
+    COOLDOWN_MIN = 240,  -- RARE on purpose: minutes of quiet sea between visits,
+    COOLDOWN_MAX = 540,  -- so a pod showing up stays a real event
+    FIRST_WAIT   = 90,   -- ...including a good wait before the first one
+    JUMP_H       = 34,   -- leap height (world units)
+    PERIOD       = 1.5,  -- one porpoise cycle (leap + glide) per dolphin
+    SIDE         = 70,   -- how far off the boat's side the pod swims
+    COUNT        = 3,
+}
+
+-- The submarine (ships.lua `submarine = true`): it cruises DEEP -- invisible,
+-- never solid, not clickable -- and now and then rises through the waterline
+-- (bubbles + a "blubb"), runs on the surface a while, and sinks away again.
+-- In between it sails the same gentle ambient AI as every other ship, so each
+-- surfacing happens somewhere new.
+config.SUBMARINE = {
+    SUBMERGED_MIN = 25,   -- stays under this long (s)...
+    SUBMERGED_MAX = 55,
+    SURFACE_MIN   = 14,   -- ...then cruises surfaced this long
+    SURFACE_MAX   = 26,
+    TRANSITION    = 2.2,  -- seconds to rise / sink through the waterline
+    FX_DIST       = 2400, -- bubbles + blubb only when this close to the player
+}
+
+-- Ambient-AI level of detail: ships far beyond any possible screen bank their
+-- dt and tick in batched steps instead of every frame (see Fleet:update). Same
+-- total sailing, a fraction of the water probes -- adding boats stays cheap.
+config.AMBIENT_LOD = {
+    FAR  = 3000,   -- ground-unit distance from the player past which a ship is "far"
+                   -- (the widest view at min zoom reaches ~1400 + camera slack)
+    STEP = 0.25,   -- far ships tick roughly every this many seconds
 }
 
 -- The single premium unlock ("one pack unlocks everything"): all the fancy boats,

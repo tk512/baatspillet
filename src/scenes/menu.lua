@@ -5,20 +5,17 @@
 -- says it once, then a water splash erupts. The "Klar til å sette seil" button
 -- is a carved wooden sign swaying on ropes. Keyboard (Enter/Space) or mouse.
 
-local config = require("src.config")
-local Assets = require("src.assets")
-local Retro  = require("src.ui.retro")
-local utf8   = require("utf8")
+local config   = require("src.config")
+local Assets   = require("src.assets")
+local Retro    = require("src.ui.retro")
+local Scene    = require("src.ui.pixelscene")
+local Dolphins = require("src.entities.dolphins")   -- drawBody, for the sea band
+local utf8     = require("utf8")
 
 local Menu = {}
 
 local TAU  = math.pi * 2
 local WOOD = Retro.WOOD
-
--- Bayer 4x4 ordered-dither matrix (0..15), for the crosshatched VGA gradients.
-local BAYER = {
-    { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 },
-}
 
 -- Elastic ease: overshoots 1 then wobbles back, for a letter springing in.
 local function easeOutElastic(p)
@@ -33,8 +30,6 @@ local function clamp01(x)
     if x > 1 then return 1 end
     return x
 end
-
-local function lerp(a, b, t) return a + (b - a) * t end
 
 -- Split a string into a list of UTF-8 characters (so "å" is one letter).
 local function splitChars(s)
@@ -140,6 +135,9 @@ function Menu:load(game)
         end
     end
 
+    -- Now and then a little dolphin pod porpoises across the sea band.
+    self.pod = { active = false, nextAt = 7 + love.math.random() * 10 }
+
     -- Voice first (words bounce in to match), then the splash + wave crash.
     self.splash = {}
     self.splashFired = false
@@ -162,44 +160,12 @@ end
 -- small ~VGA canvas and upscale with a nearest filter. That gives a uniform
 -- mid-90s pixel density on any monitor without hand-tuned block sizes. Only the
 -- waves/boats/splash/title animate, drawn crisp at full res on top.
-local VRES_H = 540   -- virtual scanlines (between VGA 480 and SVGA 600)
-
--- A clean pixel disc (every virtual pixel inside the radius), filled at vres.
-local function pixelDisc(cx, cy, r, col)
-    love.graphics.setColor(col)
-    local r2 = r * r
-    for by = -r, r do
-        local span = math.floor(math.sqrt(math.max(0, r2 - by * by)))
-        if span > 0 then
-            love.graphics.rectangle("fill", cx - span, cy + by, span * 2, 1)
-        end
-    end
-end
-
--- A smooth pixel hill (parabola), lighter band along the grassy top.
-local function pixelHill(cx, baseY, halfW, height, col, top)
-    for bx = -halfW, halfW do
-        local f = bx / halfW
-        local hh = math.floor(height * (1 - f * f))
-        if hh > 0 then
-            love.graphics.setColor(col)
-            love.graphics.rectangle("fill", cx + bx, baseY - hh, 1, hh)
-            love.graphics.setColor(top)                 -- sunlit crest
-            love.graphics.rectangle("fill", cx + bx, baseY - hh, 1, math.max(1, hh * 0.18))
-        end
-    end
-end
-
--- A soft pixel cloud: a few overlapping discs with a dithered flat bottom.
-local function pixelCloud(cx, cy, w)
-    local white = { 0.97, 0.98, 1.0 }
-    pixelDisc(cx, cy, w * 0.5, white)
-    pixelDisc(cx - w * 0.5, cy + w * 0.12, w * 0.34, white)
-    pixelDisc(cx + w * 0.55, cy + w * 0.10, w * 0.38, white)
-    pixelDisc(cx + w * 0.12, cy - w * 0.18, w * 0.30, white)
-    love.graphics.setColor(0.86, 0.90, 0.96)            -- soft underside shadow
-    love.graphics.rectangle("fill", cx - w * 0.8, cy + w * 0.30, w * 1.6, 1)
-end
+-- The pixel-scene primitives live in src/ui/pixelscene.lua (shared with the
+-- boat chooser's backdrop); local names kept so the code below reads the same.
+local VRES_H     = Scene.VRES_H
+local pixelDisc  = Scene.disc
+local pixelHill  = Scene.hill
+local pixelCloud = Scene.cloud
 
 function Menu:buildBackground(sw, sh)
     local VH = VRES_H
@@ -224,65 +190,23 @@ function Menu:buildBackground(sw, sh)
     Retro.bevel(fw, fw, VW - 2 * fw, VH - 2 * fw, WOOD.deep, WOOD.hi, WOOD.lo, t2, false)
 
     -- Dithered sky: a blue-to-pale gradient, crosshatched with the Bayer matrix.
-    local skyTop = { 0.36, 0.60, 0.88 }
-    local skyLow = { 0.82, 0.90, 0.96 }
-    local levels = 10
-    for yy = sy, horizonY - 1 do
-        local f = (yy - sy) / (horizonY - sy)
-        local fl = f * levels
-        local idx = math.floor(fl)
-        local frac = fl - idx
-        local c0 = idx / levels
-        local c1 = math.min(1, (idx + 1) / levels)
-        local row = (yy % 4) + 1
-        for xx = sx, sx + sceneW - 1 do
-            local thresh = (BAYER[row][(xx % 4) + 1] + 0.5) / 16
-            local m = frac > thresh and c1 or c0
-            love.graphics.setColor(lerp(skyTop[1], skyLow[1], m), lerp(skyTop[2], skyLow[2], m),
-                lerp(skyTop[3], skyLow[3], m))
-            love.graphics.rectangle("fill", xx, yy, 1, 1)
-        end
-    end
+    Scene.dithGradient(sx, sy, sceneW, horizonY - sy,
+        { 0.36, 0.60, 0.88 }, { 0.82, 0.90, 0.96 }, 10)
 
     -- Dithered sea: water_top at the horizon down to water_deep at the bottom.
-    local wTop, wDeep = config.colors.water_top, config.colors.water_deep
     local seaBottom = sy + sceneH - 1
-    for yy = horizonY, seaBottom do
-        local f = (yy - horizonY) / (seaBottom - horizonY)
-        local fl = f * 8
-        local idx = math.floor(fl)
-        local frac = fl - idx
-        local row = (yy % 4) + 1
-        for xx = sx, sx + sceneW - 1 do
-            local thresh = (BAYER[row][(xx % 4) + 1] + 0.5) / 16
-            local m = (idx + (frac > thresh and 1 or 0)) / 8
-            love.graphics.setColor(lerp(wTop[1], wDeep[1], m), lerp(wTop[2], wDeep[2], m),
-                lerp(wTop[3], wDeep[3], m))
-            love.graphics.rectangle("fill", xx, yy, 1, 1)
-        end
-    end
+    Scene.dithGradient(sx, horizonY, sceneW, seaBottom - horizonY + 1,
+        config.colors.water_top, config.colors.water_deep, 8)
 
     -- a few drifting clouds high in the sky
     pixelCloud(sx + sceneW * 0.24, sy + sceneH * 0.14, sceneW * 0.12)
     pixelCloud(sx + sceneW * 0.55, sy + sceneH * 0.08, sceneW * 0.08)
 
-    -- sun (upper right) with a soft layered glow
+    -- sun (upper right) with a soft layered glow + shimmer on the water
     local sunX, sunY = sx + sceneW * 0.81, sy + sceneH * 0.18
     local sunR = math.floor(sceneH * 0.075)
-    love.graphics.setColor(1, 0.95, 0.7, 0.12); love.graphics.circle("fill", sunX, sunY, sunR * 2.2)
-    love.graphics.setColor(1, 0.96, 0.76, 0.22); love.graphics.circle("fill", sunX, sunY, sunR * 1.5)
-    pixelDisc(sunX, sunY, sunR, { 1.0, 0.93, 0.62 })
-    pixelDisc(sunX - sunR * 0.28, sunY - sunR * 0.28, sunR * 0.5, { 1.0, 0.98, 0.82 })
-
-    -- shimmering sun reflection straight down onto the water
-    for i = 0, 22 do
-        local ry = horizonY + i * (sceneH * 0.018)
-        if ry < seaBottom then
-            local w = sunR * (0.5 + i * 0.05)
-            love.graphics.setColor(1, 0.95, 0.7, 0.20 * (1 - i / 24))
-            love.graphics.rectangle("fill", sunX - w / 2, ry, w, 1)
-        end
-    end
+    Scene.sun(sunX, sunY, sunR)
+    Scene.sunReflection(sunX, horizonY, seaBottom, sunR, sceneH * 0.018)
 
     -- islands on the horizon (grass crest over a sandy beach base)
     local grass, gdk = config.colors.grass.top, config.colors.grass.lip
@@ -356,6 +280,25 @@ function Menu:update(dt)
     if self.hero then
         self.hero.x = self.hero.x + self.hero.speed * dt
         if self.hero.x - self.hero.w > w then self.hero.x = -self.hero.w end
+    end
+
+    -- The dolphin pod: waits offstage, crosses the sea band, waits again.
+    local pod = self.pod
+    if pod then
+        local sh2 = love.graphics.getHeight()
+        if not pod.active and self.t > pod.nextAt then
+            pod.active = true
+            pod.dir = (love.math.random() < 0.5) and 1 or -1
+            pod.x = (pod.dir == 1) and -80 or (w + 80)
+            pod.y = sh2 * (0.56 + love.math.random() * 0.16)
+            pod.speed = w * 0.055
+        elseif pod.active then
+            pod.x = pod.x + pod.dir * pod.speed * dt
+            if pod.x > w + 200 or pod.x < -200 then
+                pod.active = false
+                pod.nextAt = self.t + 20 + love.math.random() * 25
+            end
+        end
     end
 
     -- The shark glides the other way (right to left) and wraps back around.
@@ -454,18 +397,8 @@ function Menu:bouncyText(font, text, chars, cx, baselineY, startDelay, hueBase)
     end
 end
 
--- A small pixel sailboat (hull + single sail) for the distant drifting boats.
-local function miniBoat(x, y, s, col)
-    love.graphics.setColor(1, 1, 1, 0.35)
-    love.graphics.ellipse("fill", x, y + 7 * s, 16 * s, 3 * s)            -- reflection
-    love.graphics.setColor(0.97, 0.96, 0.92)
-    love.graphics.polygon("fill", x, y - 16 * s, x, y + 2 * s, x + 11 * s, y + 2 * s) -- sail
-    love.graphics.setColor(0.30, 0.24, 0.18)
-    love.graphics.rectangle("fill", x - 0.8 * s, y - 16 * s, 1.6 * s, 18 * s)        -- mast
-    love.graphics.setColor(col)
-    love.graphics.polygon("fill", x - 13 * s, y + 2 * s, x + 13 * s, y + 2 * s,
-        x + 8 * s, y + 8 * s, x - 8 * s, y + 8 * s)                       -- hull
-end
+-- A small pixel sailboat for the distant drifting boats (shared primitive).
+local miniBoat = Scene.miniBoat
 
 -- Cheap, busy-looking main rotor: a short mast, a faint swept disc, then a few
 -- motion-blur "ghosts" of two blades sweeping a flattened (side-on) ellipse, and
@@ -540,6 +473,23 @@ function Menu:draw()
     -- distant drifting pixel sailboats
     for _, b in ipairs(self.boats) do
         miniBoat(b.x, b.y, b.scale, b.color)
+    end
+
+    -- the dolphin pod porpoising across the sea (same body as in the game)
+    if self.pod and self.pod.active then
+        local kd = sh / 800
+        for i = 0, 2 do
+            local px = self.pod.x - self.pod.dir * i * 52 * kd
+            local u = (self.t / 1.5 + i * 0.37) % 1
+            if u < 0.55 then
+                local z = math.sin(u / 0.55 * math.pi) * 40 * kd
+                local pitch = (u / 0.55 - 0.5) * 1.5
+                love.graphics.setColor(0, 0, 0, 0.12)
+                love.graphics.ellipse("fill", px, self.pod.y + 6 * kd, 16 * kd, 5 * kd)
+                Dolphins.drawBody(px, self.pod.y - z, 1.15 * kd, pitch, self.pod.dir)
+            end
+        end
+        love.graphics.setColor(1, 1, 1)
     end
 
     -- The big hero boat (real photo) gliding across the sea.
@@ -654,17 +604,6 @@ function Menu:draw()
 
     self:drawArtist(sw, sh)   -- Finn-Erik, the game's artist, in the corner
 
-    -- TEMPORARY preview button (see previewBtnRect)
-    do
-        local bx, by, bw, bh, label = self:previewBtnRect()
-        local hover = self:pointInPreview(love.mouse.getPosition())
-        Retro.bevel(bx, by, bw, bh, hover and WOOD.hi or WOOD.face, WOOD.hi, WOOD.lo, 3, true)
-        love.graphics.setFont(self.game.fonts.small)
-        love.graphics.setColor(WOOD.text)
-        love.graphics.print(label, bx + (bw - self.game.fonts.small:getWidth(label)) / 2,
-            by + (bh - self.game.fonts.small:getHeight()) / 2)
-    end
-
     -- Avslutt (quit) button, bottom-right
     do
         local bx, by, bw, bh, label = self:quitBtnRect()
@@ -677,11 +616,6 @@ function Menu:draw()
     end
 
     love.graphics.setColor(1, 1, 1)
-end
-
-function Menu:pointInPreview(mx, my)
-    local bx, by, bw, bh = self:previewBtnRect()
-    return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
 end
 
 -- "Avslutt" (quit) button in the bottom-right corner of the title screen.
@@ -781,17 +715,6 @@ function Menu:pointInButton(mx, my)
     return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
 end
 
--- TEMPORARY: a tiny dev button (bottom-left) that jumps straight to the all-found
--- finale, so the win screen can be previewed without playing through. Remove this
--- (and its draw + click handling + World:load's game.previewWin hook) later.
-function Menu:previewBtnRect()
-    local sh = love.graphics.getHeight()
-    local f  = self.game.fonts.small
-    local label = "Se finale (TEST)"
-    local pad = 10
-    return 16, sh - (f:getHeight() + pad) - 14, f:getWidth(label) + pad * 2, f:getHeight() + pad, label
-end
-
 -- Restore volume (it may have been ducked under the voice) and go via the
 -- loading screen so the world build happens behind a "Laster…".
 function Menu:start()
@@ -807,10 +730,7 @@ end
 
 function Menu:mousepressed(x, y, button)
     if button ~= 1 then return end
-    if self:pointInPreview(x, y) then          -- TEMPORARY: jump to the finale
-        self.game.previewWin = true
-        self.game:setScene("loading")
-    elseif self:pointInQuit(x, y) then         -- quit the game
+    if self:pointInQuit(x, y) then             -- quit the game
         love.event.quit()
     else
         self:start()                            -- tap anywhere else to set sail (iPad-friendly)
