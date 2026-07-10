@@ -124,18 +124,6 @@ eq(Game.state.unlockedBoats[2], "fishing_boat", "newGame: keeps unlocked boats")
 eq(Game.state.coins, 0, "newGame: progress (gold) IS reset")
 eq(#Game.state.treasuresFound, 0, "newGame: progress (treasures) IS reset")
 
--- gold-boat purchase (the saving-up reward) -----------------------------------
-reset()
-Game.state.coins = 59
-eq(Game:buyBoat("fishing_boat"), false, "buyBoat: too poor at 59g")
-eq(Game:ownsBoat("fishing_boat"), false, "buyBoat: still locked")
-Game.state.coins = 80
-eq(Game:buyBoat("fishing_boat"), true, "buyBoat: unlocks at 60g")
-eq(Game.state.coins, 20, "buyBoat: gold spent")
-eq(Game:ownsBoat("fishing_boat"), true, "buyBoat: owned now")
-eq(Game:buyBoat("fishing_boat"), false, "buyBoat: no double-charge")
-eq(Game:ownsBoat("premium_yacht") or Game:ownsBoat("yacht"), false,
-    "buyBoat: pack boats still need premium")
 
 -- partial save (old version / hand-edited): missing fields fall to defaults ----
 reset('{"coins":42}')

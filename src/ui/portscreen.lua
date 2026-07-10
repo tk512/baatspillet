@@ -149,14 +149,7 @@ function PortScreen:update(dt)
 end
 
 function PortScreen:drawCoin(co)
-    local sq = math.abs(math.cos(co.spin))          -- fake spin: squish the width
-    local rx = co.r * (0.22 + 0.78 * sq)
-    love.graphics.setColor(0.60, 0.45, 0.10)         -- dark rim
-    love.graphics.ellipse("fill", co.x, co.y, rx + 1, co.r + 1)
-    love.graphics.setColor(0.88, 0.68, 0.20)         -- gold
-    love.graphics.ellipse("fill", co.x, co.y, rx, co.r)
-    love.graphics.setColor(0.99, 0.88, 0.45)         -- highlight
-    love.graphics.ellipse("fill", co.x - rx * 0.2, co.y - co.r * 0.2, rx * 0.5, co.r * 0.5)
+    Icons.coin(co.x, co.y, co.r, co.spin)
 end
 
 -- Panel fills the (size-capped) area; everything is laid out relative to it.
@@ -385,10 +378,25 @@ function PortScreen:drawTitle(L, t)
     love.graphics.setColor(th.accent);    love.graphics.print(name, nx, ny)
 end
 
--- Blocky dock backdrop behind the portrait (water, quay, crane, crates), kept
--- muted so the face stays the focus. Scary harbours get a colder version.
+-- Backdrop behind the portrait. Placeholder-first: assets/ports/havn.png (a
+-- painted harbour street) is used when present — cover-fit, scissored, and
+-- dimmed a touch (colder for scary harbours) so the face stays the focus.
+-- Without the file, the blocky code-drawn dock below carries it.
 function PortScreen:drawDockBackdrop(x, y, w, h)
     local scary = (self.mood == "scary")
+    local img = Assets.image("ports/havn.png")
+    if img then
+        local sc = math.max(w / img:getWidth(), h / img:getHeight())
+        -- setScissor ignores the panel's translate: convert to window coords
+        love.graphics.setScissor(x + (self._ox or 0), y + (self._oy or 0), w, h)
+        if scary then love.graphics.setColor(0.45, 0.48, 0.60)
+        else love.graphics.setColor(0.82, 0.82, 0.82) end
+        love.graphics.draw(img, x + w / 2, y + h / 2, 0, sc, sc,
+            img:getWidth() / 2, img:getHeight() / 2)
+        love.graphics.setScissor()
+        love.graphics.setColor(1, 1, 1)
+        return
+    end
     local water = scary and {0.18, 0.20, 0.24} or {0.28, 0.42, 0.52}
     local wstk  = scary and {0.30, 0.32, 0.36} or {0.40, 0.54, 0.62}
     local quay  = scary and {0.20, 0.18, 0.20} or {0.34, 0.25, 0.16}
@@ -675,8 +683,44 @@ function PortScreen:drawStoreScreen(sw, sh)
     love.graphics.setColor(1, 1, 1)
 end
 
--- A small wall lantern casting a warm pool of light.
+-- A wall torch. Placeholder-first: assets/props/flamme.png (painted brazier)
+-- with a FLICKERING red/orange glow centred on the flame (biased ~20% above
+-- the torch's middle); without the file, the old code lantern carries it.
 local function lantern(lx, ly, r)
+    local img = Assets.image("props/flamme.png")
+    if img then
+        if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
+        local t = love.timer.getTime()
+        -- FIRELIGHT, not a lamp: three incommensurate waves layered under a
+        -- slow gust envelope. Brightness and radius jitter independently, and
+        -- the colour breathes between deep ember-red and hot orange — the
+        -- shadows dance a little (fascinating, faintly menacing, never rapid).
+        local ph = lx * 0.7
+        local gust = 0.82 + 0.18 * math.sin(t * 0.43 + ph)
+        local fb = gust * (0.80 + 0.10 * math.sin(t * 2.1 + ph)
+                                 + 0.06 * math.sin(t * 5.3 + ph * 2.1)
+                                 + 0.04 * math.sin(t * 8.9 + ph * 3.3))
+        local fr = gust * (0.80 + 0.10 * math.sin(t * 1.7 + ph * 1.3)
+                                 + 0.07 * math.sin(t * 4.1 + ph * 2.7))
+        local ember = 0.5 + 0.5 * math.sin(t * 0.9 + ph)   -- red <-> orange breath
+        local cr2 = 1.0
+        local cg = 0.38 + 0.22 * ember
+        local cb = 0.10 + 0.08 * ember
+        local th = r * 7                                   -- torch height
+        local sc = th / img:getHeight()
+        local bot = ly + r * 2.5
+        local gx, gy = lx, bot - th * 0.72                 -- glow: on the flame
+        love.graphics.setColor(cr2, cg, cb, 0.13 * fb)     -- ember wash (tighter now)
+        love.graphics.circle("fill", gx, gy, r * 3.6 * fr)
+        love.graphics.setColor(1.0, 0.62, 0.20, 0.20 * fb) -- hot core
+        love.graphics.circle("fill", gx, gy, r * 1.9 * fr)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(img, lx, bot, 0, sc, sc, img:getWidth() / 2, img:getHeight())
+        love.graphics.setColor(1.0, 0.85, 0.4, 0.12 * fb)  -- flame-tip bloom
+        love.graphics.circle("fill", gx, gy - r * 0.8, r * 1.2 * fr)
+        love.graphics.setColor(1, 1, 1)
+        return
+    end
     love.graphics.setColor(0.14, 0.09, 0.05)
     love.graphics.rectangle("fill", lx - 1, ly - r * 1.7, 2, r * 0.9)        -- bracket
     love.graphics.setColor(0.24, 0.17, 0.10)
@@ -686,7 +730,19 @@ local function lantern(lx, ly, r)
 end
 
 -- A weathered barrel of goods.
+-- Placeholder-first: assets/props/barrel.png (painted, transparent bg) when
+-- present, else the blocky code barrel. Image is bottom-anchored and fitted
+-- inside (w, h) keeping its aspect, so it stands ON the shop floor.
 local function barrel(bx, by, w, h)
+    local img = Assets.image("props/barrel.png")
+    if img then
+        if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
+        local sc = math.min(w / img:getWidth(), h / img:getHeight()) * 1.35
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(img, bx + w / 2, by + h, 0, sc, sc,
+            img:getWidth() / 2, img:getHeight())
+        return
+    end
     love.graphics.setColor(0.34, 0.22, 0.12)
     love.graphics.rectangle("fill", bx, by, w, h)
     love.graphics.setColor(0.22, 0.14, 0.08)                                 -- side shading
@@ -714,24 +770,47 @@ function PortScreen:drawStorePanel(pw, ph)
     for xx = ix, ix + iw, 26 do love.graphics.rectangle("fill", xx, iy, 1, ih) end
     for yy = iy, iy + ih, 3 do love.graphics.rectangle("fill", ix, yy, iw, 1) end
 
-    -- warm lantern glow in the top corners (additive pools)
-    love.graphics.setBlendMode("add")
-    love.graphics.setColor(s.lamp[1], s.lamp[2], s.lamp[3], 0.10)
-    love.graphics.circle("fill", ix + iw * 0.10, iy + ih * 0.10, ih * 0.30)
-    love.graphics.circle("fill", ix + iw * 0.90, iy + ih * 0.10, ih * 0.30)
-    love.graphics.setBlendMode("alpha")
     lantern(ix + iw * 0.07, iy + ih * 0.12, ih * 0.045)
     lantern(ix + iw * 0.93, iy + ih * 0.12, ih * 0.045)
 
-    -- hanging sign: BUTIKK
-    local fT = vfont(ih * 0.085)
+    -- hanging trading-post sign: a weathered plank swaying gently on two
+    -- chains, deep-carved gold lettering, doubloons for bolt heads
+    local fT = vfont(ih * 0.105)
     love.graphics.setFont(fT)
     local title = "BUTIKK"
     local tw = fT:getWidth(title)
-    local plY = iy + ih * 0.03
-    bevel(pw / 2 - tw / 2 - 20, plY, tw + 40, fT:getHeight() + 14, s.crate, s.cratehi, s.cratelo, t, true)
-    love.graphics.setColor(0, 0, 0, 0.5); love.graphics.print(title, pw / 2 - tw / 2 + 1, plY + 8)
-    love.graphics.setColor(s.accent);    love.graphics.print(title, pw / 2 - tw / 2, plY + 7)
+    local sgW, sgH = tw + ih * 0.16, fT:getHeight() + ih * 0.045
+    local plY = iy + ih * 0.035
+    love.graphics.push()
+    love.graphics.translate(pw / 2, plY)
+    -- chains up to the frame
+    love.graphics.setColor(0.35, 0.33, 0.30)
+    love.graphics.setLineWidth(math.max(2, t))
+    love.graphics.line(-sgW * 0.38, 0, -sgW * 0.30, -ih * 0.045)
+    love.graphics.line(sgW * 0.38, 0, sgW * 0.30, -ih * 0.045)
+    love.graphics.setLineWidth(1)
+    -- the plank: double bevel + a darker burnt band top and bottom
+    bevel(-sgW / 2, 0, sgW, sgH, s.crate, s.cratehi, s.cratelo, t, true)
+    bevel(-sgW / 2 + t * 2, t * 2, sgW - t * 4, sgH - t * 4, s.wood, s.cratehi, s.cratelo,
+        math.max(1, math.floor(t * 0.6)), false)
+    love.graphics.setColor(0, 0, 0, 0.22)
+    love.graphics.rectangle("fill", -sgW / 2 + t * 2, t * 2, sgW - t * 4, 3)
+    love.graphics.rectangle("fill", -sgW / 2 + t * 2, sgH - t * 2 - 3, sgW - t * 4, 3)
+    -- deep-carved gold letters: dark inset shadow below, bright gold on top,
+    -- warm highlight kissed by the torchlight
+    local ty2 = (sgH - fT:getHeight()) / 2
+    love.graphics.setColor(0.08, 0.05, 0.02, 0.9)
+    love.graphics.print(title, -tw / 2 + 2, ty2 + 3)
+    love.graphics.setColor(0.62, 0.46, 0.10)
+    love.graphics.print(title, -tw / 2 + 1, ty2 + 1)
+    love.graphics.setColor(s.accent)
+    love.graphics.print(title, -tw / 2, ty2)
+    love.graphics.setColor(1, 0.95, 0.7, 0.35 + 0.15 * math.sin(love.timer.getTime() * 1.3))
+    love.graphics.print(title, -tw / 2, ty2 - 1)
+    -- doubloon bolt heads in the corners
+    Icons.coin(-sgW / 2 + t * 4, sgH / 2, sgH * 0.14)
+    Icons.coin(sgW / 2 - t * 4, sgH / 2, sgH * 0.14)
+    love.graphics.pop()
 
     -- your gold, centered under the sign (a coin + the running total)
     local fG = vfont(ih * 0.052)
@@ -859,8 +938,7 @@ function PortScreen:drawCrate(r, mx, my, t)
     local py = r.y + r.h * 0.815
     local cr = r.h * 0.068
     local coinX = r.x + r.w / 2 - prw / 2 - cr * 1.5
-    love.graphics.setColor(0.6, 0.45, 0.1); love.graphics.circle("fill", coinX, py + fp:getHeight() / 2, cr + 1)
-    love.graphics.setColor(config.colors.gold); love.graphics.circle("fill", coinX, py + fp:getHeight() / 2, cr)
+    Icons.coin(coinX, py + fp:getHeight() / 2, cr)
     love.graphics.setColor(afford and config.colors.gold or s.red)
     love.graphics.print(pr, r.x + r.w / 2 - prw / 2, py)
 

@@ -8,6 +8,7 @@
 local config   = require("src.config")
 local Assets   = require("src.assets")
 local Retro    = require("src.ui.retro")
+local Icons    = require("src.ui.icons")
 local Scene    = require("src.ui.pixelscene")
 local Dolphins = require("src.entities.dolphins")   -- drawBody, for the sea band
 local utf8     = require("utf8")
@@ -696,9 +697,9 @@ function Menu:drawSign(pop)
     love.graphics.line(lx, beamY + bh * 0.10, lx, by)
     love.graphics.line(rx, beamY + bh * 0.10, rx, by)
     love.graphics.setLineWidth(1)
-    love.graphics.setColor(0.20, 0.16, 0.12)              -- iron rings
-    love.graphics.circle("line", lx, beamY + bh * 0.10, bh * 0.07)
-    love.graphics.circle("line", rx, beamY + bh * 0.10, bh * 0.07)
+    -- gold doubloons where the ropes hang (was: dull iron rings)
+    Icons.coin(lx, beamY + bh * 0.10, bh * 0.17)
+    Icons.coin(rx, beamY + bh * 0.10, bh * 0.17)
 
     -- the plank: raised wood, with a sunken carved inner panel
     local face = hover and WOOD.hi or WOOD.face

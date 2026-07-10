@@ -19,7 +19,6 @@ return {
         accel    = 90,
         turn     = 1.8,
         capacity = 2,
-        cost     = 0,
         sprite   = "boat1.png",
         color    = {0.85, 0.30, 0.25},
     },
@@ -30,7 +29,7 @@ return {
         accel    = 110,
         turn     = 2.0,
         capacity = 4,
-        cost     = 60,                 -- unlocked with GOLD (the saving-up reward)
+        premium  = true,               -- unlocked by the one premium pack (config.PREMIUM)
         sprite   = "boat2.png",
         color    = {0.30, 0.55, 0.85},
     },
@@ -41,7 +40,6 @@ return {
         accel    = 70,
         turn     = 1.4,
         capacity = 8,
-        cost     = 180,
         premium  = true,
         sprite   = "boat3.png",
         color    = {0.95, 0.70, 0.20},
@@ -53,7 +51,6 @@ return {
         accel    = 105,
         turn     = 1.9,
         capacity = 5,
-        cost     = 0,
         premium  = true,
         -- A real 3D model rendered to frames at assets/boats/yacht/0..N.png is used
         -- when present (see tools/render_boat_frames.md); until then it falls back to

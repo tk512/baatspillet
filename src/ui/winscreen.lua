@@ -7,6 +7,7 @@
 -- A modal owned by the world scene (freezes the world). A click dismisses it.
 -- Voice can be added later (hook "du_vant").
 
+local Icons  = require("src.ui.icons")
 local config = require("src.config")
 local Assets = require("src.assets")
 
@@ -56,7 +57,7 @@ function WinScreen:update(dt)
             rot  = love.math.random() * 6.28,
             rotV = (love.math.random() - 0.5) * 8,
             kind = FALL_KINDS[love.math.random(#FALL_KINDS)],
-            size = 30 + love.math.random() * 36,            -- big coins (30..66)
+            size = 44 + love.math.random() * 48,            -- BIG coins (44..92)
             sway = love.math.random() * 6.28,
         }
     end
@@ -103,21 +104,12 @@ function WinScreen:keypressed(key)
 end
 
 -- A spinning coin: the ellipse width oscillates with rotation to fake a 3D flip.
-local function drawCoin(x, y, r, rot)
-    local w = math.abs(math.cos(rot)) * r + r * 0.15
-    love.graphics.setColor(0.62, 0.46, 0.08)
-    love.graphics.ellipse("fill", x, y, w + 1, r + 1)
-    love.graphics.setColor(0.95, 0.80, 0.30)
-    love.graphics.ellipse("fill", x, y, w, r)
-    love.graphics.setColor(1, 1, 1, 0.5)
-    love.graphics.ellipse("fill", x - w * 0.3, y - r * 0.3, w * 0.25, r * 0.25)
-end
+local function drawCoin(x, y, r, rot) Icons.coin(x, y, r, rot) end
 
 
 function WinScreen:draw()
     local sw, sh = love.graphics.getDimensions()
     local fonts  = self.world.game.fonts
-    local Icons  = require("src.ui.icons")
     local t      = self.t
     local cx, cy = sw / 2, sh * 0.52
 

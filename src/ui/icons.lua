@@ -10,6 +10,31 @@ local Assets = require("src.assets")
 
 local Icons = {}
 
+-- THE gold coin, used everywhere gold shows (HUD, prices, coin rains).
+-- Placeholder-first: assets/icons/gull.png (the engraved doubloon) when
+-- present, else the classic gold disc. `rot` (optional) flips the coin
+-- edge-on like it's spinning — image and fallback both support it.
+-- Perf note: many image coins batch on one texture — cheaper than circles.
+function Icons.coin(x, y, r, rot)
+    local img = Assets.image("icons/gull.png")
+    if img then
+        if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
+        local sc = (r * 2) / math.max(img:getWidth(), img:getHeight())
+        local sx = sc
+        if rot then sx = sc * math.max(0.15, math.abs(math.cos(rot))) end
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(img, x, y, 0, sx, sc, img:getWidth() / 2, img:getHeight() / 2)
+        return
+    end
+    local w = rot and (math.abs(math.cos(rot)) * r + r * 0.15) or r
+    love.graphics.setColor(0.62, 0.46, 0.08)
+    love.graphics.ellipse("fill", x, y, w + 1, r + 1)
+    love.graphics.setColor(0.95, 0.80, 0.30)
+    love.graphics.ellipse("fill", x, y, w, r)
+    love.graphics.setColor(1, 1, 1, 0.5)
+    love.graphics.ellipse("fill", x - w * 0.3, y - r * 0.3, w * 0.25, r * 0.25)
+end
+
 -- Draw `kind` centred at (x, y), CONTAINED in a `size`×`size` box: the photo's
 -- longest side is scaled to exactly `size`, so the whole product is visible.
 -- The Butikk's square display windows use this.

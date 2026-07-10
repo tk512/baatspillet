@@ -6,6 +6,7 @@
 local config  = require("src.config")
 local Assets  = require("src.assets")
 local Retro   = require("src.ui.retro")
+local Icons   = require("src.ui.icons")
 local Scale   = require("src.ui.scale")
 local Scene   = require("src.ui.pixelscene")
 local Objects = require("src.systems.objects")
@@ -65,7 +66,6 @@ function BoatSelect:displayName() return upperFirst(self.name) end
 function BoatSelect:update(dt)
     self.t = self.t + dt
     if self.bought > 0 then self.bought = self.bought - dt end
-    if (self.goldMsgT or 0) > 0 then self.goldMsgT = self.goldMsgT - dt end
     IAP.update(dt)
     -- post-purchase party: gold bursts popping over the new fleet
     if (self.celebrate or 0) > 0 then
@@ -76,9 +76,7 @@ function BoatSelect:update(dt)
             local L = self:layout()
             local prem = {}
             for i, b in ipairs(self.game.data.boats) do
-                if (b.premium or b.cost) and self.game:ownsBoat(b.id) then
-                    prem[#prem + 1] = L.strip[i]
-                end
+                if b.premium and self.game:ownsBoat(b.id) then prem[#prem + 1] = L.strip[i] end
             end
             if #prem == 0 then prem[1] = L.strip[self.index] end
             local r = prem[love.math.random(#prem)]
@@ -236,21 +234,7 @@ end
 -- self.offer states: false | "card" (the pitch) | "gate" (parental gate)
 -- | "busy" (store transaction in flight).
 function BoatSelect:primary()
-    local def = self:def()
-    if self:owned() then
-        self:setSail()
-    elseif def.cost and not def.premium then
-        -- the GOLD boat: the saving-up reward, no store involved
-        if self.game:buyBoat(def.id) then
-            self.bought = 1.6
-            self.celebrate, self._celebT = 2.4, 0
-            if not Assets.playNamedVoice("kjopt_baat") then Assets.playNamedVoice("cheer") end
-            Assets.playSfx("coin", 0.9)
-        else
-            self.goldMsg = ("Spar %d gull til!"):format(def.cost - self.game.state.coins)
-            self.goldMsgT = 2.2
-            Assets.playSfx("leave", 0.4)
-        end
+    if self:owned() then self:setSail()
     else
         Assets.playNamedVoice("spor_en_voksen")   -- optional clip; card is the fallback
         self.offer = "card"
@@ -613,7 +597,7 @@ function BoatSelect:drawThumb(r, def, i)
     local t = math.max(2, math.floor(r.h * 0.12))
     Retro.bevel(r.x, r.y, r.w, r.h, sel and W.hi or W.face, W.hi, W.lo, t, true)
     boatArt(r, def)
-    if (def.premium or def.cost) and owned then
+    if def.premium and owned then
         love.graphics.setColor(W.accent); love.graphics.setLineWidth(math.max(2, 4 * (r.h / 100)))
         love.graphics.rectangle("line", r.x + 1, r.y + 1, r.w - 2, r.h - 2)
         love.graphics.setLineWidth(1)
@@ -627,21 +611,6 @@ function BoatSelect:drawThumb(r, def, i)
         local ry = r.y + r.h * 0.42
         ropeAcross(r.x + 2, r.x + r.w - 2, ry, r.h * 0.10, math.max(2, r.h * 0.045))
         padlock(r.x + r.w / 2, ry + r.h * 0.16, r.h * 0.26)
-        if def.cost and not def.premium then
-            -- gold-price chip: this one is bought with coins, not the pack
-            local f = self.game.fonts.small
-            local lbl = tostring(def.cost)
-            local cr2 = r.h * 0.10
-            local cw2 = cr2 * 2 + 6 + f:getWidth(lbl)
-            local cx2 = r.x + r.w / 2 - cw2 / 2
-            local cy2 = r.y + r.h - cr2 * 1.6
-            love.graphics.setColor(0.6, 0.45, 0.1)
-            love.graphics.circle("fill", cx2 + cr2, cy2, cr2 + 1)
-            love.graphics.setColor(config.colors.gold)
-            love.graphics.circle("fill", cx2 + cr2, cy2, cr2)
-            love.graphics.setFont(f)
-            love.graphics.print(lbl, cx2 + cr2 * 2 + 6, cy2 - f:getHeight() / 2)
-        end
     end
 end
 
@@ -836,20 +805,7 @@ function BoatSelect:draw()
 
         nameField(L.nameBox, self:displayName(), false, fonts.normal)
         button("bs.nytt", L.nytt, "Nytt navn", fonts.small)
-        local lbl = "Sett seil!"
-        if not self:owned() then
-            lbl = (def.cost and not def.premium)
-                and ("Lås opp – %d gull"):format(def.cost) or "Lås opp"
-        end
-        actionButton("bs.sail", L.sail, self:owned(), lbl, fonts.big)
-        if (self.goldMsgT or 0) > 0 then
-            love.graphics.setFont(fonts.normal)
-            love.graphics.setColor(0.95, 0.45, 0.3)
-            love.graphics.print(self.goldMsg,
-                L.cx - fonts.normal:getWidth(self.goldMsg) / 2,
-                L.sail.y - fonts.normal:getHeight() - 8 * L.k)
-            love.graphics.setColor(1, 1, 1)
-        end
+        actionButton("bs.sail", L.sail, self:owned(), self:owned() and "Sett seil!" or "Lås opp", fonts.big)
         button("bs.back", L.back, "Tilbake", fonts.small)
     end
 

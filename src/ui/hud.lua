@@ -14,15 +14,7 @@ local WOOD = Retro.WOOD
 -- Wooden plaque (raised outer bevel + sunken inner well); shared via Retro.
 local plaque = Retro.plaque
 
-local function coin(x, y, r)
-    local c = config.colors
-    love.graphics.setColor(0.62, 0.46, 0.08)
-    love.graphics.circle("fill", x, y, r + 1)
-    love.graphics.setColor(c.gold)
-    love.graphics.circle("fill", x, y, r)
-    love.graphics.setColor(1, 1, 1, 0.55)
-    love.graphics.circle("fill", x - r * 0.3, y - r * 0.3, r * 0.28)
-end
+local function coin(x, y, r) Icons.coin(x, y, r) end
 
 -- world exposes: game (coins + fonts), boat, cargoSystem, nearPort, toast.
 function HUD.draw(world)

@@ -50,7 +50,7 @@ end
 -- iOS kills suspended apps without calling love.quit — losing focus is the
 -- last reliable moment to persist. Flush exploration + save there.
 function love.focus(focused)
-    if not focused then Game:onBlur() end
+    if focused then Game:onFocus() else Game:onBlur() end
 end
 
 function love.quit()

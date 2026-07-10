@@ -238,27 +238,12 @@ function Game:isPremium() return self.state.premium == true end
 
 -- Do we own this boat? Free boats always; premium boats are all unlocked together
 -- by the one pack -- never bought individually.
--- Own a boat when: it's free, it's premium and the pack is bought, or it was
--- unlocked with gold (unlockedBoats — the saving-up reward).
+-- Own a boat when it's free, or premium with the pack bought. Gold NEVER buys
+-- boats — boats are the Kaptein-pakken's whole value (per Torbjørn).
 function Game:ownsBoat(id)
     local def = self:getBoatDef(id)
-    if def.premium then return self:isPremium() end
-    if not def.cost then return true end
-    for _, b in ipairs(self.state.unlockedBoats) do
-        if b == id then return true end
-    end
-    return false
-end
-
--- Buy a gold-priced boat. Returns true on success, false when too poor.
-function Game:buyBoat(id)
-    local def = self:getBoatDef(id)
-    if not def.cost or self:ownsBoat(id) then return false end
-    if self.state.coins < def.cost then return false end
-    self.state.coins = self.state.coins - def.cost
-    table.insert(self.state.unlockedBoats, id)
-    self:save()
-    return true
+    if not def.premium then return true end
+    return self:isPremium()
 end
 
 -- Unlock the whole premium pack. PRETEND purchase for now (just flips the flag).
@@ -498,12 +483,24 @@ function Game:resize(w, h)
 end
 
 -- App losing focus (backgrounded, phone call): persist everything now —
--- on iOS this may be our last breath. Fog flush includes a save.
+-- on iOS this may be our last breath. Fog flush includes a save. On mobile
+-- also pause ALL audio (music kept playing over the home screen otherwise);
+-- desktop keeps playing when you merely switch windows.
 function Game:onBlur()
     if self.sceneName == "world" and self.scene and self.scene.flushFog then
         pcall(function() self.scene:flushFog() end)
     end
     self:save()
+    if self.mobile then
+        self._pausedAudio = love.audio.pause()
+    end
+end
+
+function Game:onFocus()
+    if self._pausedAudio then
+        love.audio.play(self._pausedAudio)
+        self._pausedAudio = nil
+    end
 end
 
 function Game:quit()
