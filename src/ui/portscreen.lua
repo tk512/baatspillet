@@ -190,18 +190,16 @@ function PortScreen:mousepressed(mx, my, button)
     mx = mx - self._ox
     my = my - self._oy
 
-    -- Inside the store: click a crate to buy it, or Tilbake / Seil.
+    -- Inside the store: crates + Tilbake/Seil arm on press, fire on release
+    -- (Retro press protocol -- the kids-app squish).
     if self.shopOpen then
         if self._crates then
             for _, c in ipairs(self._crates) do
-                if inRect(c, mx, my) then self:tryBuy(c.item); return end
+                if Retro.press("ps.crate:" .. c.item.id, c, mx, my, self._ox, self._oy) then return end
             end
         end
-        if self._backRect and inRect(self._backRect, mx, my) then
-            self.shopOpen = false                      -- back to the harbour-master briefing
-        elseif self._seilRect and inRect(self._seilRect, mx, my) then
-            self:confirm()
-        end
+        if self._backRect and Retro.press("ps:Tilbake", self._backRect, mx, my, self._ox, self._oy) then return end
+        if self._seilRect and Retro.press("ps:Seil!", self._seilRect, mx, my, self._ox, self._oy) then return end
         return
     end
 
@@ -212,12 +210,29 @@ function PortScreen:mousepressed(mx, my, button)
     end
 
     if not self._L then return end
-    if inRect(self._L.butikk, mx, my) then
+    if Retro.press("ps:Butikk", self._L.butikk, mx, my, self._ox, self._oy) then return end
+    if Retro.press("ps:Seil!", self._L.seil, mx, my, self._ox, self._oy) then return end
+    if not inRect(self._L.panel, mx, my) then
+        self:confirm()                             -- tap outside the panel: cast off
+    end
+end
+
+function PortScreen:mousereleased(x, y, button)
+    if button ~= 1 then return end
+    if self.shopOpen then
+        if self._crates then
+            for _, c in ipairs(self._crates) do
+                if Retro.released("ps.crate:" .. c.item.id, x, y) then self:tryBuy(c.item); return end
+            end
+        end
+        if Retro.released("ps:Tilbake", x, y) then self.shopOpen = false; return end
+        if Retro.released("ps:Seil!", x, y) then self:confirm() end
+        return
+    end
+    if Retro.released("ps:Butikk", x, y) then
         self.shopOpen = true                       -- open the store...
         Assets.playNamedVoice("butikk")            -- ...with "Vil du kjøpe noe?"
-    elseif inRect(self._L.seil, mx, my) then
-        self:confirm()
-    elseif not inRect(self._L.panel, mx, my) then
+    elseif Retro.released("ps:Seil!", x, y) then
         self:confirm()
     end
 end
@@ -625,14 +640,16 @@ function PortScreen:labelButton(b, label, t, primary)
     local th = self.theme
     local mx, my = love.mouse.getPosition()
     mx, my = mx - self._ox, my - self._oy
-    local hover = inRect(b, mx, my)
+    local down = Retro.isDown("ps:" .. label)
+    local hover = inRect(b, mx, my) and not down
     local face = primary and (hover and th.btnhi or th.btn) or (hover and th.hi or th.face)
     bevel(b.x, b.y, b.w, b.h, face, primary and th.btnhi or th.hi,
-          primary and th.btnlo or th.lo, t, true)
+          primary and th.btnlo or th.lo, t, not down)
+    local off = down and t or 0
     local f = vfont(b.h * 0.40)
     love.graphics.setFont(f)
-    local lx = b.x + b.w / 2 - f:getWidth(label) / 2
-    local ly = b.y + b.h / 2 - f:getHeight() / 2
+    local lx = b.x + b.w / 2 - f:getWidth(label) / 2 + off
+    local ly = b.y + b.h / 2 - f:getHeight() / 2 + off
     love.graphics.setColor(0, 0, 0, 0.5); love.graphics.print(label, lx + 1, ly + 1)
     love.graphics.setColor(1, 1, 1);      love.graphics.print(label, lx, ly)
 end
@@ -737,14 +754,14 @@ function PortScreen:drawStorePanel(pw, ph)
             items[#items + 1] = it
         end
     end
-    local cols = 3
+    local cols = 4          -- 4 wide -> 2 rows for the catalog: much bigger crates
     local n = #items
     -- Slots are sized for the FULL catalog, not the visible items -- so the
     -- kanonkuler crate appearing (or anything hidden later) never resizes or
     -- reshuffles the rest of the store. (Kuler also sits last in shop.lua.)
     local rows = math.max(1, math.ceil(#self.shop / cols))
     local gridX, gridY = ix + iw * 0.04, iy + ih * 0.23
-    local gridW, gridH = iw * 0.92, ih * 0.56
+    local gridW, gridH = iw * 0.92, ih * 0.60
     local gap, rowGap = iw * 0.025, ih * 0.035
     local cw = (gridW - (cols - 1) * gap) / cols
     local ch = math.min((gridH - (rows - 1) * rowGap) / rows, cw * 0.92)
@@ -814,15 +831,16 @@ function PortScreen:drawCrate(r, mx, my, t)
     local afford = game.state.coins >= item.price
     local hover  = inRect(r, mx, my)
 
-    local face = (hover and not owned) and s.cratehi or s.crate
-    bevel(r.x, r.y, r.w, r.h, face, s.cratehi, s.cratelo, t, true)
+    local down = Retro.isDown("ps.crate:" .. item.id)
+    local face = (hover and not owned and not down) and s.cratehi or s.crate
+    bevel(r.x, r.y, r.w, r.h, face, s.cratehi, s.cratelo, t, not down)
     bevel(r.x + t * 2, r.y + t * 2, r.w - t * 4, r.h - t * 4, s.wood, s.cratehi, s.cratelo,
           math.max(1, math.floor(t * 0.6)), false)
 
     -- SQUARE display window: a sunken frame with the product photo fitted
     -- inside, whole product visible (no zoom-crop), as big as the crate
     -- allows without touching the name row.
-    local side = math.min(r.w - t * 8, r.h * 0.56)
+    local side = math.min(r.w - t * 8, r.h * 0.58)
     local fx = r.x + (r.w - side) / 2
     local fy = r.y + t * 2.5
     bevel(fx, fy, side, side, s.deep, s.cratehi, s.cratelo,
@@ -876,14 +894,16 @@ end
 -- A store bottom-bar button (its own rusty palette; `primary` = the green Seil!).
 function PortScreen:storeButton(b, label, t, primary, mx, my)
     local s = STORE
-    local hover = inRect(b, mx, my)
+    local down = Retro.isDown("ps:" .. label)
+    local hover = inRect(b, mx, my) and not down
     local face = primary and (hover and s.buyhi or s.buy) or (hover and s.woodhi or s.crate)
     bevel(b.x, b.y, b.w, b.h, face, primary and s.buyhi or s.cratehi,
-          primary and s.buylo or s.cratelo, t, true)
+          primary and s.buylo or s.cratelo, t, not down)
+    local off = down and t or 0
     local f = vfont(b.h * 0.42)
     love.graphics.setFont(f)
-    local lx = b.x + b.w / 2 - f:getWidth(label) / 2
-    local ly = b.y + b.h / 2 - f:getHeight() / 2
+    local lx = b.x + b.w / 2 - f:getWidth(label) / 2 + off
+    local ly = b.y + b.h / 2 - f:getHeight() / 2 + off
     love.graphics.setColor(0, 0, 0, 0.5); love.graphics.print(label, lx + 1, ly + 1)
     love.graphics.setColor(1, 1, 1);      love.graphics.print(label, lx, ly)
 end

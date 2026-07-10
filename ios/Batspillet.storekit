@@ -1,0 +1,33 @@
+{
+  "identifier" : "5D656299-2C38-44E0-BF85-1866FEC800AD",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "19.00",
+      "familyShareable" : false,
+      "internalID" : "68277FE2-DAA5-4BEB-85C3-C18E653419D3",
+      "localizations" : [
+        {
+          "description" : "Alle de fine båtene – og nye som kommer!",
+          "displayName" : "Kaptein-pakken",
+          "locale" : "nb"
+        }
+      ],
+      "productID" : "skep.batspillet.kapteinpakken",
+      "referenceName" : "Kaptein-pakken",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

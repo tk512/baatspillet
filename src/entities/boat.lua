@@ -40,6 +40,8 @@ function Boat.new(def, x, y)
     self.destX    = nil
     self.destY    = nil
     self.bumpCooldown = 0
+    self.coastT     = 0       -- touch momentum-coast timer (see update)
+    self.touchCoast = false   -- world sets true on touch devices
     self.safeX, self.safeY = self.x, self.y  -- last position known to be water
     self.balls    = {}   -- player cannonballs in flight (only if a cannon is owned)
     self.cannonT  = 0    -- time until the cannon can fire again
@@ -146,7 +148,7 @@ end
 function Boat:cargoCount() return #self.cargo end
 function Boat:hasRoom()    return #self.cargo < self.capacity end
 
-function Boat:setDestination(x, y) self.destX, self.destY = x, y end
+function Boat:setDestination(x, y) self.destX, self.destY, self.coastT = x, y, 0 end
 function Boat:clearDestination()   self.destX, self.destY = nil, nil end
 
 local function angleDiff(a, b)
@@ -164,19 +166,26 @@ function Boat:update(dt)
     if love.keyboard.isDown("down", "s")  then throttle = -0.5; manual = true end
     if love.keyboard.isDown("left", "a")  then steer = -1;      manual = true end
     if love.keyboard.isDown("right", "d") then steer =  1;      manual = true end
-    if manual then self:clearDestination() end
+    if manual then self:clearDestination(); self.coastT = 0 end
 
-    -- Auto-steer toward a clicked destination.
+    -- Auto-steer toward a clicked destination. On touch devices the boat does
+    -- NOT brake at the point: it sails through it at speed and then COASTS on
+    -- the same heading, tapering off (config.TOUCH_COAST_TIME) — so taps chain
+    -- into continuous sailing. Desktop keeps the precise slow-and-stop.
     if self.destX then
         local dx, dy = self.destX - self.x, self.destY - self.y
         local dist = math.sqrt(dx * dx + dy * dy)
         if dist < 14 then
             self:clearDestination()
+            if self.touchCoast then self.coastT = config.TOUCH_COAST_TIME end
         else
             local diff = angleDiff(self.angle, math.atan2(dy, dx))
             steer = math.max(-1, math.min(1, diff * 2))
-            throttle = math.min(1, dist / 120)
+            throttle = self.touchCoast and 1 or math.min(1, dist / 120)
         end
+    elseif (self.coastT or 0) > 0 then
+        self.coastT = self.coastT - dt
+        throttle = math.max(0, self.coastT / config.TOUCH_COAST_TIME)
     end
 
     self.angle = self.angle + steer * self.turnRate * dt

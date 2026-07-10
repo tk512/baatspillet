@@ -57,7 +57,7 @@ eq(#Game.state.treasuresFound, 0, "fresh: no treasures found")
 -- full round-trip -------------------------------------------------------------
 reset()
 Game.state.coins = 123
-Game.state.boatName = "Sjørøver'n"          -- norwegian chars must survive JSON
+Game.state.boatNames = { cargo_ship = "Sjørøver'n" }  -- norwegian chars must survive JSON
 Game.state.selectedBoat = "cargo_ship"
 Game.state.food = { brod = 2, ost = 1 }
 Game.state.ammo = 7
@@ -69,7 +69,7 @@ Game:save()
 Game.state = nil
 Game:loadSave()
 eq(Game.state.coins, 123, "roundtrip: coins")
-eq(Game.state.boatName, "Sjørøver'n", "roundtrip: boat name (norwegian chars)")
+eq(Game.state.boatNames.cargo_ship, "Sjørøver'n", "roundtrip: boat name (norwegian chars)")
 eq(Game.state.selectedBoat, "cargo_ship", "roundtrip: selected boat")
 eq(Game.state.food.brod, 2, "roundtrip: food stock")
 eq(Game.state.ammo, 7, "roundtrip: ammo")
@@ -78,6 +78,64 @@ eq(Game.state.owned.cannon, true, "roundtrip: cannon owned")
 eq(Game.state.treasuresFound[2], "chest2", "roundtrip: treasures")
 eq(Game.state.premium, true, "roundtrip: premium")
 check(json.decode(files[Game.SAVE_FILE]) ~= nil, "roundtrip: save file is valid JSON")
+
+-- migration: pre-boatNames saves had ONE boatName, owned by the selected boat --
+reset()
+files[Game.SAVE_FILE] = json.encode({
+    coins = 5, selectedBoat = "cargo_ship", boatName = "Gamlebåten",
+})
+Game:loadSave()
+eq(Game.state.boatNames.cargo_ship, "Gamlebåten",
+    "migration: old single boatName lands on the selected boat")
+
+-- crash safety: corrupt main save recovers from the .bak rotation ------------
+reset()
+Game.state.coins = 777
+Game.state.premium = true
+Game:save()                                   -- seeds _lastGood
+Game.state.coins = 778
+Game:save()                                   -- rotates good save into .bak
+check(files[Game.SAVE_BAK] ~= nil, "bak: rotation wrote a backup")
+files[Game.SAVE_FILE] = "{\"coins\": 77"       -- truncated mid-write by an app kill
+Game:loadSave()
+eq(Game.state.coins, 777, "bak: corrupt main falls back to last good save")
+eq(Game.state.premium, true, "bak: entitlement survives the corruption")
+
+-- corrupt main AND bak still degrades safely to defaults ----------------------
+reset()
+files[Game.SAVE_FILE] = "garbage"
+files[Game.SAVE_BAK]  = "also garbage"
+Game:loadSave()
+eq(Game.state.coins, 0, "bak: both corrupt -> safe defaults, no crash")
+
+-- "Spill igjen" must NEVER wipe the paid entitlement or identity --------------
+reset()
+Game.state.premium = true
+Game.state.coins = 500
+Game.state.unlockedBoats = { "starter_boat", "fishing_boat" }
+Game.state.boatNames = { fishing_boat = "Tøffe" }
+Game.state.selectedBoat = "fishing_boat"
+Game.state.treasuresFound = { "chest1" }
+Game:newGame()
+eq(Game.state.premium, true, "newGame: KEEPS the paid premium pack")
+eq(Game.state.boatNames.fishing_boat, "Tøffe", "newGame: keeps boat names")
+eq(Game.state.selectedBoat, "fishing_boat", "newGame: keeps selected boat")
+eq(Game.state.unlockedBoats[2], "fishing_boat", "newGame: keeps unlocked boats")
+eq(Game.state.coins, 0, "newGame: progress (gold) IS reset")
+eq(#Game.state.treasuresFound, 0, "newGame: progress (treasures) IS reset")
+
+-- gold-boat purchase (the saving-up reward) -----------------------------------
+reset()
+Game.state.coins = 59
+eq(Game:buyBoat("fishing_boat"), false, "buyBoat: too poor at 59g")
+eq(Game:ownsBoat("fishing_boat"), false, "buyBoat: still locked")
+Game.state.coins = 80
+eq(Game:buyBoat("fishing_boat"), true, "buyBoat: unlocks at 60g")
+eq(Game.state.coins, 20, "buyBoat: gold spent")
+eq(Game:ownsBoat("fishing_boat"), true, "buyBoat: owned now")
+eq(Game:buyBoat("fishing_boat"), false, "buyBoat: no double-charge")
+eq(Game:ownsBoat("premium_yacht") or Game:ownsBoat("yacht"), false,
+    "buyBoat: pack boats still need premium")
 
 -- partial save (old version / hand-edited): missing fields fall to defaults ----
 reset('{"coins":42}')

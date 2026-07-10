@@ -52,7 +52,8 @@ end
 -- glides here before the docking screen opens.
 function Port:berth()
     local dpx, dpy = self:dockPoint()
-    return dpx + self.seaDx * 34, dpy + self.seaDy * 34
+    -- 52 (was 34): parked beside the pier tip, not visually ON the planks
+    return dpx + self.seaDx * 52, dpy + self.seaDy * 52
 end
 
 function Port:isBoatInRange(boat)

@@ -5,6 +5,12 @@ local config = {}
 -- True launches fullscreen (for play); false gives a resizable dev window.
 config.START_FULLSCREEN = true
 
+-- Developer mode: dev hotkeys (F5/F6/F3, G/P/K), the touch profiler toggle and
+-- the pretend-purchase stub only exist when this is true. NEVER true in a
+-- shipped build: it's driven purely by the BATDEV/BATSIM env vars, which don't
+-- exist inside an iOS/macOS app bundle.
+config.DEV = (os.getenv("BATDEV") ~= nil) or (os.getenv("BATSIM") ~= nil)
+
 -- Temporary show/hide toggles (flip back to true to restore).
 config.SHOW_CLOUDS       = false  -- mountain-peak clouds in the world
 config.SHOW_ARTIST_PHOTO = true   -- Finn-Erik's photo on the title screen
@@ -18,6 +24,9 @@ config.TILE       = 64
 
 -- Procedural terrain: layered noise height field shaped by the island masks,
 -- then terraced into flat bands with slope transitions (SimCity-2000 look).
+-- WORLD_SEED and ISLANDS are LIVE SLOTS: Game:applyMap() installs the selected
+-- map's values here (src/data/maps.lua) so terrain/treasure code reads one
+-- place. The literals below are the "Norge" defaults (dev reload / tests).
 config.WORLD_SEED   = 1337   -- change for a different map (F6 regenerates)
 config.LAND_THRESH  = 0.42   -- island mask + edge noise above this = land
 config.COAST_SCALE  = 520    -- coastline wiggle scale (bigger = smoother)
@@ -96,6 +105,30 @@ config.EDGE_SCROLL_KEEP   = 0.34
 -- the central band (touch / iPad friendly). It still leaves room to look around
 -- (mouse edge / drag) within that band; press C to recentre.
 config.FOLLOW_CAMERA      = true
+-- Touch devices (and BATSIM dev windows): edge-scroll is a mouse-hover concept,
+-- so it's off there. Instead the camera GLIDES after the boat: no map movement
+-- while the boat is inside a tight central band, then an eased catch-up — never
+-- a jump. KEEP = max boat offset from centre (screen fraction, tighter than
+-- EDGE_SCROLL_KEEP); LERP = catch-up rate per second (higher = snappier).
+config.TOUCH_FOLLOW_KEEP  = 0.10  -- tight: panning starts almost immediately
+config.TOUCH_FOLLOW_LERP  = 4.0
+config.TOUCH_FOLLOW_LEAD  = 0.45  -- aim this many seconds ahead of the boat's
+                                  -- motion, so the map pans toward where the
+                                  -- kid is going, not where the boat has been
+-- Phones (small logical screens, e.g. iPhone landscape ≈ 874x402 points): text
+-- scaled purely by window height comes out physically tiny, and the desktop zoom
+-- shows too little sea to plan a route. Boost fonts and zoom out. Tablets and
+-- desktop are untouched (Game.phone is false there).
+config.PHONE = {
+    UI_BOOST    = 1.6,   -- multiplies Scale.ui sizes (text/buttons/icons)
+    CAMERA_ZOOM = 1.1,   -- world zoom on phones: a touch wider than the desktop
+                         -- 1.4, enough to see neighbouring ports, not map-like
+}
+-- Touch tap-to-sail momentum: the boat sails to EXACTLY the tapped point, but
+-- doesn't brake there — it glides through at speed and coasts onward, tapering
+-- off over COAST_TIME. Taps chain into continuous sailing instead of
+-- tap-tap-tap. Desktop clicks keep the precise stop.
+config.TOUCH_COAST_TIME = 2.5
 
 -- Gameplay feel — kept gentle on purpose (see CLAUDE.md "child-friendly").
 config.PICKUP_RADIUS  = 95    -- docking distance, from the dock point in the water
@@ -119,6 +152,9 @@ config.PIRATE = {
     GIVEUP_DIST   = 2100,   -- stay this far away...
     GIVEUP_TIME   = 9,      -- ...for this long and the pirate gives up
     DESPAWN_DIST  = 1800,   -- vanishes once this far away while retreating
+    HUNT_TIME     = 60,     -- max seconds a robbery visit lasts before it gets bored
+    RETREAT_MAX   = 25,     -- retreating pirate vanishes after this long no matter what
+                            -- (covers being chased by the kid, or boxed in by a coast)
 }
 
 -- A friendly shark wandering the open sea -- the gentle opposite of the pirate.
@@ -319,10 +355,10 @@ config.DOLPHINS = {
 -- In between it sails the same gentle ambient AI as every other ship, so each
 -- surfacing happens somewhere new.
 config.SUBMARINE = {
-    SUBMERGED_MIN = 25,   -- stays under this long (s)...
-    SUBMERGED_MAX = 55,
-    SURFACE_MIN   = 14,   -- ...then cruises surfaced this long
-    SURFACE_MAX   = 26,
+    SUBMERGED_MIN = 45,   -- stays under this long (s)... (rare = special)
+    SUBMERGED_MAX = 100,
+    SURFACE_MIN   = 10,   -- ...then cruises surfaced this long, then dives away
+    SURFACE_MAX   = 18,
     TRANSITION    = 2.2,  -- seconds to rise / sink through the waterline
     FX_DIST       = 2400, -- bubbles + blubb only when this close to the player
 }
@@ -342,11 +378,25 @@ config.AMBIENT_LOD = {
 -- Game:isPremium() -- never per-item purchases.
 config.PREMIUM = {
     name  = "Kaptein-pakken",
-    price = "kr 49,-",
+    -- Fallback display price only (dev stub / store not reachable). The REAL
+    -- price is the App Store Connect price point (aim: kr 19), fetched
+    -- localized at runtime via IAP.price().
+    price = "kr 19,-",
+    -- The extra maths-question gate before buying. Off: the card itself says
+    -- "ask mamma/pappa" and iOS's own purchase sheet (Face ID / Ask to Buy)
+    -- guards the payment. If Kids-category review insists on an app-side gate,
+    -- flip this to true — the gate screen is still wired.
+    PARENTAL_GATE = false,
+    -- Must match the non-consumable product id in App Store Connect (and the
+    -- .storekit test file) exactly. Product ids are only scoped to the app,
+    -- so short is fine.
+    PRODUCT_ID = "skep.batspillet.kapteinpakken",
+    -- Kaptein-pakken = the SHIPS (all premium boats, incl. future ones).
+    -- Future map packs (Amerika, Asia …) will be their own products — so don't
+    -- promise maps here; early buyers must get everything this card lists.
     perks = {
         "Alle de fine båtene",
-        "Nye kart å utforske",
-        "Mer gøy som kommer!",
+        "Nye båter som kommer!",
     },
 }
 

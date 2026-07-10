@@ -87,14 +87,18 @@ function HUD.draw(world)
     do
         local kx = leftX + pw - (pad + t * 2) - pauseKey + pad * 0.4
         local ky = 16 + math.floor((ph - pauseKey) / 2)
+        -- the WHOLE plaque is the pause target (easy for little fingers); the
+        -- key is the visual cue, sinking while the board is held anywhere
+        local down = Retro.isDown("hud.pause")
         Retro.bevel(kx, ky, pauseKey, pauseKey, WOOD.face, WOOD.hi, WOOD.lo,
-            math.max(2, math.floor(pauseKey * 0.10)), true)
+            math.max(2, math.floor(pauseKey * 0.10)), not down)
+        local off = down and math.max(1, math.floor(pauseKey * 0.08)) or 0
         love.graphics.setColor(WOOD.accent)
         local bw = pauseKey * 0.14
-        local by, bh = ky + pauseKey * 0.28, pauseKey * 0.44
-        love.graphics.rectangle("fill", kx + pauseKey * 0.34 - bw / 2, by, bw, bh, 1, 1)
-        love.graphics.rectangle("fill", kx + pauseKey * 0.66 - bw / 2, by, bw, bh, 1, 1)
-        world._pauseBtnRect = { x = kx, y = ky, w = pauseKey, h = pauseKey }
+        local by, bh = ky + pauseKey * 0.28 + off, pauseKey * 0.44
+        love.graphics.rectangle("fill", kx + pauseKey * 0.34 - bw / 2 + off, by, bw, bh, 1, 1)
+        love.graphics.rectangle("fill", kx + pauseKey * 0.66 - bw / 2 + off, by, bw, bh, 1, 1)
+        world._pauseBtnRect = { x = leftX, y = 16, w = pw, h = ph }
     end
 
     -- row 1: coin + gold count

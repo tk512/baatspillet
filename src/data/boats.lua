@@ -25,19 +25,18 @@ return {
     },
     {
         id       = "fishing_boat",
-        name     = "Fiskebåten",       -- "The Fishing Boat"
+        name     = "Tøffe",       -- "The Fishing Boat"
         speed    = 175,
         accel    = 110,
         turn     = 2.0,
         capacity = 4,
-        cost     = 60,
-        premium  = true,               -- unlocked by the one premium pack (config.PREMIUM)
+        cost     = 60,                 -- unlocked with GOLD (the saving-up reward)
         sprite   = "boat2.png",
         color    = {0.30, 0.55, 0.85},
     },
     {
         id       = "cargo_ship",
-        name     = "Lasteskipet",      -- "The Cargo Ship"
+        name     = "Balder",      -- "The Cargo Ship"
         speed    = 210,
         accel    = 70,
         turn     = 1.4,
@@ -49,7 +48,7 @@ return {
     },
     {
         id       = "yacht",
-        name     = "Luksusyachten",    -- a fancy "3D" volumetric boat (premium)
+        name     = "Vannvittig",    -- a fancy "3D" volumetric boat (premium)
         speed    = 205,
         accel    = 105,
         turn     = 1.9,

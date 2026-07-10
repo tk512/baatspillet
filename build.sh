@@ -30,7 +30,7 @@ cd "$(dirname "$0")"
 
 NAME="Båtspillet"
 LOVE="$NAME.love"
-LOVE_UNIVERSAL="${LOVE_UNIVERSAL:-$HOME/Downloads/love-11.5-macos.zip}"
+LOVE_UNIVERSAL="${LOVE_UNIVERSAL:-$PWD/engine/build/Build/Products/Release/love.app}"
 
 # Signing identity: "-" = ad-hoc (default). Set SIGN_ID to a Developer ID to
 # enable real signing. Notarization runs when credentials are present.
@@ -42,7 +42,7 @@ if [ -n "$NOTARY_PROFILE" ] || { [ -n "${APPLE_ID:-}" ] && [ -n "${TEAM_ID:-}" ]
 fi
 
 TMPDIRS=()
-cleanup() { for d in "${TMPDIRS[@]:-}"; do [ -n "${d:-}" ] && rm -rf "$d"; done; }
+cleanup() { for d in "${TMPDIRS[@]:-}"; do [ -n "${d:-}" ] && rm -rf "$d"; done; true; }
 trap cleanup EXIT
 
 # Resolve a love.app from a path that may be a .app, a .zip, or a folder. Echoes
@@ -109,7 +109,7 @@ make_app() {
     cp "$LOVE" "$app/Contents/Resources/"
     local pl="$app/Contents/Info.plist"
     plist "Set :CFBundleName $NAME" "$pl"
-    plist "Set :CFBundleIdentifier com.tk.batspillet" "$pl"
+    plist "Set :CFBundleIdentifier skep.batspillet" "$pl"
     plist "Delete :CFBundleDocumentTypes" "$pl"        # don't pose as a ".love opener"
     plist "Delete :UTExportedTypeDeclarations" "$pl"
     sign_app "$app"
@@ -121,12 +121,15 @@ make_app() {
 rm -f "$LOVE"
 zip -9 -r -X "$LOVE" . \
     -x '.git/*' -x '.claude/*' -x 'raw/*' -x 'tools/*' -x 'save/*' \
+    -x 'engine/*' -x 'tests/*' -x 'docs/*' -x 'skjermbilde.png' \
     -x '*.love' -x '*.app' -x '*.app/*' -x '*.dmg' \
     -x '*.command' -x '*.applescript' \
-    -x 'sync.sh' -x 'build.sh' -x 'CLAUDE.md' -x 'README.md' \
+    -x 'sync.sh' -x 'build.sh' -x 'ios.sh' -x 'ios/*' -x '.gitignore' \
+    -x 'CLAUDE.md' -x 'README.md' \
     -x '.DS_Store' -x '*/.DS_Store' -x '*.swp' \
     > /dev/null
 echo ">> built $LOVE  ($(du -h "$LOVE" | cut -f1))"
+[ "${1:-}" = "love" ] && exit 0   # "./build.sh love": just the .love (ios.sh uses this)
 
 # ── 2) universal app + dmg (LÖVE 11.5) ──────────────────────────────────────
 U="$(resolve_love "$LOVE_UNIVERSAL")"

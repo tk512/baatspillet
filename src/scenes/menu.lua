@@ -56,16 +56,20 @@ function Menu:load(game)
     Assets.stopDockMood()      -- in case we came straight from a dock
     Assets.stopChase()         -- ...or a pirate chase
 
-    -- Welcome fonts sized to the screen.
+    -- Welcome fonts sized to the screen. They only depend on the window size,
+    -- and rasterizing the huge title font is a visible hitch on mobile — so
+    -- cache them across menu visits (like the background bake) and rebuild
+    -- only when the window actually changed.
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
-    self.welcomeFont = fitFont("Velkommen til", sw * 0.48, sh * 0.12)
-    self.titleFont   = fitFont("Båtspillet!",   sw * 0.75, sh * 0.30)
+    if self._fontW ~= sw or self._fontH ~= sh then
+        self.welcomeFont = fitFont("Velkommen til", sw * 0.48, sh * 0.12)
+        self.titleFont   = fitFont("Båtspillet!",   sw * 0.75, sh * 0.30)
+        local _, _, bw, bh = self:buttonRect()   -- carved-sign label font
+        self.signFont = fitFont("Klar til å sette seil", bw * 0.84, bh * 0.6)
+        self._fontW, self._fontH = sw, sh
+    end
     self.welcomeText, self.welcomeChars = "Velkommen til", splitChars("Velkommen til")
     self.titleText,   self.titleChars   = "Båtspillet!",   splitChars("Båtspillet!")
-
-    -- carved-sign label font, sized to the wooden plank
-    local _, _, bw, bh = self:buttonRect()
-    self.signFont = fitFont("Klar til å sette seil", bw * 0.84, bh * 0.6)
 
     -- The game's artist, my boy Finn-Erik, waves from the bottom-right corner.
     self.artist = Assets.image("menu/finnerik.png")
@@ -596,16 +600,11 @@ function Menu:draw()
     local btnIn = clamp01((self.t - 1.6) / 0.5)
     if btnIn > 0 then self:drawSign(btnIn) end
 
-    -- footer hint
-    love.graphics.setFont(self.game.fonts.small)
-    love.graphics.setColor(WOOD.text)
-    local hint = "Trykk for å starte"
-    love.graphics.print(hint, sw / 2 - self.game.fonts.small:getWidth(hint) / 2, sh * 0.93)
-
     self:drawArtist(sw, sh)   -- Finn-Erik, the game's artist, in the corner
 
-    -- Avslutt (quit) button, bottom-right
-    do
+    -- Avslutt (quit) button, bottom-right. Not on iOS: apps there quit via the
+    -- home gesture, and Apple's guidelines reject in-app quit buttons.
+    if not self.game.mobile then
         local bx, by, bw, bh, label = self:quitBtnRect()
         local hover = self:pointInQuit(love.mouse.getPosition())
         Retro.bevel(bx, by, bw, bh, hover and WOOD.hi or WOOD.face, WOOD.hi, WOOD.lo, 3, true)
@@ -628,6 +627,7 @@ function Menu:quitBtnRect()
 end
 
 function Menu:pointInQuit(mx, my)
+    if self.game.mobile then return false end   -- no quit button on iOS
     local bx, by, bw, bh = self:quitBtnRect()
     return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
 end
@@ -640,8 +640,13 @@ function Menu:drawArtist(sw, sh)
     local ih = sh * 0.34
     local scale = ih / img:getHeight()
     local iw = img:getWidth() * scale
-    local x = sw - sw * 0.015 - iw            -- left edge (anchored to the right)
-    local by = sh * 0.99                       -- his bottom near the screen bottom
+    -- Anchor to the SAFE area's right edge, not the screen's: on notch/Dynamic
+    -- Island iPhones the cutout sits exactly where this corner is in landscape.
+    local sax, say, saw, sah = love.window.getSafeArea()
+    local right = math.min(sw, sax + saw)
+    local bottom = math.min(sh, say + sah)
+    local x = right - sw * 0.015 - iw          -- left edge (anchored to safe right)
+    local by = bottom - sh * 0.01              -- his bottom near the safe bottom
     local y = by - ih
     local bob = math.sin(self.t * 1.6) * 4     -- gentle life
 
@@ -669,6 +674,9 @@ end
 -- above. Brightens and sways a touch more on hover.
 function Menu:drawSign(pop)
     local bx, by, bw, bh = self:buttonRect()
+    if Retro.isDown("menu.sign") then
+        by = by + bh * 0.10   -- pressed: the plank dips on its ropes
+    end
     local cx = bx + bw / 2
     local hover = self:pointInButton(love.mouse.getPosition())
     local t = math.max(2, math.floor(bh / 14))          -- bevel thickness
@@ -730,10 +738,22 @@ end
 
 function Menu:mousepressed(x, y, button)
     if button ~= 1 then return end
-    if self:pointInQuit(x, y) then             -- quit the game
+    if self:pointInQuit(x, y) then             -- quit the game (desktop only)
         love.event.quit()
-    else
-        self:start()                            -- tap anywhere else to set sail (iPad-friendly)
+        return
+    end
+    local bx, by, bw, bh = self:buttonRect()
+    if Retro.press("menu.sign", { x = bx, y = by, w = bw, h = bh }, x, y) then
+        return                                  -- sign squishes in; fires on release
+    end
+    self:start()                                -- tap anywhere else: instant (iPad-friendly)
+end
+
+function Menu:mousereleased(x, y, button)
+    if button ~= 1 then return end
+    local bx, by, bw, bh = self:buttonRect()
+    if Retro.released("menu.sign", x, y) then
+        self:start()
     end
 end
 

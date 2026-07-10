@@ -5,6 +5,7 @@
 
 local config = require("src.config")
 local Iso    = require("src.systems.iso")
+local Scale  = require("src.ui.scale")
 
 local Camera = {}
 Camera.__index = Camera
@@ -86,6 +87,24 @@ function Camera:keepAnchorInView(bx, by)
     local v = math.max(bv - maxV, math.min(bv + maxV, self.gx + self.gy))
     self.gx = (u + v) / 2
     self.gy = (v - u) / 2
+    self:clamp()
+end
+
+-- Touch-device follow: same central-band idea as keepAnchorInView, but the
+-- correction is eased over time instead of applied instantly, so the map glides
+-- after the boat rather than lurching. Frame-rate independent via exp decay.
+function Camera:followAnchor(dt, bx, by)
+    local w, h = love.graphics.getDimensions()
+    local keep = config.TOUCH_FOLLOW_KEEP
+    local maxU = (w * keep) / (Iso.SX * self.zoom)
+    local maxV = (h * keep) / (Iso.SY * self.zoom)
+    local bu, bv = bx - by, bx + by
+    local u = math.max(bu - maxU, math.min(bu + maxU, self.gx - self.gy))
+    local v = math.max(bv - maxV, math.min(bv + maxV, self.gx + self.gy))
+    local tx, ty = (u + v) / 2, (v - u) / 2      -- nearest camera pos that holds the band
+    local k = 1 - math.exp(-config.TOUCH_FOLLOW_LERP * dt)
+    self.gx = self.gx + (tx - self.gx) * k
+    self.gy = self.gy + (ty - self.gy) * k
     self:clamp()
 end
 

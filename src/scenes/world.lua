@@ -7,6 +7,8 @@
 -- slips behind or in front of raised land.
 
 local config       = require("src.config")
+local Scale        = require("src.ui.scale")
+local Retro        = require("src.ui.retro")
 local Assets       = require("src.assets")
 local Iso          = require("src.systems.iso")
 local Camera       = require("src.systems.camera")
@@ -70,6 +72,7 @@ end
 function World:load(game)
     self.game    = game
     self.camera  = Camera.new()
+    if game.phone then self.camera.zoom = config.PHONE.CAMERA_ZOOM end
     self.panning = false
     self.toast   = { text = "", timer = 0, rise = 0 }
 
@@ -87,7 +90,8 @@ function World:load(game)
     local boatDef  = game:getBoatDef(game.state.selectedBoat or unlocked[#unlocked])
     local sx, sy   = self:findStartWater(config.WORLD_WIDTH / 2, config.WORLD_HEIGHT / 2)
     self.boat = Boat.new(boatDef, sx, sy)
-    self.boat.displayName = game.state.boatName or boatDef.name   -- player's name for it
+    self.boat.touchCoast = game.touchCamera   -- taps glide through their point
+    self.boat.displayName = game:boatDisplayName(boatDef.id)      -- player's name for it
 
     -- Sprite-object layer: ports (3x3), props (1x1), ambient ships.
     self.objects = Objects.new()
@@ -585,6 +589,7 @@ function World:update(dt)
         if self.nearPort.id ~= self.dockSuppress then
             self.latching = self.nearPort           -- start the glide-in
             self._latchT = 0
+            self.boat.coastT = 0                    -- docking beats coasting
         end
     else
         -- Sailed clear of the harbour we just left: cast off, beep once, and
@@ -627,9 +632,20 @@ function World:update(dt)
 
     self:updateEating(dt)
 
-    self.camera:edgeScroll(dt, self.boat.x, self.boat.y)  -- scroll, but never lose the boat
-    if config.FOLLOW_CAMERA then
-        self.camera:keepAnchorInView(self.boat.x, self.boat.y)  -- boat near edge pans the map
+    if self.game.touchCamera then
+        -- Touch: no edge-hover scrolling (a tap near the edge pins the synthetic
+        -- mouse there and would scroll forever); glide after the boat instead,
+        -- aiming AHEAD of its motion so the map pans toward where you're going
+        -- as soon as you set off, not once the boat nears an edge.
+        local lead = config.TOUCH_FOLLOW_LEAD
+        self.camera:followAnchor(dt,
+            self.boat.x + math.cos(self.boat.angle) * self.boat.speed * lead,
+            self.boat.y + math.sin(self.boat.angle) * self.boat.speed * lead)
+    else
+        self.camera:edgeScroll(dt, self.boat.x, self.boat.y)  -- scroll, but never lose the boat
+        if config.FOLLOW_CAMERA then
+            self.camera:keepAnchorInView(self.boat.x, self.boat.y)  -- boat near edge pans the map
+        end
     end
     self.camera:update(dt)
 
@@ -1346,6 +1362,7 @@ function World:draw()
 
     if not self.dock and not self.album and not self.mapReveal and not self.winScreen
         and not self.pause then
+        self:drawMooring()           -- rope + glints while tied up at a pier
         self:drawMissionPointer()    -- "go this way!" hint (cargo destination)
         self:drawTreasurePointer()   -- orange "to the treasure!" arrow + ring
         self:drawPirateIndicator()   -- red "danger this way!" arrow when off-screen
@@ -1398,10 +1415,46 @@ function World:portById(id)
         if p.id == id then return p end
     end
 end
-
 -- While on a mission, draw a big bouncing arrow above the boat pointing toward
 -- the destination town, plus a pulsing ring on that town, so a non-reader
 -- always knows where to go next.
+-- A visible "you are moored": a sagging rope from the boat to the pier tip
+-- plus soft glints on the planks — while gliding in, while the dock screen is
+-- up, and while still lying beside the pier after it closes.
+function World:drawMooring()
+    local p = self.latching or (self.dock and self.dock.port)
+    if not p and self.nearPort and self.boat.speed < 12 then p = self.nearPort end
+    if not p then return end
+    local dpx, dpy = p:dockPoint()
+    local bx, by = self.camera:worldToScreen(self.boat.x, self.boat.y)
+    local px, py = self.camera:worldToScreen(dpx, dpy)
+    local t = love.timer.getTime()
+    local sag = Scale.overlay(12) + math.sin(t * 2) * Scale.overlay(3)
+    love.graphics.setColor(0.80, 0.64, 0.40, 0.95)
+    love.graphics.setLineWidth(math.max(2, Scale.overlay(3)))
+    local n = 10
+    for i = 0, n - 1 do
+        local u0, u1 = i / n, (i + 1) / n
+        love.graphics.line(
+            bx + (px - bx) * u0, by + (py - by) * u0 + math.sin(u0 * math.pi) * sag,
+            bx + (px - bx) * u1, by + (py - by) * u1 + math.sin(u1 * math.pi) * sag)
+    end
+    love.graphics.setLineWidth(1)
+    for i = 1, 3 do                      -- little glints twinkling on the pier
+        local a = math.sin(t * (1.4 + i * 0.5) + i * 2.0)
+        if a > 0.4 then
+            local f = (a - 0.4) / 0.6
+            local gx2 = px + (i - 2) * Scale.overlay(14)
+            local gy2 = py - Scale.overlay(8) - i * Scale.overlay(3)
+            local r2 = Scale.overlay(5) * f
+            love.graphics.setColor(1, 0.95, 0.7, f * 0.9)
+            love.graphics.line(gx2 - r2, gy2, gx2 + r2, gy2)
+            love.graphics.line(gx2, gy2 - r2, gx2, gy2 + r2)
+        end
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
 function World:drawMissionPointer()
     if self:activeTreasure() then return end   -- on a hunt: the treasure is the goal, not a harbour
     local m = self.boat.cargo[1]
@@ -1417,7 +1470,7 @@ function World:drawMissionPointer()
     -- pulsing ring on the target town (if it's on screen)
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
     if tx > 0 and tx < sw and ty > 0 and ty < sh then
-        local pr = 30 + math.sin(t * 4) * 7
+        local pr = Scale.overlay(30 + math.sin(t * 4) * 7)
         love.graphics.setColor(0, 0, 0, 0.5)
         love.graphics.setLineWidth(7); love.graphics.circle("line", tx, ty, pr)
         love.graphics.setColor(m.color[1], m.color[2], m.color[3], 0.95)
@@ -1425,9 +1478,13 @@ function World:drawMissionPointer()
         love.graphics.setLineWidth(1)
     end
 
-    -- A big, bold arrow hovering above the boat, bobbing toward the target.
-    local hx, hy = bx, by - 88 + math.sin(t * 3) * 7
-    local s = (1 + 0.07 * math.sin(t * 5)) * 1.4
+    -- A clear-but-friendly arrow above the boat: smaller than it used to be,
+    -- and it HOPS forward toward the target ("this way! this way!") instead of
+    -- just hovering — playful, and the motion itself points.
+    local hop = math.max(0, math.sin(t * 2.6)) * Scale.overlay(10)
+    local hx = bx + math.cos(ang) * hop
+    local hy = by - Scale.overlay(80) + math.sin(t * 3) * 5 + math.sin(ang) * hop
+    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(1.05)
     love.graphics.push()
     love.graphics.translate(hx, hy)
     love.graphics.rotate(ang)
@@ -1523,7 +1580,7 @@ function World:drawTreasurePointer()
 
     -- pulsing ring on the chest when it's on screen
     if tx > 0 and tx < sw and ty > 0 and ty < sh then
-        local pr = 28 + math.sin(t * 4) * 7
+        local pr = Scale.overlay(28 + math.sin(t * 4) * 7)
         love.graphics.setColor(0, 0, 0, 0.45)
         love.graphics.setLineWidth(6); love.graphics.circle("line", tx, ty, pr)
         love.graphics.setColor(TREASURE_ARROW)
@@ -1531,9 +1588,11 @@ function World:drawTreasurePointer()
         love.graphics.setLineWidth(1)
     end
 
-    -- the arrow, bobbing above the boat
-    local hx, hy = bx, by - 84 + math.sin(t * 3) * 6
-    local s = (1 + 0.07 * math.sin(t * 5)) * 1.35
+    -- the arrow, bobbing above the boat (same friendly size as the gold one)
+    local hop2 = math.max(0, math.sin(t * 2.6)) * Scale.overlay(10)
+    local hx = bx + math.cos(ang) * hop2
+    local hy = by - Scale.overlay(78) + math.sin(t * 3) * 5 + math.sin(ang) * hop2
+    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(1.1)
     love.graphics.push(); love.graphics.translate(hx, hy); love.graphics.rotate(ang); love.graphics.scale(s, s)
     local arrow = { 30, 0, 12, -17, 12, -7, -26, -7, -26, 7, 12, 7, 12, 17 }
     love.graphics.setColor(0, 0, 0, 0.28)
@@ -1768,9 +1827,11 @@ function World:keypressed(key)
         self:soundHorn()                                -- toot! (ships answer)
     elseif key == "b" then
         self:openAlbum()                                -- open the treasure album
-    -- DEV-ONLY playtest keys (remove before shipping):
+    -- DEV-ONLY playtest keys (config.DEV: never in shipped builds):
     --   G = +50 gold (also makes a pirate eligible to spawn)
     --   P = summon a pirate in close, right now, to test the cannon fight
+    elseif not config.DEV then
+        return
     elseif key == "g" then
         self.game:addCoins(50)
         self:showToast("+50 gull (dev)")
@@ -1818,9 +1879,9 @@ function World:mousepressed(x, y, button)
     if self.album then self.album:mousepressed(x, y, button); return end
     if self.dock then self.dock:mousepressed(x, y, button); return end
     if button == 1 then
-        local pb = self._pauseBtnRect      -- pause key inside the gold plaque -> pause overlay
-        if pb and x >= pb.x and x <= pb.x + pb.w and y >= pb.y and y <= pb.y + pb.h then
-            self:openPause(); return
+        -- The whole gold plaque is the pause button (press in, fires on release)
+        if self._pauseBtnRect and Retro.press("hud.pause", self._pauseBtnRect, x, y) then
+            return
         end
         local r = self._skatterRect       -- clicking the "Skatter" bar opens the album
         if r and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
@@ -1855,6 +1916,9 @@ function World:mousereleased(x, y, button)
     -- otherwise a release swallowed while a screen is open leaves the map "stuck"
     -- in drag mode after it closes.
     if button == 2 then self.panning = false end
+    if Retro.released("hud.pause", x, y) then self:openPause(); return end
+    if self.pause and self.pause.mousereleased then self.pause:mousereleased(x, y, button) end
+    if self.dock and self.dock.mousereleased then self.dock:mousereleased(x, y, button) end
 end
 
 function World:mousemoved(x, y, dx, dy)

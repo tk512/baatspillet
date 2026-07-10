@@ -33,6 +33,8 @@ function Pirate.new(x, y, playerMaxSpeed)
     self.fireT    = P.FIRE_INTERVAL * 0.7   -- a moment before the first shot
     self.balls    = {}
     self.farT     = 0                       -- how long you've been out of reach
+    self.huntT    = 0                       -- total hunt time (bored at HUNT_TIME)
+    self.retreatT = 0                       -- time retreating (gone at RETREAT_MAX)
     self.muzzle   = 0                       -- muzzle-flash timer
     self.dead     = false
     return self
@@ -127,10 +129,15 @@ function Pirate:update(dt, boat, terrain, onHit)
     -- decided), so it never gives up on its own. An ambient chaser gives up if you
     -- stay far away; a retreating pirate vanishes once well clear of the boat.
     if self.state == "retreat" then
-        if dist > P.DESPAWN_DIST then self.dead = true end
+        -- Far enough away, or simply gone long enough: a kid chasing the fleeing
+        -- pirate (or a pirate pinned against a coast) must not keep it alive forever.
+        self.retreatT = self.retreatT + dt
+        if dist > P.DESPAWN_DIST or self.retreatT > P.RETREAT_MAX then self.dead = true end
     elseif not self.goal then
         if dist > P.GIVEUP_DIST then self.farT = self.farT + dt else self.farT = 0 end
         if self.farT > P.GIVEUP_TIME then self:flee() end
+        self.huntT = self.huntT + dt
+        if self.huntT > P.HUNT_TIME then self:flee() end   -- robbery visits are bounded
     end
 end
 

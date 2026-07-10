@@ -1,8 +1,21 @@
+# Claude session-local files (CLAUDE.md itself IS tracked: it's the project guide)
 .claude
 CLAUDE.md
+
+# Build artifacts (rebuilt by build.sh / ios.sh)
 *.love
 *.dmg
 *.app
-.DS_Store
 *.zip
+
+# Local play state — the game saves to LÖVE's save dir; this is dev scratch
+save/
+
+# OS / editor noise
+.DS_Store
+*.swp
+
+# Python tooling
 __pycache__/
+*.pyc
+engine/build

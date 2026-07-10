@@ -6,17 +6,21 @@
 local config = require("src.config")
 local Assets = require("src.assets")
 local json   = require("src.json")
+local Scale  = require("src.ui.scale")
+local Retro  = require("src.ui.retro")
 
 local Game = {}
 
 Game.SAVE_FILE = "savegame.json"
+Game.SAVE_BAK  = "savegame.json.bak"   -- last-known-good copy (crash safety)
 
 local function defaultState()
     return {
         coins            = 0,
         unlockedBoats    = { "starter_boat" },
         selectedBoat     = "starter_boat",  -- boat chosen on the start screen
-        boatName         = nil,             -- player's name for it (nil = use the boat's own)
+        selectedMap      = "norge",         -- world chosen on the map screen
+        boatNames        = {},              -- player's name per boat id (absent = the boat's own)
         premium          = false,           -- the one "Kaptein-pakken" unlock (all premium content)
         discoveredIslands = {},
         owned            = {},   -- one-time upgrades, e.g. owned.cannon = true
@@ -30,19 +34,33 @@ end
 
 function Game:load()
     love.graphics.setDefaultFilter("nearest", "nearest")
+
+    -- Device class, needed before fonts. mobile = any iOS device; phone = small
+    -- logical screen (iPhone) → boosted UI + wider zoom (config.PHONE). BATSIM
+    -- dev windows on a Mac count too, so both modes are testable without a device.
+    self.mobile = (love.system.getOS() == "iOS")
+    self.touchCamera = self.mobile or (os.getenv("BATSIM") ~= nil)
+    self.phone = self.touchCamera
+        and math.min(love.graphics.getWidth(), love.graphics.getHeight()) < 500
+    Scale.phone = self.phone
+
     self:buildFonts()
 
     self:loadData()
     Assets.loadSounds()
     self:loadSave()
+    self:applyMap(self.state.selectedMap)
 
-    if config.START_FULLSCREEN then
+    -- iOS/iPadOS is always fullscreen at the device's native size; forcing a
+    -- mode switch there is pointless and can reset the GL context.
+    if config.START_FULLSCREEN and not self.mobile and not os.getenv("BATSIM") then
         love.window.setFullscreen(true, "desktop")
     end
 
     self.scenes = {
         menu      = require("src.scenes.menu"),
         boatselect = require("src.scenes.boatselect"),
+        mapselect  = require("src.scenes.mapselect"),
         loading   = require("src.scenes.loading"),
         world     = require("src.scenes.world"),
     }
@@ -65,6 +83,7 @@ function Game:update(dt)
     elseif self.scene and self.scene.update then
         self.scene:update(dt)
     end
+    Retro.updateFx(dt)   -- button star-bursts live above scenes
 end
 
 function Game:draw()
@@ -77,6 +96,7 @@ function Game:draw()
     elseif self.scene and self.scene.draw then
         self.scene:draw()
     end
+    Retro.drawFx()
 end
 
 -- Compact dev overlay. Draw timings are CPU submit time (not GPU); FPS reflects
@@ -109,6 +129,11 @@ function Game:setScene(name)
     self.sceneName = name
     self.scene = self.scenes[name]
     if self.scene.load then self.scene:load(self) end
+    Retro.cancelPress()
+    -- Clicks queued up while a scene transition hitched would otherwise fire
+    -- on the NEW scene (double-clicking a laggy "Gå ut" used to start a whole
+    -- new voyage from the menu). Swallow input for a beat after any switch.
+    self._sceneSwitchT = love.timer.getTime()
 end
 
 function Game:reloadScene()
@@ -117,20 +142,32 @@ function Game:reloadScene()
     end
 end
 
--- Start a brand-new playthrough: wipe all progress back to the very first state
--- (so the map must be re-discovered, gold re-earned, the cannon re-bought and
--- every treasure re-found) and rebuild the world via the loading screen. Used by
--- the win screen's "Spill igjen". FUTURE: rotate the map here for variety, e.g.
---   config.WORLD_SEED = <next seed in a list>   -- then each finish is a new world
+-- Start a brand-new playthrough: wipe PROGRESS back to the first state (map
+-- re-discovered, gold re-earned, cannon re-bought, treasures re-found) — but
+-- NEVER the things that aren't progress: the PAID Kaptein-pakken entitlement,
+-- gold-unlocked boats, the boats' names and the boat/map choice. "Spill igjen"
+-- must never cost a family their purchase. Used by the win screen.
+-- FUTURE: rotate the map here for variety (new WORLD_SEED per finish).
 function Game:newGame()
+    local keep = {
+        premium       = self.state.premium,
+        unlockedBoats = self.state.unlockedBoats,
+        boatNames     = self.state.boatNames,
+        selectedBoat  = self.state.selectedBoat,
+        selectedMap   = self.state.selectedMap,
+    }
     self.state = defaultState()
+    for k, v in pairs(keep) do self.state[k] = v end
     self:save()
-    self:setScene("menu")   -- back to the very beginning (title); "set sail" loads fresh
+    if self.scenes then
+        self:setScene("menu")   -- back to the title; "set sail" loads fresh
+    end
 end
 
--- Fonts scale with the window; 800 is the design height.
+-- Fonts scale via Scale.ui (window-proportional + phone boost); see
+-- src/ui/scale.lua for the sizing rule.
 function Game:buildFonts()
-    local s = love.graphics.getHeight() / 800
+    local s = Scale.ui(1)
     self.fonts = {
         small  = love.graphics.newFont(math.floor(15 * s)),
         normal = love.graphics.newFont(math.floor(21 * s)),
@@ -142,6 +179,7 @@ end
 function Game:loadData()
     self.data = {
         boats = require("src.data.boats"),
+        maps  = require("src.data.maps"),
         ports = require("src.data.ports"),
         shop  = require("src.data.shop"),
         ships = require("src.data.ships"),
@@ -151,11 +189,40 @@ end
 -- F6: re-read the data files from disk without restarting the game.
 function Game:reloadData()
     package.loaded["src.data.boats"] = nil
+    package.loaded["src.data.maps"]  = nil
     package.loaded["src.data.ports"] = nil
     package.loaded["src.data.shop"]  = nil
     package.loaded["src.data.ships"] = nil
     self:loadData()
     self:reloadScene()
+end
+
+-- The player's name for a boat (falls back to the boat's own).
+function Game:boatDisplayName(id)
+    return (self.state.boatNames and self.state.boatNames[id]) or self:getBoatDef(id).name
+end
+
+-- Look up a map definition by id; falls back to the first (free) map.
+function Game:getMapDef(id)
+    for _, m in ipairs(self.data.maps) do
+        if m.id == id then return m end
+    end
+    return self.data.maps[1]
+end
+
+-- Install a map as THE world: copy its seed/islands into config's live slots
+-- (terrain + treasure read those) and load its ports/ships files. Worldgen is
+-- seeded, so the same map always builds the identical world. Called by the map
+-- selector before "loading", and at startup for the saved selection.
+function Game:applyMap(id)
+    local m = self:getMapDef(id)
+    if m.comingSoon then m = self.data.maps[1] end
+    self.state.selectedMap = m.id
+    config.WORLD_SEED = m.seed
+    config.ISLANDS    = m.islands
+    self.data.ports   = require(m.ports)
+    self.data.ships   = require(m.ships)
+    return m
 end
 
 -- Look up a boat definition by id; falls back to the first boat.
@@ -171,10 +238,27 @@ function Game:isPremium() return self.state.premium == true end
 
 -- Do we own this boat? Free boats always; premium boats are all unlocked together
 -- by the one pack -- never bought individually.
+-- Own a boat when: it's free, it's premium and the pack is bought, or it was
+-- unlocked with gold (unlockedBoats — the saving-up reward).
 function Game:ownsBoat(id)
     local def = self:getBoatDef(id)
-    if not def.premium then return true end
-    return self:isPremium()
+    if def.premium then return self:isPremium() end
+    if not def.cost then return true end
+    for _, b in ipairs(self.state.unlockedBoats) do
+        if b == id then return true end
+    end
+    return false
+end
+
+-- Buy a gold-priced boat. Returns true on success, false when too poor.
+function Game:buyBoat(id)
+    local def = self:getBoatDef(id)
+    if not def.cost or self:ownsBoat(id) then return false end
+    if self.state.coins < def.cost then return false end
+    self.state.coins = self.state.coins - def.cost
+    table.insert(self.state.unlockedBoats, id)
+    self:save()
+    return true
 end
 
 -- Unlock the whole premium pack. PRETEND purchase for now (just flips the flag).
@@ -186,11 +270,24 @@ function Game:unlockPremium()
     self:save()
 end
 
+-- Load the save, falling back to the .bak when the main file is corrupt
+-- (an iOS app kill mid-write truncates it — the backup means "lose a few
+-- seconds", never "lose the child's whole world").
 function Game:loadSave()
     self.state = defaultState()
-    if love.filesystem.getInfo(self.SAVE_FILE) then
-        local contents = love.filesystem.read(self.SAVE_FILE)
-        local data = contents and json.decode(contents)
+    local contents, data
+    for _, f in ipairs({ self.SAVE_FILE, self.SAVE_BAK }) do
+        if love.filesystem.getInfo(f) then
+            contents = love.filesystem.read(f)
+            data = contents and json.decode(contents)
+            if type(data) == "table" then
+                self._lastGood = contents      -- seeds the .bak rotation
+                break
+            end
+            data = nil                          -- corrupt: try the backup
+        end
+    end
+    do
         if type(data) == "table" then
             -- Merge defensively so an old/partial save still loads.
             self.state.coins = data.coins or self.state.coins
@@ -212,16 +309,30 @@ function Game:loadSave()
             self.state.treasuresFound = data.treasuresFound or self.state.treasuresFound
             self.state.treasuresMapped = data.treasuresMapped or self.state.treasuresMapped
             self.state.selectedBoat = data.selectedBoat or self.state.selectedBoat
-            self.state.boatName = data.boatName or self.state.boatName
+            self.state.selectedMap = data.selectedMap or self.state.selectedMap
+            -- Names are per boat; old saves had ONE boatName — it belonged to
+            -- the boat that was selected at the time.
+            self.state.boatNames = data.boatNames or self.state.boatNames
+            if data.boatName and not data.boatNames then
+                self.state.boatNames[self.state.selectedBoat] = data.boatName
+            end
             if data.premium ~= nil then self.state.premium = data.premium end
         end
     end
 end
 
+-- Save with backup rotation: keep the previous good save as .bak BEFORE
+-- overwriting the real file, so a write interrupted by an app kill can always
+-- be recovered by loadSave. (love.filesystem has no atomic rename; this is
+-- the next-best guarantee.)
 function Game:save()
     local ok, encoded = pcall(json.encode, self.state)
-    if ok then
-        love.filesystem.write(self.SAVE_FILE, encoded)
+    if not ok then return end
+    if self._lastGood and self._lastGood ~= encoded then
+        love.filesystem.write(self.SAVE_BAK, self._lastGood)
+    end
+    if love.filesystem.write(self.SAVE_FILE, encoded) then
+        self._lastGood = encoded
     end
 end
 
@@ -304,7 +415,9 @@ end
 function Game:useAmmo()
     if (self.state.ammo or 0) <= 0 then return false end
     self.state.ammo = self.state.ammo - 1
-    self:save()
+    -- No save() here: the auto-cannon fires ~1/s in a fight and re-encoding
+    -- the whole state (fog blob included) each shot caused combat hitches.
+    -- The count rides along on the next natural save (delivery, dock, blur).
     return true
 end
 
@@ -327,11 +440,11 @@ end
 function Game:keypressed(key, scancode, isrepeat)
     if key == "f11" then
         self:toggleFullscreen(); return
-    elseif key == "f5" then
+    elseif config.DEV and key == "f5" then
         self:reloadScene(); return
-    elseif key == "f6" then
+    elseif config.DEV and key == "f6" then
         self:reloadData(); return
-    elseif key == "f3" then
+    elseif config.DEV and key == "f3" then
         self.profile.on = not self.profile.on; return   -- toggle dev profiler
     elseif key == "m" then
         config.AUDIO_ON = not config.AUDIO_ON
@@ -353,6 +466,7 @@ function Game:keypressed(key, scancode, isrepeat)
 end
 
 function Game:toggleFullscreen()
+    if self.mobile then return end
     local isFs = love.window.getFullscreen()
     love.window.setFullscreen(not isFs, "desktop")
     self:resize(love.graphics.getWidth(), love.graphics.getHeight())
@@ -363,11 +477,15 @@ function Game:textinput(t)
 end
 
 function Game:mousepressed(x, y, button)
+    if self._sceneSwitchT and love.timer.getTime() - self._sceneSwitchT < 0.35 then
+        return   -- stale click from before/during the scene switch
+    end
     if self.scene and self.scene.mousepressed then self.scene:mousepressed(x, y, button) end
 end
 
 function Game:mousereleased(x, y, button)
     if self.scene and self.scene.mousereleased then self.scene:mousereleased(x, y, button) end
+    Retro.cancelPress()   -- a release always ends the press, even off-button
 end
 
 function Game:mousemoved(x, y, dx, dy)
@@ -377,6 +495,15 @@ end
 function Game:resize(w, h)
     self:buildFonts()
     if self.scene and self.scene.resize then self.scene:resize(w, h) end
+end
+
+-- App losing focus (backgrounded, phone call): persist everything now —
+-- on iOS this may be our last breath. Fog flush includes a save.
+function Game:onBlur()
+    if self.sceneName == "world" and self.scene and self.scene.flushFog then
+        pcall(function() self.scene:flushFog() end)
+    end
+    self:save()
 end
 
 function Game:quit()
