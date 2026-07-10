@@ -10,21 +10,20 @@ local Assets = require("src.assets")
 
 local Icons = {}
 
--- Draw `kind` centred at (x, y) so its FULL extent is ~`target` px, whether
--- it's a photo or a code-drawn glyph (photos and glyphs use different internal
--- scales in draw() below). Use this where the icon must FILL a space -- the
--- Butikk crates -- so the goods read big and clear.
-function Icons.drawFit(kind, x, y, target)
+-- Draw `kind` centred at (x, y), CONTAINED in a `size`×`size` box: the photo's
+-- longest side is scaled to exactly `size`, so the whole product is visible.
+-- The Butikk's square display windows use this.
+function Icons.drawBox(kind, x, y, size)
     local img = Assets.image("icons/" .. tostring(kind) .. ".png")
     if img then
         if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
-        local scale = target / math.max(img:getWidth(), img:getHeight())
+        local scale = size / math.max(img:getWidth(), img:getHeight())
         love.graphics.setColor(1, 1, 1)
         love.graphics.draw(img, x, y, 0, scale, scale, img:getWidth() / 2, img:getHeight() / 2)
         love.graphics.setColor(1, 1, 1)
         return
     end
-    Icons.draw(kind, x, y, target)   -- glyphs span roughly one `s` already
+    Icons.draw(kind, x, y, size)   -- glyphs span roughly one `s` already
 end
 
 -- Draw `kind` centred at (x, y), about `s` across. Unknown kinds fall back to a

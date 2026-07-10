@@ -15,12 +15,15 @@
 -- The rest are FOOD (`food = true`): provisions you can buy again and again and
 -- stock up on. The crew + passengers eat them on voyages (see World eating), so
 -- the maths of saving up, buying, and using up stays front and centre.
+-- NOTE: Kanonkuler stays LAST. It's the only crate that can be hidden (no
+-- cannon aboard yet), and as the tail item its appearing/disappearing never
+-- shifts the other crates around the grid.
 return {
     { id = "cannon",     name = "Kanon",      price = 100, desc = "Skyt på sjørøvere!", icon = "cannon", stack = true },
-    { id = "kanonkuler", name = "Kanonkuler", price = 15,  desc = "Fem nye kuler.",     icon = "kanonkuler", ammo = 5 },
     { id = "brod",     name = "Brød",     price = 10,  desc = "Nybakt brød.",     icon = "bread",  food = true },
     { id = "saft",     name = "Saft",     price = 12,  desc = "Søt rød saft.",    icon = "juice",  food = true },
     { id = "sitroner", name = "Sitroner", price = 15,  desc = "Friske sitroner.", icon = "lemon",  food = true },
     { id = "epler",    name = "Epler",    price = 8,   desc = "Røde epler.",      icon = "apple",  food = true },
     { id = "ost",      name = "Ost",      price = 14,  desc = "Gul ost.",         icon = "cheese", food = true },
+    { id = "kanonkuler", name = "Kanonkuler", price = 15,  desc = "Fem nye kuler.",     icon = "kanonkuler", ammo = 5 },
 }

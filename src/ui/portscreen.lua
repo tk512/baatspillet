@@ -739,12 +739,33 @@ function PortScreen:drawStorePanel(pw, ph)
     end
     local cols = 3
     local n = #items
-    local rows = math.max(1, math.ceil(n / cols))
+    -- Slots are sized for the FULL catalog, not the visible items -- so the
+    -- kanonkuler crate appearing (or anything hidden later) never resizes or
+    -- reshuffles the rest of the store. (Kuler also sits last in shop.lua.)
+    local rows = math.max(1, math.ceil(#self.shop / cols))
     local gridX, gridY = ix + iw * 0.04, iy + ih * 0.23
     local gridW, gridH = iw * 0.92, ih * 0.56
     local gap, rowGap = iw * 0.025, ih * 0.035
     local cw = (gridW - (cols - 1) * gap) / cols
     local ch = math.min((gridH - (rows - 1) * rowGap) / rows, cw * 0.92)
+
+    -- SHELVES: every crate row stands on a worn plank with brackets, like an
+    -- old colonial landhandel (drawn first, so the crates sit ON them).
+    local shelfPad = iw * 0.015
+    for row = 0, rows - 1 do
+        local syl = gridY + row * (ch + rowGap) + ch - t
+        love.graphics.setColor(0.13, 0.08, 0.05)                        -- shadow line below
+        love.graphics.rectangle("fill", gridX - shelfPad, syl + t * 2, gridW + shelfPad * 2, t)
+        love.graphics.setColor(0.38, 0.25, 0.13)                        -- the plank
+        love.graphics.rectangle("fill", gridX - shelfPad, syl, gridW + shelfPad * 2, t * 2)
+        love.graphics.setColor(0.55, 0.38, 0.20)                        -- sunlit top edge
+        love.graphics.rectangle("fill", gridX - shelfPad, syl, gridW + shelfPad * 2, math.max(1, math.floor(t * 0.6)))
+        love.graphics.setColor(0.20, 0.13, 0.08)                        -- brackets
+        for _, bxr in ipairs({ gridX + gridW * 0.10, gridX + gridW * 0.5, gridX + gridW * 0.90 }) do
+            love.graphics.polygon("fill", bxr - t * 2, syl + t * 3, bxr + t * 2, syl + t * 3, bxr, syl + t * 6)
+        end
+    end
+
     self._crates = {}
     for i = 1, n do
         local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
@@ -798,11 +819,15 @@ function PortScreen:drawCrate(r, mx, my, t)
     bevel(r.x + t * 2, r.y + t * 2, r.w - t * 4, r.h - t * 4, s.wood, s.cratehi, s.cratelo,
           math.max(1, math.floor(t * 0.6)), false)
 
-    -- BIG goods picture (it's the point of the store -- and replaceable with
-    -- real photos at assets/icons/<icon>.png later; drawFit sizes photo and
-    -- placeholder glyph the same, so it stays big either way)
-    Icons.drawFit(item.icon, r.x + r.w / 2, r.y + r.h * 0.36,
-        math.min(r.w * 0.66, r.h * 0.62))
+    -- SQUARE display window: a sunken frame with the product photo fitted
+    -- inside, whole product visible (no zoom-crop), as big as the crate
+    -- allows without touching the name row.
+    local side = math.min(r.w - t * 8, r.h * 0.56)
+    local fx = r.x + (r.w - side) / 2
+    local fy = r.y + t * 2.5
+    bevel(fx, fy, side, side, s.deep, s.cratehi, s.cratelo,
+        math.max(1, math.floor(t * 0.7)), false)
+    Icons.drawBox(item.icon, fx + side / 2, fy + side / 2, side * 0.90)
 
     local fn = vfont(r.h * 0.115)
     love.graphics.setFont(fn)
