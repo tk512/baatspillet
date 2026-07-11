@@ -93,11 +93,11 @@ function Album:spawnCoin(sw, sh)
     local tx = sw * (0.25 + love.math.random() * 0.5)
     local ty = sh * (0.15 + love.math.random() * 0.5)
     local ang = math.atan2(ty - ey, tx - ex) + (love.math.random() - 0.5) * 0.7
-    local sp = (700 + love.math.random() * 900) * k
+    local sp = (400 + love.math.random() * 520) * k   -- slower: savour the chaos
     self.coins[#self.coins + 1] = {
         x = ex, y = ey,
         vx = math.cos(ang) * sp, vy = math.sin(ang) * sp,
-        r = (12 + love.math.random() * 14) * k,   -- BIG doubloons, engravings visible
+        r = (16 + love.math.random() * 18) * k,   -- BIG doubloons, engravings visible
         rot = love.math.random() * math.pi,
         vr = (love.math.random() - 0.5) * 10,
     }
@@ -119,7 +119,7 @@ function Album:update(dt)
     end
     -- coin physics: fly, spin, fall off the bottom
     local sh = love.graphics.getHeight()
-    local g = 1700 * (sh / 800)
+    local g = 950 * (sh / 800)                     -- lazier arcs, more air time
     for i = #self.coins, 1, -1 do
         local c = self.coins[i]
         c.vy = c.vy + g * dt

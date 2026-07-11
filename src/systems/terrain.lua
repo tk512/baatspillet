@@ -165,6 +165,20 @@ end
 -- Combined island-mask value at a world point (1 at a centre, 0 past the
 -- radius). The shape that carved the islands, reused to raise elevation toward
 -- each island's middle.
+-- Which island "owns" this spot (max mask contribution) decides its biome;
+-- open water and unclaimed land default to "green" (the Norge baseline).
+function Terrain:biomeAt(gx, gy)
+    local best, bio = 0, "green"
+    for _, isl in ipairs(config.ISLANDS) do
+        local dx, dy = gx - isl.x, gy - isl.y
+        local d = math.sqrt(dx * dx + dy * dy) / isl.radius
+        if d < 1 and (1 - d) > best then
+            best, bio = 1 - d, isl.biome or "green"
+        end
+    end
+    return bio
+end
+
 function Terrain:islandMask(gx, gy)
     local m = 0
     for _, isl in ipairs(config.ISLANDS) do
@@ -295,6 +309,7 @@ function Terrain:classifyTiles()
                 tile.type, tile.water = (cover > config.ROCK_THRESH) and "rock" or "grass", false
             end
             if tile.build then tile.type, tile.water = "grass", false end
+            tile.biome = self:biomeAt((i - 0.5) * T, (j - 0.5) * T)
             tile.tint = 1 + (((i * 17 + j * 29) % 5) - 2) * 0.02
             self.tiles[i][j] = tile
         end
@@ -405,8 +420,9 @@ function Terrain:scatterProps()
             if not t.water and not t.build then
                 local cx, cy = (i - 0.5) * T, (j - 0.5) * T
                 if t.type == "grass" then
+                    local bio = config.BIOMES[t.biome or "green"] or config.BIOMES.green
                     local f = fbm(cx / config.FOREST_SCALE, cy / config.FOREST_SCALE, seed + 200)
-                    if f > config.FOREST_THRESH then
+                    if f > config.FOREST_THRESH + (bio.forest or 0) then
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "forest", z = 0, salt = i * 131 + j * 977 }
                     elseif (i * 31 + j * 7) % 13 == 0 then
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "house", z = 0 }
@@ -499,6 +515,13 @@ function Terrain:buildCoastMesh()
                 local rd = self.corner[i + 1][j + 1]
                 local ld = self.corner[i][j + 1]
                 local fac = config.colors[tile.type] or config.colors.sand
+                local bio = config.BIOMES[tile.biome or "green"] or config.BIOMES.green
+                if bio.sand and tile.type == "sand" then
+                    -- biome shoreline (frosted in snow, pale gold in desert)
+                    fac = { top = bio.sand,
+                            lip = { bio.sand[1] * 0.80, bio.sand[2] * 0.80, bio.sand[3] * 0.86 },
+                            dot = bio.sand }
+                end
                 for a = 0, N - 1 do
                     for b = 0, N - 1 do
                         local u, vv = (a + 0.5) / N, (b + 0.5) / N
@@ -565,15 +588,16 @@ function Terrain:buildLandMesh()
     local snowStart = (M.SNOW_LEVEL - 2) * M.STEP
     local snowFull  = M.SNOW_LEVEL * M.STEP
 
-    -- granular material colour: grass->snow by height, with FINE per-pixel noise
-    local function material(z, gx, gy)
+    -- granular material colour: ground->snow by height, with FINE per-pixel
+    -- noise. Ground colour + snowline come from the tile's biome palette.
+    local function material(z, gx, gy, gC, sSt, sFu)
         local n = fbm(gx / 21, gy / 21, seed + 900)       -- fine = pixel-scale grain
-        local sa = (z - snowStart) / math.max(1, snowFull - snowStart)
+        local sa = (z - sSt) / math.max(1, sFu - sSt)
         if sa < 0 then sa = 0 elseif sa > 1 then sa = 1 end
         local f = 0.84 + 0.26 * n
-        return (grass[1] + (snow[1] - grass[1]) * sa) * f,
-               (grass[2] + (snow[2] - grass[2]) * sa) * f,
-               (grass[3] + (snow[3] - grass[3]) * sa) * f
+        return (gC[1] + (snow[1] - gC[1]) * sa) * f,
+               (gC[2] + (snow[2] - gC[2]) * sa) * f,
+               (gC[3] + (snow[3] - gC[3]) * sa) * f
     end
 
     local function emit(gx, gy, z, r, g, b)
@@ -609,6 +633,17 @@ function Terrain:buildLandMesh()
         -- (the per-subcell `cz < 5` gate below keeps the sand near sea level,
         -- so the band can climb the very FOOT of a shoreside ramp and stop)
         local beachable = not tile.build and sdMin < beachReach
+        -- the tile's biome picks the palette for everything below
+        local bio = config.BIOMES[tile.biome or "green"] or config.BIOMES.green
+        local grassC = bio.grass or grass
+        local rockC  = bio.rock or rock
+        local sandC  = bio.sand or sandTop
+        local sSt, sFu = snowStart, snowFull
+        if bio.snowAt then
+            sSt, sFu = (bio.snowAt - 2) * M.STEP, bio.snowAt * M.STEP
+        elseif bio.snowless then
+            sSt, sFu = 1e9, 1e9 + 1
+        end
         local zA, zB = self.cz[i][j], self.cz[i + 1][j]      -- corners: A(0,0) B(1,0)
         local zC, zD = self.cz[i + 1][j + 1], self.cz[i][j + 1] --          C(1,1) D(0,1)
         local function H(u, w) return (zA + (zB - zA) * u) + ((zD + (zC - zD) * u) - (zA + (zB - zA) * u)) * w end
@@ -644,13 +679,13 @@ function Terrain:buildLandMesh()
                     -- the beach reaches into this tile: sand, same grain noise
                     local n = fbm(cgx / 21, cgy / 21, seed + 900)
                     local f = 0.84 + 0.26 * n
-                    mr, mg, mb = sandTop[1] * f, sandTop[2] * f, sandTop[3] * f
+                    mr, mg, mb = sandC[1] * f, sandC[2] * f, sandC[3] * f
                 else
-                    mr, mg, mb = material(cz, cgx, cgy)
+                    mr, mg, mb = material(cz, cgx, cgy, grassC, sSt, sFu)
                 end
-                mr = (mr + (rock[1] - mr) * rk) * sh
-                mg = (mg + (rock[2] - mg) * rk) * sh
-                mb = (mb + (rock[3] - mb) * rk) * sh
+                mr = (mr + (rockC[1] - mr) * rk) * sh
+                mg = (mg + (rockC[2] - mg) * rk) * sh
+                mb = (mb + (rockC[3] - mb) * rk) * sh
                 emit(gx0, gy0, h00, mr, mg, mb); emit(gx1, gy0, h10, mr, mg, mb); emit(gx1, gy1, h11, mr, mg, mb)
                 emit(gx0, gy0, h00, mr, mg, mb); emit(gx1, gy1, h11, mr, mg, mb); emit(gx0, gy1, h01, mr, mg, mb)
             end

@@ -33,7 +33,7 @@ function HUD.draw(world)
     -- Top-left: gold + boat + cargo plaque
     local pad  = math.max(6, math.floor(smH * 0.55))
     local gap  = math.floor(smH * 0.32)
-    local cr   = nmH * 0.42                               -- coin radius
+    local cr   = nmH * 0.54                               -- coin radius (doubloon-sized)
     local goldStr  = tostring(world.game.state.coins) .. " gull"
     local boatStr  = "Båt: " .. (world.boat.displayName or world.boat.def.name)
     local cargoStr = "Last: " .. world.boat:cargoCount() .. " / " .. world.boat.capacity
@@ -185,7 +185,7 @@ function HUD.drawTreasureBar(world, x, y, t)
     love.graphics.setColor(1, 1, 1)
 end
 
--- Top-centre banner: "Oppdrag <icon>×N → ▮ <BY>", destination in its town colour.
+-- Top-centre banner: "Oppdrag <icon>×N ▮ <BY>", destination in its town colour.
 function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     local m = world.boat.cargo[1]
     local pad  = math.max(8, math.floor(smH * 0.7))
@@ -197,9 +197,8 @@ function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
 
     local wLabel = fonts.normal:getWidth("Oppdrag")
     local wCount = fonts.normal:getWidth(countStr)
-    local wArrow = fonts.normal:getWidth("→")
     local wDest  = fonts.normal:getWidth(dest)
-    local content = wLabel + gap + s + gap * 0.4 + wCount + gap + wArrow + gap
+    local content = wLabel + gap + s + gap * 0.4 + wCount + gap
                     + markW + gap * 0.5 + wDest
 
     local ph = nmH + (pad + t * 2)
@@ -221,10 +220,8 @@ function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     love.graphics.setColor(WOOD.text)
     love.graphics.print(countStr, cx, ty(nmH)); cx = cx + wCount + gap
 
-    -- arrow
-    love.graphics.print("→", cx, ty(nmH)); cx = cx + wArrow + gap
-
-    -- destination harbour badge + name in town colour
+    -- destination harbour badge + name in town colour (the town badge IS the
+    -- "to" marker; the old "→" text rendered as a tofu box — no glyph)
     HarborMark.draw(cx, cy - markH / 2, markW, markH, m.color or WOOD.text)
     cx = cx + markW + gap * 0.5
     love.graphics.setColor(m.color or WOOD.text)

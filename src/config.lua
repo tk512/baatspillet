@@ -65,6 +65,23 @@ config.ISLANDS = {
     { x = 5100, y = 4300, radius = 1260 },  -- Florida  (big, central sea)
 }
 
+-- Island BIOMES (set per island in a map's `islands` list; omitted = "green",
+-- which is exactly Norge's classic look). Each biome overrides ground colours
+-- and forest behaviour; snowAt pulls the snowline down to (level * STEP).
+config.BIOMES = {
+    green  = {},                                            -- the Norge baseline
+    lush   = { grass = { 0.33, 0.48, 0.22 },                -- deep eastern forest
+               forest = -0.07 },                            -- denser woods
+    desert = { grass = { 0.78, 0.63, 0.35 },                -- sun-baked ground
+               rock  = { 0.66, 0.40, 0.24 },                -- red canyon stone
+               sand  = { 0.85, 0.74, 0.52 },
+               forest = 999, snowless = true },             -- no woods, never snow
+    snow   = { grass = { 0.82, 0.86, 0.92 },                -- frozen ground
+               rock  = { 0.52, 0.58, 0.68 },                -- icy blue stone
+               sand  = { 0.88, 0.90, 0.94 },                -- frosted shores
+               forest = 0.08, snowAt = 2 },                 -- sparse woods, low snowline
+}
+
 -- Visual island height only — the sea stays flat (boat sails at z=0). Each land
 -- tile gets an integer elevation level (low at coasts, higher inland); tiles
 -- bridging two levels become shaded slope tiles. Baked into the static land mesh.
@@ -85,10 +102,12 @@ config.FOG_REVEAL      = 1150  -- reveal radius around the boat (see far enough 
 
 -- Maps each port `size` to how many houses to scatter and how far they spread.
 config.CITY_SIZES = {
-    tiny   = { houses = 4,  spread = 4  },
-    small  = { houses = 9,  spread = 6  },
-    medium = { houses = 18, spread = 9  },
-    large  = { houses = 40, spread = 15 },
+    tiny       = { houses = 4,  spread = 4  },
+    small      = { houses = 9,  spread = 6  },
+    medium     = { houses = 18, spread = 9  },
+    large      = { houses = 40, spread = 15 },
+    -- American downtowns: a dense high-rise core with sprawl around it
+    metropolis = { houses = 95, spread = 21 },
 }
 
 -- The one zoom the world runs at. Wheel zoom was removed on purpose: the kid

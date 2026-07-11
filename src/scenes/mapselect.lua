@@ -11,9 +11,49 @@ local Assets = require("src.assets")
 local Retro  = require("src.ui.retro")
 local Scale  = require("src.ui.scale")
 local Scene  = require("src.ui.pixelscene")
+local Flags  = require("src.ui.flags")
 
 local W = Retro.WOOD
 local MapSelect = {}
+
+-- A flag WAVING in the wind, centre of the map preview: the image is drawn in
+-- vertical slices riding a travelling sine (hoist edge steady, fly end waving)
+-- with a light shimmer rolling along the cloth. Quads are cached per image.
+local flagQuads = {}
+local function wavingFlag(country, cx, cy, w, t)
+    local code = Flags.CODES[country]
+    local img = code and Assets.image("flags/" .. code .. ".png")
+    if not img then
+        Flags.draw(country, cx - w / 2, cy - w * 0.36, w, w * 0.72)
+        return
+    end
+    if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
+    local iw, ih = img:getWidth(), img:getHeight()
+    local n = 14
+    local qs = flagQuads[img]
+    if not qs then
+        qs = {}
+        for i = 1, n do
+            qs[i] = love.graphics.newQuad(iw * (i - 1) / n, 0, iw / n + 1, ih, iw, ih)
+        end
+        flagQuads[img] = qs
+    end
+    local sc = w / iw
+    local sliceW = iw / n * sc
+    local h = ih * sc
+    local x0 = cx - w / 2
+    love.graphics.setColor(0, 0, 0, 0.28)                 -- soft shadow behind the cloth
+    love.graphics.rectangle("fill", x0 + 3, cy - h / 2 + 5, w, h, 3, 3)
+    for i = 1, n do
+        local u = (i - 0.5) / n
+        local ph = t * 3.0 - u * 4.6
+        local wave = math.sin(ph) * w * 0.04 * u          -- ripple grows toward the fly end
+        local shine = 1 + 0.16 * math.sin(ph + 0.7) * u   -- shimmer rides the wave
+        love.graphics.setColor(shine, shine, shine)
+        love.graphics.draw(img, qs[i], x0 + (i - 1) * sliceW, cy - h / 2 + wave, 0, sc, sc)
+    end
+    love.graphics.setColor(1, 1, 1)
+end
 
 local function hover(r)
     local mx, my = love.mouse.getPosition()
@@ -137,13 +177,29 @@ function MapSelect:drawCard(c)
         end
     end
 
-    -- name plank under the chart
-    local f = self.game.fonts.normal
+    -- the country's flag waves proudly mid-preview
+    if def.country and not def.comingSoon then
+        wavingFlag(def.country, ix + iw / 2, iy + ih / 2, iw * 0.40, self.t)
+    end
+
+    -- premium map without the pack: roped off behind a padlock (the same
+    -- "for later" language as the locked boats)
+    if def.premium and not self.game:isPremium() then
+        local ry = iy + ih * 0.55
+        Retro.ropeAcross(ix + 2, ix + iw - 2, ry, ih * 0.08, math.max(2, ih * 0.03))
+        Retro.padlock(ix + iw / 2, ry + ih * 0.14, ih * 0.22)
+    end
+
+    -- name plank under the chart: just the name, big
+    local f = self.game.fonts.big
     love.graphics.setFont(f)
-    love.graphics.setColor(W.text)
     local label = def.comingSoon and (def.name .. " – kommer snart!") or def.name
-    love.graphics.print(label, c.x + c.w / 2 - f:getWidth(label) / 2,
-        iy + ih + (c.h * 0.18 - f:getHeight()) / 2 - t)
+    if def.comingSoon then f = self.game.fonts.normal; love.graphics.setFont(f) end
+    local ly = iy + ih + (c.h * 0.18 - f:getHeight()) / 2 - t
+    love.graphics.setColor(0, 0, 0, 0.4)
+    love.graphics.print(label, c.x + c.w / 2 - f:getWidth(label) / 2 + 2, ly + 2)
+    love.graphics.setColor(W.text)
+    love.graphics.print(label, c.x + c.w / 2 - f:getWidth(label) / 2, ly)
 
     if hov then
         love.graphics.setColor(W.accent); love.graphics.setLineWidth(math.max(2, 3 * (c.h / 200)))
@@ -177,6 +233,12 @@ end
 
 function MapSelect:pick(def)
     if def.comingSoon then Assets.playSfx("leave", 0.3); return end
+    if def.premium and not self.game:isPremium() then
+        Assets.playNamedVoice("spor_en_voksen")
+        self.game._openPackOffer = true
+        self.game:setScene("boatselect")     -- the Kaptein-pakken card lives there
+        return
+    end
     self.game:applyMap(def.id)
     self.game:save()
     Assets.setMusicVolume(1.0)

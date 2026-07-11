@@ -52,7 +52,7 @@ eq(Game.state.unlockedBoats[1], "starter_boat", "fresh: starter boat unlocked")
 eq(Game.state.ammo, 0, "fresh: no cannonballs")
 eq(Game.state.cannons, 0, "fresh: no cannons")
 eq(Game.state.premium, false, "fresh: no premium")
-eq(#Game.state.treasuresFound, 0, "fresh: no treasures found")
+eq(#Game:mapState("norge").treasuresFound, 0, "fresh: no treasures found")
 
 -- full round-trip -------------------------------------------------------------
 reset()
@@ -63,7 +63,7 @@ Game.state.food = { brod = 2, ost = 1 }
 Game.state.ammo = 7
 Game.state.cannons = 2
 Game.state.owned = { cannon = true }
-Game.state.treasuresFound = { "chest1", "chest2" }
+Game:mapState("norge").treasuresFound = { "chest1", "chest2" }
 Game.state.premium = true
 Game:save()
 Game.state = nil
@@ -75,7 +75,7 @@ eq(Game.state.food.brod, 2, "roundtrip: food stock")
 eq(Game.state.ammo, 7, "roundtrip: ammo")
 eq(Game.state.cannons, 2, "roundtrip: cannons")
 eq(Game.state.owned.cannon, true, "roundtrip: cannon owned")
-eq(Game.state.treasuresFound[2], "chest2", "roundtrip: treasures")
+eq(Game:mapState("norge").treasuresFound[2], "chest2", "roundtrip: treasures")
 eq(Game.state.premium, true, "roundtrip: premium")
 check(json.decode(files[Game.SAVE_FILE]) ~= nil, "roundtrip: save file is valid JSON")
 
@@ -122,7 +122,28 @@ eq(Game.state.boatNames.fishing_boat, "Tøffe", "newGame: keeps boat names")
 eq(Game.state.selectedBoat, "fishing_boat", "newGame: keeps selected boat")
 eq(Game.state.unlockedBoats[2], "fishing_boat", "newGame: keeps unlocked boats")
 eq(Game.state.coins, 0, "newGame: progress (gold) IS reset")
-eq(#Game.state.treasuresFound, 0, "newGame: progress (treasures) IS reset")
+eq(#Game:mapState("norge").treasuresFound, 0, "newGame: progress (treasures) IS reset")
+
+-- per-map isolation: Norge's exploration must never leak into Amerika --------
+reset()
+Game:mapState("norge").treasuresFound = { "chest1" }
+Game:mapState("norge").fog = "NORGEFOG"
+eq(#Game:mapState("amerika").treasuresFound, 0, "maps: amerika starts unexplored")
+eq(Game:mapState("amerika").fog, nil, "maps: amerika has no fog data")
+Game:save(); Game.state = nil; Game:loadSave()
+eq(Game:mapState("norge").fog, "NORGEFOG", "maps: norge fog survives roundtrip")
+eq(#Game:mapState("amerika").treasuresFound, 0, "maps: isolation survives roundtrip")
+
+-- migration: pre-maps saves put world progress at the top level (Norge's) ----
+reset()
+files[Game.SAVE_FILE] = json.encode({
+    coins = 9, fog = "OLDFOG", treasuresFound = { "chest3" },
+    discoveredIslands = { "bergen" },
+})
+Game:loadSave()
+eq(Game:mapState("norge").fog, "OLDFOG", "migration: old fog lands under norge")
+eq(Game:mapState("norge").treasuresFound[1], "chest3", "migration: old treasures land under norge")
+eq(Game:mapState("norge").discoveredIslands[1], "bergen", "migration: old islands land under norge")
 
 
 -- partial save (old version / hand-edited): missing fields fall to defaults ----

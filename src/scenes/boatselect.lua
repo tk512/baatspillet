@@ -57,6 +57,10 @@ function BoatSelect:load(game)
     self.edited = (game.state.boatNames[boats[self.index].id] ~= nil)
     self.bought = 0                              -- "Kjøpt!" flash timer
     self.offer = false                           -- the premium-pack offer card, when up
+    if game._openPackOffer then                  -- sent here by a locked map card
+        game._openPackOffer = nil
+        self.offer = "card"
+    end
 end
 
 function BoatSelect:def() return self.game.data.boats[self.index] end
@@ -388,23 +392,7 @@ local function hover(r)
     return mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
 end
 
--- A sagging harbour rope from (x1,y) to (x2,y) with knots at the ends: the
--- "berth is roped off" cue on locked boats. Pure segments, no allocations.
-local function ropeAcross(x1, x2, y, sag, thick)
-    love.graphics.setColor(0.80, 0.64, 0.40)
-    love.graphics.setLineWidth(thick)
-    local n = 12
-    for j = 0, n - 1 do
-        local u0, u1 = j / n, (j + 1) / n
-        love.graphics.line(
-            x1 + (x2 - x1) * u0, y + math.sin(u0 * math.pi) * sag,
-            x1 + (x2 - x1) * u1, y + math.sin(u1 * math.pi) * sag)
-    end
-    love.graphics.setColor(0.55, 0.40, 0.22)
-    love.graphics.circle("fill", x1, y, thick * 1.4)
-    love.graphics.circle("fill", x2, y, thick * 1.4)
-    love.graphics.setLineWidth(1)
-end
+local function ropeAcross(...) Retro.ropeAcross(...) end
 
 -- Shimmer for something BOUGHT: a glint travelling around the frame plus
 -- twinkling corner stars — the unmistakable "this one is yours now".
@@ -434,16 +422,7 @@ local function sparkleFrame(r, t, phase)
     end
 end
 
--- A chunky gold padlock centred on (x,y), body height s.
-local function padlock(x, y, s)
-    love.graphics.setColor(0.35, 0.28, 0.16); love.graphics.setLineWidth(math.max(2, s * 0.22))
-    love.graphics.arc("line", "open", x, y - s * 0.28, s * 0.44, math.pi, 2 * math.pi)
-    love.graphics.setColor(0.95, 0.78, 0.28)
-    love.graphics.rectangle("fill", x - s * 0.55, y - s * 0.28, s * 1.1, s * 0.85, s * 0.12, s * 0.12)
-    love.graphics.setColor(0.55, 0.42, 0.14)
-    love.graphics.circle("fill", x, y + s * 0.12, s * 0.13)
-    love.graphics.setLineWidth(1)
-end
+local function padlock(...) Retro.padlock(...) end
 
 -- The big action button, readable without reading: GREEN with a little sail
 -- when the boat is yours ("Sett seil!"), GOLD with a padlock when it's locked
@@ -478,6 +457,45 @@ end
 
 local function button(id, r, label, font)
     Retro.button(id, r, label, font)
+end
+
+-- The Kjøp button deserves ceremony: pulsing golden glow, bright gold bevel,
+-- a sheen sweeping across every couple of seconds, sparkles on the frame, and
+-- deep engraved lettering. Presses in like every other button.
+local function gloriousButton(id, r, label, font, t)
+    local down = Retro.isDown(id)
+    local bt = math.max(2, math.floor(r.h * 0.12))
+    -- halo: soft pulsing glow behind the button
+    local pulse = 0.55 + 0.25 * math.sin(t * 2.2)
+    love.graphics.setColor(1.0, 0.82, 0.30, 0.22 * pulse)
+    love.graphics.rectangle("fill", r.x - r.h * 0.18, r.y - r.h * 0.18,
+        r.w + r.h * 0.36, r.h + r.h * 0.36, r.h * 0.25, r.h * 0.25)
+    love.graphics.setColor(1.0, 0.90, 0.45, 0.16 * pulse)
+    love.graphics.rectangle("fill", r.x - r.h * 0.08, r.y - r.h * 0.08,
+        r.w + r.h * 0.16, r.h + r.h * 0.16, r.h * 0.2, r.h * 0.2)
+    -- bright gold bevel
+    Retro.bevel(r.x, r.y, r.w, r.h,
+        { 0.93, 0.74, 0.25 }, { 1.0, 0.92, 0.55 }, { 0.55, 0.38, 0.10 }, bt, not down)
+    local off = down and bt or 0
+    -- sweeping sheen (scissored diagonal stripe, one pass every ~2.4s)
+    local sweep = ((t * 0.42) % 1.3) * (r.w + r.h * 2) - r.h
+    love.graphics.setScissor(r.x + bt, r.y + bt, r.w - bt * 2, r.h - bt * 2)
+    love.graphics.setColor(1, 1, 1, 0.35)
+    love.graphics.polygon("fill",
+        r.x + sweep, r.y, r.x + sweep + r.h * 0.55, r.y,
+        r.x + sweep - r.h * 0.45, r.y + r.h, r.x + sweep - r.h, r.y + r.h)
+    love.graphics.setScissor()
+    -- engraved label: bronze inset, dark face, warm top kiss
+    love.graphics.setFont(font)
+    local lx = r.x + r.w / 2 - font:getWidth(label) / 2 + off
+    local ly = r.y + r.h / 2 - font:getHeight() / 2 + off
+    love.graphics.setColor(1.0, 0.95, 0.7, 0.8)
+    love.graphics.print(label, lx, ly + 1)
+    love.graphics.setColor(0.32, 0.18, 0.04)
+    love.graphics.print(label, lx, ly)
+    -- sparkles riding the frame
+    sparkleFrame(r, t, 0.13)
+    love.graphics.setColor(1, 1, 1)
 end
 
 local function statBar(label, frac, x, y, w, font)
@@ -741,7 +759,7 @@ function BoatSelect:drawOffer()
     end
 
     love.graphics.setFont(fonts.small); love.graphics.setColor(W.text)
-    local sub = "Alle de fine båtene – og nye som kommer! Betal én gang."
+    local sub = "Alle de fine båtene – og hele Amerika-kartet! Betal én gang."
     love.graphics.print(sub, O.x + O.w / 2 - fonts.small:getWidth(sub) / 2, O.subY)
 
     -- neutral, adult-directed: a fact about who buys, not a nudge to go beg
@@ -750,7 +768,7 @@ function BoatSelect:drawOffer()
     love.graphics.setColor(W.text[1], W.text[2], W.text[3], 0.85)
     love.graphics.print(ask, O.x + O.w / 2 - fonts.small:getWidth(ask) / 2, O.askY)
 
-    button("bs.kjop", O.kjop, "Kjøp  " .. IAP.price(), fonts.big)
+    gloriousButton("bs.kjop", O.kjop, "Kjøp  " .. IAP.price(), fonts.big, self.t)
     button("bs.cardback", O.tilbake, "Tilbake", fonts.small)
 
     button("bs.restore", O.restore, "Gjenopprett kjøp", fonts.small)

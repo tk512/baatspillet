@@ -41,6 +41,35 @@ function Retro.plaque(x, y, w, h, t)
     return x + t * 2, y + t * 2, w - t * 4, h - t * 4
 end
 
+-- ── The shared "locked" language: harbour rope + gold padlock ──────────────
+-- (used by the boat chooser and the map chooser; full-colour content behind a
+-- rope reads as "for later", never "broken")
+function Retro.ropeAcross(x1, x2, y, sag, thick)
+    love.graphics.setColor(0.80, 0.64, 0.40)
+    love.graphics.setLineWidth(thick)
+    local n = 12
+    for j = 0, n - 1 do
+        local u0, u1 = j / n, (j + 1) / n
+        love.graphics.line(
+            x1 + (x2 - x1) * u0, y + math.sin(u0 * math.pi) * sag,
+            x1 + (x2 - x1) * u1, y + math.sin(u1 * math.pi) * sag)
+    end
+    love.graphics.setColor(0.55, 0.40, 0.22)
+    love.graphics.circle("fill", x1, y, thick * 1.4)
+    love.graphics.circle("fill", x2, y, thick * 1.4)
+    love.graphics.setLineWidth(1)
+end
+
+function Retro.padlock(x, y, s)
+    love.graphics.setColor(0.35, 0.28, 0.16); love.graphics.setLineWidth(math.max(2, s * 0.22))
+    love.graphics.arc("line", "open", x, y - s * 0.28, s * 0.44, math.pi, 2 * math.pi)
+    love.graphics.setColor(0.95, 0.78, 0.28)
+    love.graphics.rectangle("fill", x - s * 0.55, y - s * 0.28, s * 1.1, s * 0.85, s * 0.12, s * 0.12)
+    love.graphics.setColor(0.55, 0.42, 0.14)
+    love.graphics.circle("fill", x, y + s * 0.12, s * 0.13)
+    love.graphics.setLineWidth(1)
+end
+
 -- ── Press feedback + star-burst ─────────────────────────────────────────────
 -- Every button presses IN while held and fires on RELEASE, with a little gold
 -- burst on success — the kids-app squish. Fire-on-release also gives "slide

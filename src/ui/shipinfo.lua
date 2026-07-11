@@ -8,57 +8,9 @@ local Retro  = require("src.ui.retro")
 
 local ShipInfo = {}
 
--- Minimal flag painter for the countries in the fleet (Norwegian names). Unknown
--- countries get a neutral pennant; the country name is always shown as text too.
-local function flag(country, x, y, w, h)
-    local function band(n, i, r, g, b)        -- horizontal stripe i of n
-        love.graphics.setColor(r, g, b)
-        love.graphics.rectangle("fill", x, y + h * (i - 1) / n, w, h / n + 1)
-    end
-    if country == "Tyskland" then
-        band(3, 1, 0.05, 0.05, 0.05); band(3, 2, 0.85, 0.10, 0.10); band(3, 3, 0.95, 0.78, 0.10)
-    elseif country == "Russland" then
-        band(3, 1, 0.97, 0.97, 0.99); band(3, 2, 0.10, 0.22, 0.65); band(3, 3, 0.80, 0.12, 0.14)
-    elseif country == "Norge" then
-        love.graphics.setColor(0.78, 0.10, 0.16); love.graphics.rectangle("fill", x, y, w, h)
-        love.graphics.setColor(0.97, 0.97, 0.99)                       -- white cross
-        love.graphics.rectangle("fill", x + w * 0.30, y, w * 0.16, h)
-        love.graphics.rectangle("fill", x, y + h * 0.34, w, h * 0.30)
-        love.graphics.setColor(0.10, 0.20, 0.55)                       -- blue cross
-        love.graphics.rectangle("fill", x + w * 0.34, y, w * 0.08, h)
-        love.graphics.rectangle("fill", x, y + h * 0.40, w, h * 0.18)
-    elseif country == "Amerika" then
-        for i = 1, 7, 2 do band(7, i, 0.80, 0.12, 0.14) end
-        for i = 2, 6, 2 do band(7, i, 0.97, 0.97, 0.99) end
-        love.graphics.setColor(0.10, 0.20, 0.55); love.graphics.rectangle("fill", x, y, w * 0.45, h * 0.55)
-    elseif country == "Panama" then
-        love.graphics.setColor(0.97, 0.97, 0.99); love.graphics.rectangle("fill", x, y, w, h)
-        love.graphics.setColor(0.80, 0.12, 0.14); love.graphics.rectangle("fill", x + w / 2, y, w / 2, h / 2)
-        love.graphics.setColor(0.10, 0.20, 0.55); love.graphics.rectangle("fill", x, y + h / 2, w / 2, h / 2)
-    elseif country == "Sør-Afrika" then
-        -- red over blue; a white-edged green "Y" lying on its side; black
-        -- triangle at the hoist with a gold border
-        love.graphics.setColor(0.87, 0.11, 0.13); love.graphics.rectangle("fill", x, y, w, h / 2)
-        love.graphics.setColor(0.00, 0.10, 0.53); love.graphics.rectangle("fill", x, y + h / 2, w, h / 2)
-        local fx, fy = x + w * 0.45, y + h * 0.5             -- where the Y forks
-        love.graphics.setColor(0.97, 0.97, 0.99)             -- white edges of the Y
-        love.graphics.setLineWidth(h * 0.40)
-        love.graphics.line(x, y, fx, fy); love.graphics.line(x, y + h, fx, fy)
-        love.graphics.line(fx, fy, x + w, fy)
-        love.graphics.setColor(0.00, 0.47, 0.23)             -- the green Y itself
-        love.graphics.setLineWidth(h * 0.22)
-        love.graphics.line(x, y, fx, fy); love.graphics.line(x, y + h, fx, fy)
-        love.graphics.line(fx, fy, x + w, fy)
-        love.graphics.setColor(0.99, 0.71, 0.08)             -- gold border...
-        love.graphics.polygon("fill", x, y + h * 0.06, x + w * 0.30, y + h * 0.5, x, y + h * 0.94)
-        love.graphics.setColor(0.05, 0.05, 0.06)             -- ...around the black hoist triangle
-        love.graphics.polygon("fill", x, y + h * 0.20, x + w * 0.21, y + h * 0.5, x, y + h * 0.80)
-        love.graphics.setLineWidth(1)
-    else
-        love.graphics.setColor(0.30, 0.45, 0.62); love.graphics.rectangle("fill", x, y, w, h)
-    end
-    love.graphics.setColor(0, 0, 0, 0.5); love.graphics.rectangle("line", x, y, w, h)
-end
+-- Flags come from the shared module (image-first, painted fallback).
+local Flags = require("src.ui.flags")
+local function flag(country, x, y, w, h) Flags.draw(country, x, y, w, h) end
 
 -- ship: { x,y, scale, moving, speed, look = { photo=..., def = {name,country,type} } }
 -- sx, sy: the ship's position on screen (the card points down at it).

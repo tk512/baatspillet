@@ -355,17 +355,31 @@ local function makeDockMoods()
 end
 
 -- Drop a real recording at assets/sfx/<name>.<ext> to override the synth.
--- Any LÖVE-supported format works (ogg/mp3/flac/wav), tried in order.
+-- Any LÖVE-supported format works (ogg/mp3/flac/wav), tried in order. A name
+-- can list several candidate FILE names (first found wins) — e.g. the pirate
+-- warning ships as pirate_warn_old_dong.ogg.
 local function loadSfxFiles()
-    local names = { "leave", "cannon", "cannon_hit", "pirate_warn", "chopper", "doink", "blubb" }
-    local exts  = { ".ogg", ".mp3", ".flac", ".wav" }
-    for _, name in ipairs(names) do
-        for _, ext in ipairs(exts) do
-            local path = "assets/sfx/" .. name .. ext
-            if love.filesystem.getInfo(path) then
-                local ok, src = pcall(love.audio.newSource, path, "static")
-                if ok and src then Assets.sounds[name] = src; break end
+    local names = {
+        leave       = { "leave" },
+        cannon      = { "cannon" },
+        cannon_hit  = { "cannon_hit" },
+        pirate_warn = { "pirate_warn", "pirate_warn_old_dong" },
+        chopper     = { "chopper" },
+        doink       = { "doink" },
+        blubb       = { "blubb" },
+    }
+    local exts = { ".ogg", ".mp3", ".flac", ".wav" }
+    for name, candidates in pairs(names) do
+        for _, file in ipairs(candidates) do
+            local found = false
+            for _, ext in ipairs(exts) do
+                local path = "assets/sfx/" .. file .. ext
+                if love.filesystem.getInfo(path) then
+                    local ok, src = pcall(love.audio.newSource, path, "static")
+                    if ok and src then Assets.sounds[name] = src; found = true; break end
+                end
             end
+            if found then break end
         end
     end
 end

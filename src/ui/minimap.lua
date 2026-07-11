@@ -10,6 +10,7 @@
 -- the boat and the camera viewport are drawn over the texture each frame.
 
 local config = require("src.config")
+local utf8  = require("utf8")
 local Retro  = require("src.ui.retro")
 
 local Minimap = {}
@@ -183,6 +184,35 @@ function Minimap:draw()
     love.graphics.circle("fill", bx, by, 2.5)
 
     love.graphics.setScissor()
+
+    -- "Båtspillet!" in the intro's rainbow letters, big and proud: starts at
+    -- the map's left edge and dips into the map itself (fonts.normal is
+    -- Scale.ui-driven, so it sizes itself correctly on iPhone/iPad too).
+    do
+        local f = fonts.normal
+        love.graphics.setFont(f)
+        local label = "Båtspillet"
+        local lx = ox + t * 2 + 4                    -- left-aligned on the plaque
+        local base = 16 + t * 2 + f:getHeight() * 0.22   -- just kisses the map edge
+        local tt = love.timer.getTime()
+        local i = 0
+        for _, code in utf8.codes(label) do
+            i = i + 1
+            local ch = utf8.char(code)
+            local cw = f:getWidth(ch)
+            local hue = 3.0 + i * 0.7 + tt * 0.6     -- the menu title's palette, becalmed
+            local r = 0.6 + 0.4 * math.sin(hue)
+            local g = 0.6 + 0.4 * math.sin(hue + 2.1)
+            local b = 0.6 + 0.4 * math.sin(hue + 4.2)
+            local bob = math.sin(tt * 2 + i * 0.5) * 1.2
+            love.graphics.setColor(0, 0, 0, 0.65)    -- strong shadow: legible over the map
+            love.graphics.print(ch, lx + 2, base + bob + 2, 0, 1, 1, 0, f:getHeight())
+            love.graphics.setColor(r, g, b)
+            love.graphics.print(ch, lx, base + bob, 0, 1, 1, 0, f:getHeight())
+            lx = lx + cw
+        end
+    end
+
     love.graphics.setColor(1, 1, 1)
 end
 

@@ -16,6 +16,7 @@ return {
     {
         id      = "norge",
         name    = "Norge",
+        country = "Norge",   -- flag on the map card
         free    = true,
         seed    = 1337,
         islands = {
@@ -32,8 +33,25 @@ return {
         ships = "src.data.ships",
     },
     {
-        id         = "amerika",
-        name       = "Amerika",
-        comingSoon = true,   -- teaser card only; the world doesn't exist yet
+        id      = "amerika",
+        name    = "Amerika",
+        country = "Amerika",
+        premium = true,      -- part of Kaptein-pakken (boats + Amerika)
+        seed    = 8492,
+        -- An archipelago America, west→east: snowy Alaska in the NW, desert
+        -- southwest (Los Angeles), green plains mid, lush northeast (New York,
+        -- Boston) and the green mid-Atlantic (Washington DC, Norfolk).
+        islands = {
+            { x = 2200, y = 1900, radius = 2400, biome = "snow" },    -- Alaska
+            { x = 2900, y = 5700, radius = 2000, biome = "desert" },  -- Los Angeles
+            { x = 4900, y = 6700, radius = 950,  biome = "desert" },  -- Mojave isle
+            { x = 5800, y = 3600, radius = 1500 },                    -- the plains
+            { x = 8600, y = 2700, radius = 1900, biome = "lush" },    -- New York
+            { x = 10300, y = 1700, radius = 1400, biome = "lush" },   -- Boston
+            { x = 9100, y = 5300, radius = 1600 },                    -- Washington DC
+            { x = 10600, y = 6500, radius = 1000 },                   -- Norfolk
+        },
+        ports = "src.data.ports_amerika",
+        ships = "src.data.ships_amerika",
     },
 }

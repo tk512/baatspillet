@@ -71,6 +71,7 @@ end
 
 function World:load(game)
     self.game    = game
+    self.ms      = game:mapState()          -- THIS world's progress bucket
     self.camera  = Camera.new()
     if game.phone then self.camera.zoom = config.PHONE.CAMERA_ZOOM end
     self.panning = false
@@ -146,7 +147,7 @@ function World:load(game)
 
     -- Fog of war: restore explored area from the save, then light up where the
     -- boat already is so the starting patch is visible.
-    self.fog = Fog.new(game.state.fog)
+    self.fog = Fog.new(self.ms.fog)
     self.fog:revealAround(self.boat.x, self.boat.y, config.FOG_REVEAL)
     self._fogSaveT = 0
 
@@ -164,10 +165,10 @@ function World:load(game)
     -- Treasure hunt: chests on sandbanks off the biggest islands. Placement is
     -- seeded; the save only remembers which are found / mapped.
     local foundSet = {}
-    for _, id in ipairs(game.state.treasuresFound or {}) do foundSet[id] = true end
+    for _, id in ipairs(self.ms.treasuresFound) do foundSet[id] = true end
     self.treasures = Treasure.build(self.terrain, foundSet)
     self.mapped = {}
-    for _, id in ipairs(game.state.treasuresMapped or {}) do self.mapped[id] = true end
+    for _, id in ipairs(self.ms.treasuresMapped) do self.mapped[id] = true end
     self.album       = nil    -- the album overlay, when open
     self.mapReveal   = nil    -- the "Finn skatten!" reveal card, when up
     self.winScreen   = nil    -- the grand all-found finale, when up
@@ -244,7 +245,8 @@ function World:scatterCity(port)
     -- PNG at assets/props/<sprite> later and it swaps in automatically). Which
     -- ones a town gets depends on its size + what it produces.
     local size = port.def.size or "small"
-    local big  = (size == "medium" or size == "large")
+    local metro = (size == "metropolis")
+    local big  = metro or (size == "medium" or size == "large")
     local fishing = port.def.produces and port.def.produces.mode == "cargo"
     local marks = {}
     if size ~= "tiny" then marks[#marks + 1] = { sprite = "props/church.png", fn = Objects.drawChurch } end
@@ -271,7 +273,9 @@ function World:scatterCity(port)
     end
     -- Big towns get a dense core of apartment blocks (cands are nearest-first, so
     -- the blocks cluster at the centre) ringed by cottages further out.
-    local blockCore = big and math.floor(spec.houses * 0.4) or 0
+    -- metropolis: over half the town is downtown high-rise blocks
+    local blockCore = metro and math.floor(spec.houses * 0.55)
+        or (big and math.floor(spec.houses * 0.4) or 0)
     local placed = 0
     for k = 1, #cands do
         if not taken[k] and placed < spec.houses then
@@ -554,7 +558,7 @@ function World:update(dt)
     end
     self._fogSaveT = self._fogSaveT + dt
     if self._fogDirty and self._fogSaveT > 8 then
-        self.game.state.fog = self.fog:serialize()
+        self.ms.fog = self.fog:serialize()
         self.game:save(); self._fogDirty = false; self._fogSaveT = 0
     end
 
@@ -779,7 +783,7 @@ function World:checkIslandDiscovery()
         local dx, dy = self.boat.x - isl.x, self.boat.y - isl.y
         local reach = (isl.radius or 520) + 200   -- "discovered" on reaching its coast
         if (dx * dx + dy * dy) < (reach * reach) and not self:isDiscovered(isl.id) then
-            table.insert(self.game.state.discoveredIslands, isl.id)
+            table.insert(self.ms.discoveredIslands, isl.id)
             self.game:save()
             self:showToast("Ny øy oppdaget!")
             Assets.playSfx("deliver")
@@ -818,7 +822,7 @@ function World:checkIslandFill()
 end
 
 function World:isDiscovered(id)
-    for _, d in ipairs(self.game.state.discoveredIslands) do
+    for _, d in ipairs(self.ms.discoveredIslands) do
         if d == id then return true end
     end
     return false
@@ -841,7 +845,7 @@ function World:revealTreasureMap(port)
     if self:activeTreasure() then return false end          -- one treasure at a time
     -- The very first map (never had one) is guaranteed so the hunt is introduced;
     -- after that it's an occasional surprise on delivery, not every time.
-    local everHad = #self.game.state.treasuresMapped > 0 or #self.game.state.treasuresFound > 0
+    local everHad = #self.ms.treasuresMapped > 0 or #self.ms.treasuresFound > 0
     if everHad and love.math.random() >= config.TREASURE.MAP_CHANCE then return false end
     local best, bestD
     for _, t in ipairs(self.treasures) do
@@ -853,7 +857,7 @@ function World:revealTreasureMap(port)
     end
     if not best then return false end
     self.mapped[best.id] = true
-    table.insert(self.game.state.treasuresMapped, best.id)
+    table.insert(self.ms.treasuresMapped, best.id)
     self.game:save()
     -- Defer the big "Finn skatten!" card until the dock screen closes, so it
     -- reads as its own moment after the harbourmaster (see World:update).
@@ -957,7 +961,8 @@ function World:updateRace(dt, active)
         if not active.cued and not self.dock and not self.latching then
             active.cued = true
             if not self.racer then self:spawnRacer(active) end
-            if not Assets.playNamedVoice("fort_deg") then Assets.playSfx("pirate_warn", 0.9) end
+            Assets.playSfx("pirate_warn", 0.9)     -- the warning dong, ALWAYS
+            Assets.playNamedVoice("fort_deg")      -- plus the voice when recorded
             if self.racer then Assets.startChase() end
             self:showToast("Fort deg, ta skatten før sjørøverne kommer!")
         end
@@ -978,8 +983,8 @@ end
 function World:pirateStealsTreasure(t)
     t.cued = nil                       -- so it cues again if re-mapped later
     self.mapped[t.id] = nil
-    for i, id in ipairs(self.game.state.treasuresMapped) do
-        if id == t.id then table.remove(self.game.state.treasuresMapped, i); break end
+    for i, id in ipairs(self.ms.treasuresMapped) do
+        if id == t.id then table.remove(self.ms.treasuresMapped, i); break end
     end
     self.game:save()
     if self.racer then self.racer:flee() end
@@ -1019,7 +1024,7 @@ end
 
 function World:winTreasure(t)
     t.found = true
-    table.insert(self.game.state.treasuresFound, t.id)
+    table.insert(self.ms.treasuresFound, t.id)
     self.game:addCoins(config.TREASURE.GOLD)     -- persists the save
     self.treasureFX[#self.treasureFX + 1] = { x = t.x, y = t.y, t = 0, good = t.good }
     Assets.playSfx("deliver")
@@ -1104,6 +1109,12 @@ end
 function World:updatePirate(dt)
     if self.pirate then
         self.pirate:update(dt, self.boat, self.terrain, function() self:pirateHit() end)
+        -- the moment it breaks off — however it was driven off — celebrate:
+        -- "sjørøverne rømmer!" (his own recording)
+        if self.pirate.state == "retreat" and not self.pirate.fleeCued then
+            self.pirate.fleeCued = true
+            Assets.playNamedVoice("sjorover_rommer")
+        end
         if self.pirate.dead then
             self.pirate = nil
             self.pirateCooldown = config.PIRATE.RESPAWN_GRACE
@@ -1340,7 +1351,7 @@ end
 -- reveals are otherwise only written every ~8s.
 function World:flushFog()
     if self._fogDirty then
-        self.game.state.fog = self.fog:serialize()
+        self.ms.fog = self.fog:serialize()
         self._fogDirty = false
     end
 end
@@ -1841,7 +1852,7 @@ function World:keypressed(key)
         for _, t in ipairs(self.treasures) do      -- DEV: reveal every treasure map
             if not t.found and not self.mapped[t.id] then
                 self.mapped[t.id] = true
-                table.insert(self.game.state.treasuresMapped, t.id)
+                table.insert(self.ms.treasuresMapped, t.id)
             end
         end
         self.game:save()

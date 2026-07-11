@@ -22,13 +22,14 @@ local function defaultState()
         selectedMap      = "norge",         -- world chosen on the map screen
         boatNames        = {},              -- player's name per boat id (absent = the boat's own)
         premium          = false,           -- the one "Kaptein-pakken" unlock (all premium content)
-        discoveredIslands = {},
         owned            = {},   -- one-time upgrades, e.g. owned.cannon = true
         food             = {},   -- consumable provisions, e.g. food.brod = 3
         ammo             = 0,    -- cannonballs left (the cannon comes with some)
         cannons          = 0,    -- cannons bought; extras fire a bit faster
-        treasuresFound   = {},   -- chest ids dug up (collectibles in the album)
-        treasuresMapped  = {},   -- chest ids a harbourmaster has revealed
+        -- Per-WORLD progress (fog, discovered islands, treasures) lives under
+        -- maps[mapId] — switching maps must never leak exploration between
+        -- worlds. See Game:mapState().
+        maps             = {},
     }
 end
 
@@ -191,10 +192,26 @@ function Game:reloadData()
     package.loaded["src.data.boats"] = nil
     package.loaded["src.data.maps"]  = nil
     package.loaded["src.data.ports"] = nil
+    package.loaded["src.data.ports_amerika"] = nil
+    package.loaded["src.data.ships_amerika"] = nil
     package.loaded["src.data.shop"]  = nil
     package.loaded["src.data.ships"] = nil
     self:loadData()
     self:reloadScene()
+end
+
+-- Per-world progress bucket for a map id (default: the selected map).
+-- Fog, discovered islands and treasure progress belong to a WORLD, not the
+-- player; gold/boats/premium stay global.
+function Game:mapState(id)
+    id = id or self.state.selectedMap or "norge"
+    self.state.maps = self.state.maps or {}
+    local ms = self.state.maps[id]
+    if not ms then
+        ms = { fog = nil, discoveredIslands = {}, treasuresFound = {}, treasuresMapped = {} }
+        self.state.maps[id] = ms
+    end
+    return ms
 end
 
 -- The player's name for a boat (falls back to the boat's own).
@@ -217,6 +234,7 @@ end
 function Game:applyMap(id)
     local m = self:getMapDef(id)
     if m.comingSoon then m = self.data.maps[1] end
+    if m.premium and not self:isPremium() then m = self.data.maps[1] end
     self.state.selectedMap = m.id
     config.WORLD_SEED = m.seed
     config.ISLANDS    = m.islands
@@ -277,8 +295,7 @@ function Game:loadSave()
             -- Merge defensively so an old/partial save still loads.
             self.state.coins = data.coins or self.state.coins
             self.state.unlockedBoats = data.unlockedBoats or self.state.unlockedBoats
-            self.state.discoveredIslands = data.discoveredIslands or self.state.discoveredIslands
-            self.state.fog = data.fog or self.state.fog
+            self.state.maps = data.maps or self.state.maps
             self.state.owned = data.owned or self.state.owned
             self.state.food = data.food or self.state.food
             self.state.ammo = data.ammo or self.state.ammo
@@ -291,8 +308,16 @@ function Game:loadSave()
             if data.cannons == nil and data.owned and data.owned.cannon then
                 self.state.cannons = 1
             end
-            self.state.treasuresFound = data.treasuresFound or self.state.treasuresFound
-            self.state.treasuresMapped = data.treasuresMapped or self.state.treasuresMapped
+            -- Pre-maps saves kept world progress at the top level: it all
+            -- belonged to the one world that existed — Norge.
+            if not data.maps and (data.fog or data.discoveredIslands
+                    or data.treasuresFound or data.treasuresMapped) then
+                local ms = self:mapState(data.selectedMap or "norge")
+                ms.fog = data.fog
+                ms.discoveredIslands = data.discoveredIslands or {}
+                ms.treasuresFound = data.treasuresFound or {}
+                ms.treasuresMapped = data.treasuresMapped or {}
+            end
             self.state.selectedBoat = data.selectedBoat or self.state.selectedBoat
             self.state.selectedMap = data.selectedMap or self.state.selectedMap
             -- Names are per boat; old saves had ONE boatName — it belonged to

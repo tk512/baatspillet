@@ -90,7 +90,7 @@ function PortScreen:newCoin()
         y = rnd(-sh * 2.4, -10),                      -- staggered so they rain in over time
         vx = rnd(-25, 25), vy = rnd(40, 160),
         spin = rnd(0, 6.28), spinsp = rnd(4, 10),
-        r = rnd(sh * 0.011, sh * 0.022),
+        r = rnd(sh * 0.016, sh * 0.030),
         floor = sh * 0.90 + rnd(-sh * 0.05, sh * 0.06), -- varied so the pile has depth
         rest = false,
     }
@@ -116,6 +116,7 @@ end
 function PortScreen:update(dt)
     self.t = self.t + dt
     if self.buyFlash > 0 then self.buyFlash = self.buyFlash - dt end
+    if (self.shakeT or 0) > 0 then self.shakeT = self.shakeT - dt end
     if self.storeMsg then
         self.storeMsg.t = self.storeMsg.t - dt
         if self.storeMsg.t <= 0 then self.storeMsg = nil end
@@ -275,9 +276,11 @@ function PortScreen:tryBuy(item)
         end
         self.world:showToast("Kjøpt: " .. item.name .. "!")
     else
-        -- can't afford -> show the subtraction the store exists to teach
+        -- can't afford -> the crate shakes its head "nuh-uh" + the words show
+        -- the subtraction the store exists to teach
         local need = item.price - game.state.coins
         self.storeMsg = { text = "Spar " .. need .. " til!", t = 2.5 }
+        self.shakeItem, self.shakeT = item.id, 0.45
         Assets.playSfx("bump")
     end
 end
@@ -775,12 +778,12 @@ function PortScreen:drawStorePanel(pw, ph)
 
     -- hanging trading-post sign: a weathered plank swaying gently on two
     -- chains, deep-carved gold lettering, doubloons for bolt heads
-    local fT = vfont(ih * 0.105)
+    local fT = vfont(ih * 0.095)
     love.graphics.setFont(fT)
     local title = "BUTIKK"
     local tw = fT:getWidth(title)
-    local sgW, sgH = tw + ih * 0.16, fT:getHeight() + ih * 0.045
-    local plY = iy + ih * 0.035
+    local sgW, sgH = tw + ih * 0.16, fT:getHeight() + ih * 0.008   -- flat plank
+    local plY = iy + ih * 0.018
     love.graphics.push()
     love.graphics.translate(pw / 2, plY)
     -- chains up to the frame
@@ -807,20 +810,16 @@ function PortScreen:drawStorePanel(pw, ph)
     love.graphics.print(title, -tw / 2, ty2)
     love.graphics.setColor(1, 0.95, 0.7, 0.35 + 0.15 * math.sin(love.timer.getTime() * 1.3))
     love.graphics.print(title, -tw / 2, ty2 - 1)
-    -- doubloon bolt heads in the corners
-    Icons.coin(-sgW / 2 + t * 4, sgH / 2, sgH * 0.14)
-    Icons.coin(sgW / 2 - t * 4, sgH / 2, sgH * 0.14)
     love.graphics.pop()
 
     -- your gold, centered under the sign (a coin + the running total)
     local fG = vfont(ih * 0.052)
     love.graphics.setFont(fG)
-    local gold = "Gull: " .. game.state.coins
+    local gold = "Du har " .. game.state.coins .. " gullmynter"
     local gw = fG:getWidth(gold)
-    local gy = iy + ih * 0.155
-    local cr = ih * 0.03
-    love.graphics.setColor(0.6, 0.45, 0.1); love.graphics.circle("fill", pw / 2 - gw / 2 - cr * 1.6, gy + fG:getHeight() / 2, cr + 1)
-    love.graphics.setColor(config.colors.gold); love.graphics.circle("fill", pw / 2 - gw / 2 - cr * 1.6, gy + fG:getHeight() / 2, cr)
+    local gy = iy + ih * 0.150                     -- roomy line under the flat sign
+    local cr = ih * 0.034
+    Icons.coin(pw / 2 - gw / 2 - cr * 1.7, gy + fG:getHeight() / 2, cr)
     love.graphics.setColor(config.colors.gold); love.graphics.print(gold, pw / 2 - gw / 2, gy)
 
     -- The goods grid (3 columns). Kanonkuler only exist once a cannon is
@@ -900,6 +899,12 @@ end
 -- unaffordable -> dimmed with a red price; affordable -> brightens on hover.
 function PortScreen:drawCrate(r, mx, my, t)
     local s = STORE
+    -- "nuh-uh": a refused crate shakes its head for a moment
+    if self.shakeItem == r.item.id and (self.shakeT or 0) > 0 then
+        local decay = self.shakeT / 0.45
+        love.graphics.push()
+        love.graphics.translate(math.sin(love.timer.getTime() * 45) * 6 * decay, 0)
+    end
     local game = self.world.game
     local item = r.item
     local rebuy  = item.food or item.ammo or item.stack     -- stocked, never "owned"
@@ -936,10 +941,25 @@ function PortScreen:drawCrate(r, mx, my, t)
     local pr = tostring(item.price)
     local prw = fp:getWidth(pr)
     local py = r.y + r.h * 0.815
-    local cr = r.h * 0.068
+    local cr = r.h * 0.085
     local coinX = r.x + r.w / 2 - prw / 2 - cr * 1.5
-    Icons.coin(coinX, py + fp:getHeight() / 2, cr)
-    love.graphics.setColor(afford and config.colors.gold or s.red)
+    local coinY = py + fp:getHeight() / 2
+    if afford or owned then
+        Icons.coin(coinX, coinY, cr)
+        love.graphics.setColor(config.colors.gold)
+    else
+        -- Can't afford: a GRAY coin with a red slash — "you lack the gold".
+        love.graphics.setColor(0.30, 0.28, 0.26)
+        love.graphics.circle("fill", coinX, coinY, cr + 1)
+        love.graphics.setColor(0.52, 0.50, 0.47)
+        love.graphics.circle("fill", coinX, coinY, cr)
+        love.graphics.setColor(0.85, 0.20, 0.15)
+        love.graphics.setLineWidth(math.max(2, cr * 0.3))
+        love.graphics.line(coinX - cr * 0.8, coinY + cr * 0.8,
+                           coinX + cr * 0.8, coinY - cr * 0.8)
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(0.85, 0.82, 0.75)
+    end
     love.graphics.print(pr, r.x + r.w / 2 - prw / 2, py)
 
     -- stock badge ("xN") in the top-right corner, when you have some aboard
@@ -953,18 +973,37 @@ function PortScreen:drawCrate(r, mx, my, t)
     end
 
     if owned then
-        love.graphics.setColor(0, 0, 0, 0.34); love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
-        love.graphics.setColor(s.red); love.graphics.setLineWidth(math.max(3, t * 1.5))
-        love.graphics.line(r.x + t * 3, r.y + t * 3, r.x + r.w - t * 3, r.y + r.h - t * 3)
-        love.graphics.line(r.x + r.w - t * 3, r.y + t * 3, r.x + t * 3, r.y + r.h - t * 3)
+        -- Yours already: celebrated, not crossed out — gold frame (the same
+        -- "bought" language as the boats) + a friendly green check badge.
+        love.graphics.setColor(0.95, 0.80, 0.36)
+        love.graphics.setLineWidth(math.max(2, t))
+        love.graphics.rectangle("line", r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+        love.graphics.setLineWidth(1)
+        local br = r.h * 0.11
+        local bxc, byc = r.x + r.w - br * 1.3, r.y + br * 1.3
+        love.graphics.setColor(0.10, 0.30, 0.12)
+        love.graphics.circle("fill", bxc, byc, br + 2)
+        love.graphics.setColor(0.30, 0.72, 0.32)
+        love.graphics.circle("fill", bxc, byc, br)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.setLineWidth(math.max(2, br * 0.28))
+        love.graphics.line(bxc - br * 0.45, byc + br * 0.05,
+                           bxc - br * 0.1, byc + br * 0.4)
+        love.graphics.line(bxc - br * 0.1, byc + br * 0.4,
+                           bxc + br * 0.5, byc - br * 0.35)
         love.graphics.setLineWidth(1)
     elseif not afford then
-        love.graphics.setColor(0, 0, 0, 0.20); love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
+        -- Too expensive right now: a light rest-dim; the FILLING COIN below
+        -- is the real signal — clicking still explains ("Spar X til!").
+        love.graphics.setColor(0, 0, 0, 0.14); love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
     elseif hover then
         love.graphics.setColor(s.buyhi[1], s.buyhi[2], s.buyhi[3], 0.9)
         love.graphics.setLineWidth(math.max(2, t))
         love.graphics.rectangle("line", r.x + 1, r.y + 1, r.w - 2, r.h - 2)
         love.graphics.setLineWidth(1)
+    end
+    if self.shakeItem == r.item.id and (self.shakeT or 0) > 0 then
+        love.graphics.pop()
     end
     love.graphics.setColor(1, 1, 1)
 end
