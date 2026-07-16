@@ -653,9 +653,8 @@ function BoatSelect:offerLayout()
     local bw = math.min((pw - pad * 2 - (n - 1) * bgap) / n, 170 * k)
     local bh = bw * 0.62
     local boatsY = y; y = y + bh + 10 * k
-    local subY = y;    y = y + 20 * k + 8 * k
-    local askY = y;    y = y + 24 * k + 12 * k
-    local kjopY = y;   y = y + btnH + 10 * k
+    local subY = y;    y = y + 20 * k + 14 * k
+    local kjopY = y;   y = y + btnH + 24 * k     -- air below the glowing button
     local rowY = y;    y = y + 44 * k + pad      -- Tilbake + Gjenopprett, one row
     local ph = y
     local px, py = (sw - pw) / 2, (sh - ph) / 2
@@ -669,7 +668,7 @@ function BoatSelect:offerLayout()
     local rowX = px + pw / 2 - rowW / 2
     return {
         k = k, x = px, y = py, w = pw, h = ph,
-        titleY = py + titleY, subY = py + subY, askY = py + askY,
+        titleY = py + titleY, subY = py + subY,
         showcase = showcase,
         kjop = { x = px + pw / 2 - 170 * k, y = py + kjopY, w = 340 * k, h = btnH },
         tilbake = { x = rowX, y = py + rowY, w = 190 * k, h = 44 * k },
@@ -762,11 +761,27 @@ function BoatSelect:drawOffer()
     local sub = "Alle de fine båtene – og hele Amerika-kartet! Betal én gang."
     love.graphics.print(sub, O.x + O.w / 2 - fonts.small:getWidth(sub) / 2, O.subY)
 
-    -- neutral, adult-directed: a fact about who buys, not a nudge to go beg
-    love.graphics.setFont(fonts.small)
-    local ask = "En voksen må hjelpe til med kjøpet"
-    love.graphics.setColor(W.text[1], W.text[2], W.text[3], 0.85)
-    love.graphics.print(ask, O.x + O.w / 2 - fonts.small:getWidth(ask) / 2, O.askY)
+    -- the adult note as a playful STICKER slapped on the card's corner
+    do
+        love.graphics.setFont(fonts.small)
+        local ask = "En voksen må hjelpe til!"
+        local aw2 = fonts.small:getWidth(ask)
+        local sh2 = fonts.small:getHeight() + 12 * O.k
+        love.graphics.push()
+        love.graphics.translate(O.x + O.w - aw2 * 0.42, O.y + sh2 * 0.9)
+        love.graphics.rotate(0.10)
+        love.graphics.setColor(0, 0, 0, 0.25)                       -- sticker shadow
+        love.graphics.rectangle("fill", -aw2 / 2 - 10 + 2, -sh2 / 2 + 3, aw2 + 20, sh2, 6, 6)
+        love.graphics.setColor(0.96, 0.90, 0.72)                    -- parchment
+        love.graphics.rectangle("fill", -aw2 / 2 - 10, -sh2 / 2, aw2 + 20, sh2, 6, 6)
+        love.graphics.setColor(0.80, 0.28, 0.22)                    -- red sticker border
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", -aw2 / 2 - 10, -sh2 / 2, aw2 + 20, sh2, 6, 6)
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(0.45, 0.20, 0.10)
+        love.graphics.print(ask, -aw2 / 2, -fonts.small:getHeight() / 2)
+        love.graphics.pop()
+    end
 
     gloriousButton("bs.kjop", O.kjop, "Kjøp  " .. IAP.price(), fonts.big, self.t)
     button("bs.cardback", O.tilbake, "Tilbake", fonts.small)

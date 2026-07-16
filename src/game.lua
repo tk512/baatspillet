@@ -26,6 +26,7 @@ local function defaultState()
         food             = {},   -- consumable provisions, e.g. food.brod = 3
         ammo             = 0,    -- cannonballs left (the cannon comes with some)
         cannons          = 0,    -- cannons bought; extras fire a bit faster
+        hintFindPort     = false,           -- one-time "Finn en havn!" shown?
         -- Per-WORLD progress (fog, discovered islands, treasures) lives under
         -- maps[mapId] — switching maps must never leak exploration between
         -- worlds. See Game:mapState().
@@ -252,7 +253,15 @@ function Game:getBoatDef(id)
 end
 
 -- Has the player bought the single premium pack (Kaptein-pakken)?
-function Game:isPremium() return self.state.premium == true end
+-- Development always owns it (no clicking through the pretend purchase):
+-- either dev env vars (BATSIM/BATDEV) or running UNFUSED — i.e. `love .`
+-- straight from the source tree. Shipped builds (iOS app, Mac dmg) are fused,
+-- so they are never affected. Runtime-only; nothing is written to the save.
+function Game:isPremium()
+    if config.DEV then return true end
+    if love.filesystem.isFused and not love.filesystem.isFused() then return true end
+    return self.state.premium == true
+end
 
 -- Do we own this boat? Free boats always; premium boats are all unlocked together
 -- by the one pack -- never bought individually.
@@ -327,6 +336,7 @@ function Game:loadSave()
                 self.state.boatNames[self.state.selectedBoat] = data.boatName
             end
             if data.premium ~= nil then self.state.premium = data.premium end
+            if data.hintFindPort ~= nil then self.state.hintFindPort = data.hintFindPort end
         end
     end
 end

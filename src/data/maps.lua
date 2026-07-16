@@ -38,18 +38,35 @@ return {
         country = "Amerika",
         premium = true,      -- part of Kaptein-pakken (boats + Amerika)
         seed    = 8492,
-        -- An archipelago America, west→east: snowy Alaska in the NW, desert
-        -- southwest (Los Angeles), green plains mid, lush northeast (New York,
-        -- Boston) and the green mid-Atlantic (Washington DC, Norfolk).
+        -- TWO CONTINENTS split by a winding central strait, ~60% land:
+        -- overlapping islands merge into landmasses, and the narrow gaps
+        -- between them become FJORDS. West: snowy Alaska shelf → green Pacific
+        -- coast → desert southwest. East: lush northeast → green mid-Atlantic
+        -- and south. A mid-strait island is the crossing waypoint, and an
+        -- arctic islet guards the northern passage.
         islands = {
-            { x = 2200, y = 1900, radius = 2400, biome = "snow" },    -- Alaska
-            { x = 2900, y = 5700, radius = 2000, biome = "desert" },  -- Los Angeles
-            { x = 4900, y = 6700, radius = 950,  biome = "desert" },  -- Mojave isle
-            { x = 5800, y = 3600, radius = 1500 },                    -- the plains
-            { x = 8600, y = 2700, radius = 1900, biome = "lush" },    -- New York
-            { x = 10300, y = 1700, radius = 1400, biome = "lush" },   -- Boston
-            { x = 9100, y = 5300, radius = 1600 },                    -- Washington DC
-            { x = 10600, y = 6500, radius = 1000 },                   -- Norfolk
+            -- west continent
+            { x = 1600, y = 1300, radius = 2500, biome = "snow" },
+            { x = 3700, y = 1000, radius = 1900, biome = "snow" },
+            { x = 4900, y = 2100, radius = 1500 },
+            { x = 1500, y = 3600, radius = 2000 },
+            { x = 3300, y = 3300, radius = 1700 },
+            { x = 2300, y = 5900, radius = 2400, biome = "desert" },  -- Los Angeles
+            { x = 4500, y = 6600, radius = 1900, biome = "desert" },
+            { x = 4700, y = 4900, radius = 1600, biome = "desert" },
+            -- east continent
+            { x = 7600, y = 1200, radius = 2000, biome = "lush" },
+            { x = 9500, y = 1000, radius = 1900, biome = "lush" },    -- Boston
+            { x = 11000, y = 2200, radius = 1700, biome = "lush" },
+            { x = 8300, y = 2900, radius = 1800, biome = "lush" },    -- New York
+            { x = 10300, y = 4000, radius = 1800 },
+            { x = 8000, y = 5000, radius = 1800 },
+            { x = 9800, y = 6200, radius = 1900 },                    -- Washington DC
+            { x = 11300, y = 5600, radius = 1400 },                   -- Norfolk
+            { x = 6900, y = 6500, radius = 1600 },
+            -- the strait
+            { x = 6100, y = 3900, radius = 1250 },                    -- crossing waypoint
+            { x = 6300, y = 300,  radius = 900, biome = "snow" },     -- arctic islet
         },
         ports = "src.data.ports_amerika",
         ships = "src.data.ships_amerika",

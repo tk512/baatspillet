@@ -4,6 +4,15 @@
 <dict>
 	<key>method</key>
 	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>8K92QASAAM</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>skep.batspillet</key>
+		<string>Batspillet AppStore</string>
+	</dict>
 	<key>uploadSymbols</key>
 	<true/>
 </dict>

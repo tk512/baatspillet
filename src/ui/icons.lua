@@ -38,12 +38,12 @@ end
 -- Draw `kind` centred at (x, y), CONTAINED in a `size`×`size` box: the photo's
 -- longest side is scaled to exactly `size`, so the whole product is visible.
 -- The Butikk's square display windows use this.
-function Icons.drawBox(kind, x, y, size)
+function Icons.drawBox(kind, x, y, size, alpha)
     local img = Assets.image("icons/" .. tostring(kind) .. ".png")
     if img then
         if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
         local scale = size / math.max(img:getWidth(), img:getHeight())
-        love.graphics.setColor(1, 1, 1)
+        love.graphics.setColor(1, 1, 1, alpha or 1)
         love.graphics.draw(img, x, y, 0, scale, scale, img:getWidth() / 2, img:getHeight() / 2)
         love.graphics.setColor(1, 1, 1)
         return

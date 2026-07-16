@@ -203,6 +203,14 @@ function World:load(game)
     self.fireworks = {}      -- mini delivery fireworks over the town
     self.pendingFireworks = nil   -- port to celebrate once the dock closes
 
+    -- Brand-new captain (never docked, no gold): one-time "Finn en havn!"
+    if not game.state.hintFindPort and game.state.coins == 0 then
+        self.findPortHint = 8
+        game.state.hintFindPort = true
+        game:save()
+        Assets.playNamedVoice("finn_en_havn")   -- optional clip
+    end
+
     collectgarbage("collect")
 
     if self:allTreasuresFound() then
@@ -636,6 +644,12 @@ function World:update(dt)
 
     self:updateEating(dt)
 
+    if self.dockPulse then
+        self.dockPulse.t = self.dockPulse.t + dt
+        if self.dockPulse.t > 1.0 then self.dockPulse = nil end
+    end
+    if (self.findPortHint or 0) > 0 then self.findPortHint = self.findPortHint - dt end
+
     if self.game.touchCamera then
         -- Touch: no edge-hover scrolling (a tap near the edge pins the synthetic
         -- mouse there and would scroll forever); glide after the boat instead,
@@ -1007,6 +1021,9 @@ function World:spawnRacer(t)
             if x > 40 and y > 40 and x < config.WORLD_WIDTH - 40 and y < config.WORLD_HEIGHT - 40
                 and self.terrain:isWater(x, y) then
                 self.racer = Pirate.new(x, y, self.boat.maxSpeed)
+                -- user-group tuning: kids on small screens lost the race by a
+                -- hair — the racer sails a notch slower than the hunter would
+                self.racer.maxSpeed = self.racer.maxSpeed * 0.90
                 self.racer.goal = t
                 self.racer.angle = math.atan2(t.y - y, t.x - x)
                 return
@@ -1373,7 +1390,9 @@ function World:draw()
 
     if not self.dock and not self.album and not self.mapReveal and not self.winScreen
         and not self.pause then
+        self:drawDockPulse()         -- "you picked this harbour" ring
         self:drawMooring()           -- rope + glints while tied up at a pier
+        self:drawFindPortHint()      -- first-voyage "Finn en havn!" banner
         self:drawMissionPointer()    -- "go this way!" hint (cargo destination)
         self:drawTreasurePointer()   -- orange "to the treasure!" arrow + ring
         self:drawPirateIndicator()   -- red "danger this way!" arrow when off-screen
@@ -1429,6 +1448,59 @@ end
 -- While on a mission, draw a big bouncing arrow above the boat pointing toward
 -- the destination town, plus a pulsing ring on that town, so a non-reader
 -- always knows where to go next.
+-- Tap-a-harbour feedback: the HARBOUR itself lights up — a warm additive
+-- glow over the town + pier and a handful of gold glints, fading over ~0.9s.
+function World:drawDockPulse()
+    local dp = self.dockPulse
+    if not dp then return end
+    local a = 1 - dp.t / 1.0
+    local tx2, ty2 = self.camera:worldToScreen(dp.p.x, dp.p.y)
+    local px, py = self.camera:worldToScreen(dp.p:dockPoint())
+    local r = Scale.overlay(120)
+    love.graphics.setBlendMode("add")
+    love.graphics.setColor(1.0, 0.72, 0.25, 0.22 * a)     -- the town glows
+    love.graphics.ellipse("fill", tx2, ty2, r * 1.25, r * 0.75)
+    love.graphics.setColor(1.0, 0.85, 0.4, 0.18 * a)      -- ...and the pier
+    love.graphics.ellipse("fill", px, py, r * 0.55, r * 0.35)
+    love.graphics.setBlendMode("alpha")
+    for i = 1, 6 do                                        -- gold glints popping
+        local ph = dp.t * 3 - i * 0.12
+        if ph > 0 and ph < 0.6 then
+            local f = math.sin(ph / 0.6 * math.pi)
+            local gx = tx2 + math.cos(i * 2.4) * r * (0.3 + i * 0.12)
+            local gy = ty2 + math.sin(i * 2.4) * r * (0.2 + i * 0.07)
+            local sr = Scale.overlay(7) * f
+            love.graphics.setColor(1, 0.95, 0.7, f * a)
+            love.graphics.line(gx - sr, gy, gx + sr, gy)
+            love.graphics.line(gx, gy - sr, gx, gy + sr)
+        end
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- The very first voyage: a friendly pulsing "Finn en havn!" so a brand-new
+-- captain knows what to do (shown once ever; voice hook finn_en_havn).
+function World:drawFindPortHint()
+    if (self.findPortHint or 0) <= 0 then return end
+    local fonts = self.game.fonts
+    local sw = love.graphics.getWidth()
+    love.graphics.setFont(fonts.big)
+    local msg = "Finn en havn!"
+    local pulse = 1 + 0.04 * math.sin(love.timer.getTime() * 4)
+    local mx2 = sw / 2 - fonts.big:getWidth(msg) / 2
+    local my2 = love.graphics.getHeight() * 0.16
+    love.graphics.push()
+    love.graphics.translate(sw / 2, my2 + fonts.big:getHeight() / 2)
+    love.graphics.scale(pulse, pulse)
+    love.graphics.translate(-sw / 2, -(my2 + fonts.big:getHeight() / 2))
+    love.graphics.setColor(0.1, 0.08, 0.05, 0.6)
+    love.graphics.print(msg, mx2 + 3, my2 + 3)
+    love.graphics.setColor(1, 0.85, 0.3, math.min(1, self.findPortHint))
+    love.graphics.print(msg, mx2, my2)
+    love.graphics.pop()
+    love.graphics.setColor(1, 1, 1)
+end
+
 -- A visible "you are moored": a sagging rope from the boat to the pier tip
 -- plus soft glints on the planks — while gliding in, while the dock screen is
 -- up, and while still lying beside the pier after it closes.
@@ -1500,15 +1572,17 @@ function World:drawMissionPointer()
     love.graphics.translate(hx, hy)
     love.graphics.rotate(ang)
     love.graphics.scale(s, s)
-    -- canonical arrow pointing +x (tip → head corners → shaft → tail)
+    -- a swashbuckling pennant-arrow: swallowtail cut at the back, like a
+    -- pirate flag streaming toward the goal (user-group: "more pirate!")
     local arrow = {
-         34,   0,   -- tip
-         14, -20,   -- head top corner
-         14,  -8,   -- step in to shaft
-        -30,  -8,   -- shaft tail top
-        -30,   8,   -- shaft tail bottom
-         14,   8,   -- step out
-         14,  20,   -- head bottom corner
+         36,   0,   -- tip
+         15, -20,   -- head top corner
+         15,  -9,   -- step in to shaft
+        -30, -14,   -- tail top
+        -18,   0,   -- the swallowtail notch
+        -30,  14,   -- tail bottom
+         15,   9,   -- step out
+         15,  20,   -- head bottom corner
     }
     love.graphics.setColor(0, 0, 0, 0.28)                -- soft drop shadow
     love.graphics.push(); love.graphics.translate(3, 4)
@@ -1605,7 +1679,7 @@ function World:drawTreasurePointer()
     local hy = by - Scale.overlay(78) + math.sin(t * 3) * 5 + math.sin(ang) * hop2
     local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(1.1)
     love.graphics.push(); love.graphics.translate(hx, hy); love.graphics.rotate(ang); love.graphics.scale(s, s)
-    local arrow = { 30, 0, 12, -17, 12, -7, -26, -7, -26, 7, 12, 7, 12, 17 }
+    local arrow = { 32, 0, 13, -18, 13, -8, -26, -12, -15, 0, -26, 12, 13, 8, 13, 18 }
     love.graphics.setColor(0, 0, 0, 0.28)
     love.graphics.push(); love.graphics.translate(3, 4); love.graphics.polygon("fill", arrow); love.graphics.pop()
     love.graphics.setColor(TREASURE_ARROW); love.graphics.polygon("fill", arrow)
@@ -1917,6 +1991,15 @@ function World:mousepressed(x, y, button)
         self.shipPopup = nil                -- tap open water -> close any card and sail
         local wx, wy = self.camera:screenToWorld(x, y)
         self.boat:setDestination(wx, wy)
+        for _, p in ipairs(self.ports) do   -- tapped ON a harbour? light it up
+            local dpx, dpy = p:dockPoint()
+            local d1 = (wx - dpx) ^ 2 + (wy - dpy) ^ 2      -- the pier itself
+            local d2 = (wx - p.x) ^ 2 + (wy - p.y) ^ 2      -- the town itself
+            if d1 < 130 * 130 or d2 < 170 * 170 then
+                self.dockPulse = { p = p, t = 0 }
+                break
+            end
+        end
     elseif button == 2 then
         self.panning = true
     end

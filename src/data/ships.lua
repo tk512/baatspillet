@@ -37,4 +37,7 @@ return {
     { photo = "hurtigruten_nordlys", name = "MS Nordlys", country = "Norge", type = "Hurtigruteskip", cruise = true, visits = { "bergen", "oslo" } },
     { photo = "rem_inspektor", name = "Rem Inspektør", country = "Norge", type = "Arbeidsskip", cruise = true },
     { photo = "norsk_ubat", name = "Norsk ubåt", country = "Norge", type = "Ubåt", cruise = true, submarine = true },
+    -- The police boat: hangs around Hjellestad, drifting slowly (leash, no
+    -- ferry route — its photo only reads well in one direction).
+    { photo = "hjellestad_politikammer", name = "Hjellestad Politikammer", country = "Norge", type = "Politibåt", scale = 0.9, cruise = true, home = "hjellestad", speed = 10, leashOnly = true, heading = -math.pi / 2 },  -- drifts screen-northeast
 }

@@ -36,6 +36,14 @@
 	<string>UIStatusBarStyleLightContent</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- SDL (the game engine) references these APIs, so Apple requires purpose
+	     strings even though Båtspillet never uses camera or microphone. -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Brukes kun hvis du kobler til en trådløs spillkontroller.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Båtspillet bruker ikke kameraet. Nøkkelen kreves av spillmotoren.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Båtspillet bruker ikke mikrofonen. Nøkkelen kreves av spillmotoren.</string>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UIStatusBarHidden</key>

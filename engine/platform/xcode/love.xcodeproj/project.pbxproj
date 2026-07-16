@@ -7,9 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BA0B1AF0000000000000B002 /* bt_iap.m in Sources (BATSPILLET) */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B001 /* bt_iap.m */; };
-		BA0B1AF0000000000000B006 /* batspillet.love in Resources (BATSPILLET) */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B005 /* batspillet.love */; };
-		BA0B1AF0000000000000B004 /* StoreKit.framework in Frameworks (BATSPILLET) */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B003 /* StoreKit.framework */; };
 		05D204142D37FEFA00C1EE87 /* SDL3.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; };
 		05D204152D37FEFA00C1EE87 /* SDL3.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
@@ -19,6 +16,9 @@
 		A93E6E5510420B57007D418B /* Lua.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A93E6E5310420B57007D418B /* Lua.framework */; };
 		A93E6EED10420BA8007D418B /* love.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A93E6A3410420AC0007D418B /* love.cpp */; };
 		A9F169AD109E825000FC83D1 /* libmodplug.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = A9F16926109E7BAD00FC83D1 /* libmodplug.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		BA0B1AF0000000000000B002 /* bt_iap.m in Sources */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B001 /* bt_iap.m */; };
+		BA0B1AF0000000000000B004 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B003 /* StoreKit.framework */; };
+		BA0B1AF0000000000000B006 /* batspillet.love in Resources */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B005 /* batspillet.love */; };
 		CE73F8001EEB64150052DAB3 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE73F7FF1EEB64150052DAB3 /* AVFoundation.framework */; };
 		D9596F642CBAC98B00BE58C1 /* SDL3.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; };
 		D9596F662CBAC99F00BE58C1 /* SDL3.xcframework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -116,9 +116,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		BA0B1AF0000000000000B001 /* bt_iap.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = bt_iap.m; path = ../../../ios/storekit/bt_iap.m; sourceTree = "<group>"; };
-		BA0B1AF0000000000000B005 /* batspillet.love */ = {isa = PBXFileReference; lastKnownFileType = file; name = batspillet.love; path = "../../../Båtspillet.love"; sourceTree = "<group>"; };
-		BA0B1AF0000000000000B003 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
 		8D1107320486CEB800E47090 /* love.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = love.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9255E021043195A00BA1496 /* vorbis.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = vorbis.framework; path = macosx/Frameworks/vorbis.framework; sourceTree = "<group>"; };
@@ -128,6 +125,9 @@
 		A93E6E5310420B57007D418B /* Lua.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Lua.framework; path = macosx/Frameworks/Lua.framework; sourceTree = "<group>"; };
 		A97E3842132A9EDE00198A2F /* love-macosx.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = "love-macosx.plist"; path = "macosx/love-macosx.plist"; sourceTree = "<group>"; };
 		A9F16926109E7BAD00FC83D1 /* libmodplug.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libmodplug.framework; path = macosx/Frameworks/libmodplug.framework; sourceTree = "<group>"; };
+		BA0B1AF0000000000000B001 /* bt_iap.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = bt_iap.m; path = ../../../ios/storekit/bt_iap.m; sourceTree = "<group>"; };
+		BA0B1AF0000000000000B003 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
+		BA0B1AF0000000000000B005 /* batspillet.love */ = {isa = PBXFileReference; lastKnownFileType = file; name = batspillet.love; path = "../../../Båtspillet.love"; sourceTree = "<group>"; };
 		CE73F7FF1EEB64150052DAB3 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS10.3.sdk/System/Library/Frameworks/AVFoundation.framework; sourceTree = DEVELOPER_DIR; };
 		D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = SDL3.xcframework; path = shared/Frameworks/SDL3.xcframework; sourceTree = "<group>"; };
 		D9DAB9352963CF5F00C64820 /* harfbuzz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = harfbuzz.framework; path = macosx/Frameworks/harfbuzz.framework; sourceTree = "<group>"; };
@@ -175,7 +175,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BA0B1AF0000000000000B004 /* StoreKit.framework in Frameworks (BATSPILLET) */,
+				BA0B1AF0000000000000B004 /* StoreKit.framework in Frameworks */,
 				FA84DE78277CB55B002674C6 /* CoreHaptics.framework in Frameworks */,
 				FAE64A9D2072738600BC7981 /* Metal.framework in Frameworks */,
 				FA15DFB41F9B8D9E0042AB22 /* libbz2.tbd in Frameworks */,
@@ -232,6 +232,7 @@
 				29B97317FDCFA39411CA2CEA /* Resources */,
 				FA577A9D16C7262E00860150 /* Source */,
 				FA577A9316C7217800860150 /* liblove.xcodeproj */,
+				522C27A93009283100835644 /* Recovered References */,
 			);
 			name = love;
 			sourceTree = "<group>";
@@ -243,6 +244,16 @@
 				FAC1A448196F5DC600125284 /* license.txt */,
 			);
 			name = Resources;
+			sourceTree = "<group>";
+		};
+		522C27A93009283100835644 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				BA0B1AF0000000000000B001 /* bt_iap.m */,
+				BA0B1AF0000000000000B003 /* StoreKit.framework */,
+				BA0B1AF0000000000000B005 /* batspillet.love */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		FA0B78D41A958301000E1D17 /* Products */ = {
@@ -421,7 +432,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BA0B1AF0000000000000B006 /* batspillet.love in Resources (BATSPILLET) */,
+				BA0B1AF0000000000000B006 /* batspillet.love in Resources */,
 				FA5D249C1A96CF4300C6FC8F /* Images.xcassets in Resources */,
 				FA7C636A1A9C49570000FD29 /* Launch Screen.xib in Resources */,
 			);
@@ -442,7 +453,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BA0B1AF0000000000000B002 /* bt_iap.m in Sources (BATSPILLET) */,
+				BA0B1AF0000000000000B002 /* bt_iap.m in Sources */,
 				FA0B7F301A95AC7D000E1D17 /* love.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -694,8 +705,9 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 8K92QASAAM;
 				ENABLE_BITCODE = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -749,8 +761,9 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 8K92QASAAM;
 				ENABLE_BITCODE = NO;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -800,8 +813,9 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 8K92QASAAM;
 				ENABLE_BITCODE = NO;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

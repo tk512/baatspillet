@@ -19,8 +19,9 @@ function PauseMenu.new(world)
     -- is the platform's job (hardware buttons / silent switch); desktop keeps
     -- the M key for grown-ups.
     self.buttons = {
-        { label = "Fortsett",   action = function() world:closePause() end },
-        { label = "Gå ut",      action = function() world:exitToMenu() end },
+        { label = "Fortsett", action = function() world:closePause() end,
+          face = { 0.30, 0.50, 0.28 }, hi = { 0.44, 0.68, 0.40 }, lo = { 0.15, 0.28, 0.14 } },
+        { label = "Gå ut",    action = function() world:exitToMenu() end },
     }
     return self
 end
@@ -70,8 +71,10 @@ function PauseMenu:draw()
         local label = r.btn.label
         if type(label) == "function" then label = label() end
         Retro.button("pause" .. i, r, label, fonts.normal,
-            { face = { 0.36, 0.25, 0.15 }, hi = { 0.52, 0.38, 0.24 },
-              lo = { 0.22, 0.15, 0.09 }, textCol = { 0.98, 0.94, 0.80 } })
+            { face = r.btn.face or { 0.36, 0.25, 0.15 },
+              hi = r.btn.hi or { 0.52, 0.38, 0.24 },
+              lo = r.btn.lo or { 0.22, 0.15, 0.09 },
+              textCol = { 0.98, 0.94, 0.80 } })
     end
     love.graphics.setColor(1, 1, 1)
 end

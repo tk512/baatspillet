@@ -117,6 +117,10 @@ function PortScreen:update(dt)
     self.t = self.t + dt
     if self.buyFlash > 0 then self.buyFlash = self.buyFlash - dt end
     if (self.shakeT or 0) > 0 then self.shakeT = self.shakeT - dt end
+    if self.riseFx then
+        self.riseFx.t = self.riseFx.t + dt
+        if self.riseFx.t > 0.9 then self.riseFx = nil end
+    end
     if self.storeMsg then
         self.storeMsg.t = self.storeMsg.t - dt
         if self.storeMsg.t <= 0 then self.storeMsg = nil end
@@ -269,6 +273,17 @@ function PortScreen:tryBuy(item)
     if ok then
         self.buyFlash, self.buyItem = 1.4, item
         self.storeMsg = nil
+        -- the bought item leaps out of its crate and floats away (the crate
+        -- keeps its picture — you can buy more lemons)
+        if self._crates then
+            for _, c in ipairs(self._crates) do
+                if c.item.id == item.id then
+                    self.riseFx = { icon = item.icon, x = c.x + c.w / 2,
+                                    y = c.y + c.h * 0.4, s = c.h * 0.5, t = 0 }
+                    break
+                end
+            end
+        end
         Assets.playSfx("coin")
         Assets.playSfx("deliver")              -- happy little fanfare
         if item.food then
@@ -459,15 +474,21 @@ function PortScreen:drawPortrait(L, t)
         self:drawHarborMaster(ix, iy, iw, ih)
     end
 
-    -- name plate under the portrait; "Havnesjef <name>" if the town data names them
-    local f = vfont(R.h * 0.075)
+    -- name plate under the portrait — BIG and on a carved plank (user-group
+    -- feedback: too small on iOS)
+    local f = vfont(R.h * 0.098)
     love.graphics.setFont(f)
     local master = self.port.def and self.port.def.master
     local label = master and ("Havnesjef " .. master) or "Havnesjef"
-    love.graphics.setColor(0, 0, 0, 0.5)
-    love.graphics.print(label, R.x + R.w / 2 - f:getWidth(label) / 2 + 1, R.y + R.h - f:getHeight() - 3)
+    local lw = f:getWidth(label)
+    local plH = f:getHeight() + 8
+    local plY = R.y + R.h - plH - 2
+    bevel(R.x + R.w / 2 - lw / 2 - 12, plY, lw + 24, plH, th.title, th.hi, th.lo,
+        math.max(2, math.floor(plH * 0.14)), true)
+    love.graphics.setColor(0, 0, 0, 0.55)
+    love.graphics.print(label, R.x + R.w / 2 - lw / 2 + 1, plY + 5)
     love.graphics.setColor(th.accent)
-    love.graphics.print(label, R.x + R.w / 2 - f:getWidth(label) / 2, R.y + R.h - f:getHeight() - 4)
+    love.graphics.print(label, R.x + R.w / 2 - lw / 2, plY + 4)
 end
 
 -- Pixel-art placeholder harbour master, used until a real portrait is dropped in.
@@ -868,6 +889,12 @@ function PortScreen:drawStorePanel(pw, ph)
                        w = cw, h = ch, item = items[i] }
         self._crates[i] = rect
         self:drawCrate(rect, mx, my, t)
+    end
+    if self.riseFx then                     -- the just-bought item floats up
+        local fx = self.riseFx
+        local pr2 = fx.t / 0.9
+        Icons.drawBox(fx.icon, fx.x, fx.y - pr2 * pr2 * ih * 0.4,
+            fx.s * (1 + pr2 * 0.7), 1 - pr2 * pr2)
     end
 
     -- bottom bar: barrels flanking the Tilbake / Seil! buttons

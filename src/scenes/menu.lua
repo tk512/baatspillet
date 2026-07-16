@@ -174,12 +174,18 @@ local pixelCloud = Scene.cloud
 
 function Menu:buildBackground(sw, sh)
     local VH = VRES_H
-    local sx_s, sy_s = sw / VH, sh / VH    -- per-axis upscale (fills exactly)
-    local VW = math.floor(sw / sx_s + 0.5)
+    -- UNIFORM upscale (like the boat/map choosers): the canvas matches the
+    -- screen's aspect, so circles stay circles — the old square-canvas
+    -- stretch turned the sun into an egg on wide iPhone screens.
+    local scale = sh / VH
+    local sx_s, sy_s = scale, scale
+    local VW = math.floor(sw / scale + 0.5)
 
-    local fw = math.floor(math.min(VW, VH) * 0.05)      -- frame border (vres px)
+    -- Mobile: no wooden frame — small screens get every pixel of sea
+    local mobile = (love.system.getOS() == "iOS") or (os.getenv("BATSIM") ~= nil)
+    local fw = mobile and 0 or math.floor(math.min(VW, VH) * 0.05)
     local t1 = math.max(2, math.floor(fw * 0.34))       -- outer raised edge
-    local t2 = math.max(1, math.floor(fw * 0.20))       -- inner sunken groove
+    local t2 = mobile and 0 or math.max(1, math.floor(fw * 0.20))
     local sx, sy = fw + t2, fw + t2
     local sceneW, sceneH = VW - 2 * sx, VH - 2 * sy
     local horizonY = sy + math.floor(sceneH * 0.46)
@@ -190,9 +196,12 @@ function Menu:buildBackground(sw, sh)
     love.graphics.clear(0, 0, 0, 0)
     love.graphics.setColor(1, 1, 1, 1)
 
-    -- wooden frame slab + sunken inner well (the scene sits inside the well)
-    Retro.bevel(0, 0, VW, VH, WOOD.face, WOOD.hi, WOOD.lo, t1, true)
-    Retro.bevel(fw, fw, VW - 2 * fw, VH - 2 * fw, WOOD.deep, WOOD.hi, WOOD.lo, t2, false)
+    -- wooden frame slab + sunken inner well (desktop/iPad charm; skipped on
+    -- mobile where the scene fills the whole screen)
+    if fw > 0 then
+        Retro.bevel(0, 0, VW, VH, WOOD.face, WOOD.hi, WOOD.lo, t1, true)
+        Retro.bevel(fw, fw, VW - 2 * fw, VH - 2 * fw, WOOD.deep, WOOD.hi, WOOD.lo, t2, false)
+    end
 
     -- Dithered sky: a blue-to-pale gradient, crosshatched with the Bayer matrix.
     Scene.dithGradient(sx, sy, sceneW, horizonY - sy,
@@ -644,10 +653,14 @@ function Menu:drawArtist(sw, sh)
     -- Anchor to the SAFE area's right edge, not the screen's: on notch/Dynamic
     -- Island iPhones the cutout sits exactly where this corner is in landscape.
     local sax, say, saw, sah = love.window.getSafeArea()
-    local right = math.min(sw, sax + saw)
-    local bottom = math.min(sh, say + sah)
-    local x = right - sw * 0.015 - iw          -- left edge (anchored to safe right)
-    local by = bottom - sh * 0.01              -- his bottom near the safe bottom
+    -- The PHOTO hugs the true screen edge (looks right on every phone); only
+    -- the TEXT respects the safe area, clamped separately below — so the
+    -- credit never hides under a notch no matter the rotation.
+    local safeRight = math.min(sw, sax + saw)
+    local x = sw - sw * 0.006 - iw             -- left edge (true right-edge hug)
+    -- He PEEKS UP from the screen's true bottom edge (the safe-area bottom made
+    -- him float once the wooden frame was gone — the frame used to hide that gap)
+    local by = sh + sh * 0.005
     local y = by - ih
     local bob = math.sin(self.t * 1.6) * 4     -- gentle life
 
@@ -656,8 +669,11 @@ function Menu:drawArtist(sw, sh)
     love.graphics.setColor(1, 1, 1)
     love.graphics.draw(img, x, y + bob, 0, scale, scale)
 
-    -- "Spillkunstner / Finn-Erik" credit above his head
-    local cx = x + iw / 2
+    -- "Spillkunstner / Finn-Erik" credit above his head — centred on him, but
+    -- clamped inside the safe area so the notch can't swallow it
+    local fs0, fn0 = self.game.fonts.small, self.game.fonts.normal
+    local maxW = math.max(fs0:getWidth("Spillkunstner"), fn0:getWidth("Finn-Erik (5)"))
+    local cx = math.min(x + iw / 2, safeRight - maxW / 2 - 6)
     local fs, fn = self.game.fonts.small, self.game.fonts.normal
     local function center(font, txt, yy, col)
         love.graphics.setFont(font)

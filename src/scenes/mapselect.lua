@@ -195,7 +195,7 @@ function MapSelect:drawCard(c)
     love.graphics.setFont(f)
     local label = def.comingSoon and (def.name .. " – kommer snart!") or def.name
     if def.comingSoon then f = self.game.fonts.normal; love.graphics.setFont(f) end
-    local ly = iy + ih + (c.h * 0.18 - f:getHeight()) / 2 - t
+    local ly = iy + ih + (c.h * 0.18 - f:getHeight()) / 2 + t - 1   -- air above the name
     love.graphics.setColor(0, 0, 0, 0.4)
     love.graphics.print(label, c.x + c.w / 2 - f:getWidth(label) / 2 + 2, ly + 2)
     love.graphics.setColor(W.text)

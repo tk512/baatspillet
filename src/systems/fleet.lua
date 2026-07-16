@@ -105,6 +105,7 @@ function Fleet:addShip(gx, gy, angle, opts)
         look = look,
         moving = opts.moving or false,
         speed = opts.speed or 0, turn = opts.turn, turnDir = opts.turnDir,
+        patrol = opts.patrol, baseSpeed = opts.speed or 0,
         bounce = opts.bounce or false,
         home = opts.home,        -- {x,y,r,min}: shuttle leash for a home-port boat
         route = opts.route,      -- ferry stops [{x,y},...]; loops, dwelling at each
@@ -282,11 +283,15 @@ end
 function Fleet:buildFerryRoute(port)
     local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
     local base = math.atan2(port.seaDy, port.seaDx)
+    -- measure from the PIER TIP, not the town centre: ambient boats must
+    -- never dwell on top of the dock art (or in the player's berth)
+    local dpx, dpy = port.x, port.y
+    if port.dockPoint then dpx, dpy = port:dockPoint() end
     local ax, ay
-    for _, dist in ipairs({ 320, 380, 450 }) do
+    for _, dist in ipairs({ 300, 380, 460 }) do
         for _, side in ipairs({ 0, 0.5, -0.5, 1.0, -1.0 }) do
             local a = base + side
-            local x, y = port.x + math.cos(a) * dist, port.y + math.sin(a) * dist
+            local x, y = dpx + math.cos(a) * dist, dpy + math.sin(a) * dist
             if x > 60 and y > 60 and x < W - 60 and y < H - 60 and self:openSea(x, y, 60) then
                 ax, ay = x, y; break
             end
@@ -342,7 +347,7 @@ function Fleet:scatterAmbientBoats(count)
             local opts = { moving = false, look = lookForDef(d) }
             if d.cruise then
                 opts.moving = true
-                opts.speed = config.AMBIENT_CRUISE_SPEED
+                opts.speed = d.speed or config.AMBIENT_CRUISE_SPEED
                 opts.bounce = true
                 if d.visits then                 -- liner calling at its cities
                     local list = {}
@@ -353,7 +358,12 @@ function Fleet:scatterAmbientBoats(count)
                     if #list > 0 then opts.visits = list end
                 end
                 local home = d.home and portById(self.ports, d.home)
-                local route = home and self:buildFerryRoute(home)
+                if d.patrol and home then     -- excitable: speeds up near the player
+                    opts.patrol = d.patrol
+                end
+                -- leashOnly: no A→B ferry route — the boat just hangs around
+                -- its island (fewer heading flips for one-sided sprites)
+                local route = (not d.leashOnly) and home and self:buildFerryRoute(home)
                 if route then                    -- ferry: spawn at stop A, bound for B
                     opts.route = route
                     opts.dwell = config.AMBIENT_HOME_DWELL
@@ -371,6 +381,7 @@ function Fleet:scatterAmbientBoats(count)
                         cx, cy, ca = self:findCruiseLane(config.AMBIENT_CRUISE_LANE)
                     end
                     if cx then gx, gy, angle = cx, cy, ca end   -- else: any spot, still bounces
+                    if d.heading then angle = d.heading end     -- data-driven drift direction
                 end
             end
             if gx then self:addShip(gx, gy, angle, opts) end
@@ -585,6 +596,12 @@ function Fleet:update(dt)
         if s.moving then
             local step = dt
             local dx, dy = s.x - bx, s.y - by
+            -- patrol boats get EXCITED when the player is near: full throttle
+            if s.patrol then
+                local near = s.patrol.near or 1700
+                s.speed = ((dx * dx + dy * dy) < near * near)
+                    and (s.patrol.speed or 150) or s.baseSpeed
+            end
             if (dx * dx + dy * dy) > far2 then
                 s.lodT = (s.lodT or 0) + dt
                 if s.lodT >= L.STEP then step = s.lodT; s.lodT = 0

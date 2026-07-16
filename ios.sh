@@ -22,6 +22,7 @@ cd "$(dirname "$0")"
 
 ENGINE="${ENGINE:-$PWD/engine}"
 SIM_NAME="${SIM_NAME:-iPad Pro 13-inch (M4)}"
+TEAM_ID="${TEAM_ID:-8K92QASAAM}"   # baked into the vendored project too
 BUNDLE_ID=skep.batspillet
 XCODEPROJ="$ENGINE/platform/xcode/love.xcodeproj"
 
@@ -45,7 +46,6 @@ fi
 # Needs a signing team: TEAM_ID=XXXXXXXXXX ./ios.sh device
 # (free personal team works — the id is in Xcode ▸ Settings ▸ Accounts).
 if [ "${1:-}" = "device" ]; then
-    : "${TEAM_ID:?set TEAM_ID=<your team id> (Xcode ▸ Settings ▸ Accounts)}"
     cp ios/love-ios.plist "$ENGINE/platform/xcode/ios/love-ios.plist"
     ./build.sh love
     echo ">> building for device (automatic signing, team $TEAM_ID)…"
@@ -61,14 +61,14 @@ fi
 # ── App Store archive + export (needs the paid developer account) ──────────
 # TEAM_ID=XXXXXXXXXX ./ios.sh archive → .ipa under engine/build/export
 if [ "${1:-}" = "archive" ]; then
-    : "${TEAM_ID:?set TEAM_ID=<your team id>}"
     cp ios/love-ios.plist "$ENGINE/platform/xcode/ios/love-ios.plist"
     ./build.sh love
     BUILD_NO="$(date +%Y%m%d%H%M)"   # unique, increasing — Apple requires it per upload
     echo ">> archiving (build $BUILD_NO)…"
-    xcodebuild -project "$XCODEPROJ" -scheme love-ios -configuration Release         -destination "generic/platform=iOS" -derivedDataPath "$ENGINE/build"         -archivePath "$ENGINE/build/Batspillet.xcarchive"         -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic         CURRENT_PROJECT_VERSION="$BUILD_NO"         DEVELOPMENT_TEAM="$TEAM_ID" -quiet archive
+    # Manual DISTRIBUTION signing: works with zero registered devices
+    xcodebuild -project "$XCODEPROJ" -scheme love-ios -configuration Release         -destination "generic/platform=iOS" -derivedDataPath "$ENGINE/build"         -archivePath "$ENGINE/build/Batspillet.xcarchive"         CODE_SIGN_STYLE=Manual         CODE_SIGN_IDENTITY="Apple Distribution"         PROVISIONING_PROFILE_SPECIFIER="Batspillet AppStore"         CURRENT_PROJECT_VERSION="$BUILD_NO"         DEVELOPMENT_TEAM="$TEAM_ID" -quiet archive
     echo ">> exporting .ipa for App Store Connect…"
-    xcodebuild -exportArchive -archivePath "$ENGINE/build/Batspillet.xcarchive"         -exportOptionsPlist ios/ExportOptions.plist         -exportPath "$ENGINE/build/export" -allowProvisioningUpdates
+    xcodebuild -exportArchive -archivePath "$ENGINE/build/Batspillet.xcarchive"         -exportOptionsPlist ios/ExportOptions.plist         -exportPath "$ENGINE/build/export"
     echo ">> upload with: xcrun altool --upload-app … or Xcode Organizer / Transporter"
     exit 0
 fi

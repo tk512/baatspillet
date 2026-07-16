@@ -11,6 +11,7 @@
 
 local config = require("src.config")
 local utf8  = require("utf8")
+local Scale = require("src.ui.scale")
 local Retro  = require("src.ui.retro")
 
 local Minimap = {}
@@ -94,7 +95,8 @@ function Minimap:draw()
 
     -- Frame: a wooden plaque sized to the world's aspect ratio, top-right.
     local t  = math.max(2, math.floor(fonts.small:getHeight() * 0.20))
-    local iw = math.floor(math.max(170, math.min(260, sw * 0.18)))
+    local iw = Scale.phone and math.floor(math.max(135, math.min(185, sw * 0.14)))
+        or math.floor(math.max(170, math.min(260, sw * 0.18)))
     local ih = math.floor(iw * self.h / self.w)
     local outerW, outerH = iw + t * 4, ih + t * 4
     local ox = sw - 16 - outerW
@@ -189,7 +191,7 @@ function Minimap:draw()
     -- the map's left edge and dips into the map itself (fonts.normal is
     -- Scale.ui-driven, so it sizes itself correctly on iPhone/iPad too).
     do
-        local f = fonts.normal
+        local f = fonts.big   -- big and proud; a little overflow is charm
         love.graphics.setFont(f)
         local label = "Båtspillet"
         local lx = ox + t * 2 + 4                    -- left-aligned on the plaque
