@@ -1,98 +1,84 @@
 #!/usr/bin/env python3
-# Generate the Båtspillet app icon (1024x1024, opaque — App Store requires no
-# alpha) from the Sundferjen photo: sunny sky, sea with wave glints, the ferry
-# front and center. Output: assets/icon/icon-1024.png, and it is installed into
-# the vendored engine's iOS appiconset as a single-size icon (Xcode 14+ derives
-# every size from the 1024 automatically).
+# Build the app icons from the hand-made master (assets/icon/batlogo-master.png,
+# the low-poly ferry). The master has rounded corners with BLACK behind them, so
+# it becomes two derivatives:
+#
+#   assets/icon/icon-1024.png          FULL-BLEED square for iOS (corners
+#                                      inpainted with the neighbouring art —
+#                                      Apple applies its own rounded mask)
+#   assets/icon/batlogo-rounded.png    the master with TRANSPARENT corners,
+#                                      for macOS icns + marketing use
+#
+# The iOS one is installed into the vendored engine's appiconset (single-size;
+# Xcode derives every size from the 1024).
 #
 #   python3 tools/make_icon.py
 import os
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-S = 1024
-img = Image.new("RGB", (S, S))
-d = ImageDraw.Draw(img)
+SRC = os.path.join(ROOT, "assets/icon/batlogo-master.png")
 
-# sky: light azure -> pale near the horizon
-horizon = int(S * 0.42)
-for y in range(horizon):
-    t = y / horizon
-    d.line([(0, y), (S, y)], fill=(
-        int(0x5e + (0xc9 - 0x5e) * t),
-        int(0x9d + (0xe4 - 0x9d) * t),
-        int(0xd8 + (0xf2 - 0xd8) * t)))
+im = Image.open(SRC).convert("RGB")
+W, H = im.size
+px = im.load()
 
-# sea: teal -> deep blue
-for y in range(horizon, S):
-    t = (y - horizon) / (S - horizon)
-    d.line([(0, y), (S, y)], fill=(
-        int(0x4f - 0x22 * t),
-        int(0x7d - 0x2e * t),
-        int(0x99 - 0x1f * t)))
+# The black outside the rounded corners: near-black pixels inside the four
+# corner boxes (radius measured ~230px at 1254; use a generous box).
+R = 260
+def outside(x, y):
+    r, g, b = px[x, y]
+    return r + g + b <= 60
 
-# sun with a soft glow, upper right
-glow = Image.new("RGB", (S, S), (0, 0, 0))
-gd = ImageDraw.Draw(glow)
-gd.ellipse([S * 0.66, S * 0.02, S * 1.02, S * 0.38], fill=(90, 70, 20))
-glow = glow.filter(ImageFilter.GaussianBlur(60))
-img = Image.blend(img, Image.blend(img, glow, 0.0), 0.0)  # keep img; use paste below
-from PIL import ImageChops
-img = ImageChops.add(img, glow)
-d = ImageDraw.Draw(img)
-d.ellipse([S * 0.72, S * 0.08, S * 0.96, S * 0.32], fill=(0xff, 0xe9, 0x8f))
-d.ellipse([S * 0.76, S * 0.12, S * 0.92, S * 0.28], fill=(0xff, 0xf4, 0xc0))
+corners = [(0, 0, 1, 1), (W - 1, 0, -1, 1), (0, H - 1, 1, -1), (W - 1, H - 1, -1, -1)]
 
-# wave glints on the sea
-import random
-random.seed(7)
-for i in range(46):
-    y = random.randint(horizon + 30, S - 40)
-    x = random.randint(20, S - 120)
-    w = random.randint(40, 130)
-    a = 0.5 + 0.5 * random.random()
-    c = (int(0x8a * a + 0x4f * (1 - a)), int(0xb5 * a + 0x7d * (1 - a)), int(0xc9 * a + 0x99 * (1 - a)))
-    d.rounded_rectangle([x, y, x + w, y + 10], radius=5, fill=c)
+# 1) FULL-BLEED: crop past the rounded corners AND the dark anti-aliased rim
+#    around the master's border — the art has margin to spare, so a ~4.5%
+#    inset yields a clean edge-to-edge square (Apple rounds it itself).
+inset = int(W * 0.045)
+bleed = im.crop((inset, inset, W - inset, H - inset))
 
-# the ferry, big and proud, sitting on the horizon-ish line
-boat = Image.open(os.path.join(ROOT, "assets/boats/boat1.png")).convert("RGBA")
-bw = int(S * 0.92)
-bh = int(boat.height * bw / boat.width)
-boat = boat.resize((bw, bh), Image.LANCZOS)
-bx, by = (S - bw) // 2, int(S * 0.56) - bh // 2
+# THE HOUSE STYLE: pixelated on a 128-cell grid, 32 colours with
+# Floyd-Steinberg dithering — the old Sierra VGA look (the sky and sea carry
+# a soft dither weave; railings and the flag stay crisp). Restrained on
+# purpose: grid/colours are the two taste knobs.
+def pixelate(img, grid=128, colors=32):
+    small = img.resize((grid, grid), Image.LANCZOS)
+    small = small.quantize(colors=colors, dither=Image.Dither.FLOYDSTEINBERG).convert("RGB")
+    return small.resize((1024, 1024), Image.NEAREST)
 
-# soft shadow/reflection under the hull
-sh = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-sd = ImageDraw.Draw(sh)
-sd.ellipse([bx + bw * 0.06, by + bh * 0.82, bx + bw * 0.94, by + bh * 1.12], fill=(10, 30, 45, 130))
-sh = sh.filter(ImageFilter.GaussianBlur(18))
-img.paste(sh, (0, 0), sh)
-img.paste(boat, (bx, by), boat)
+bleed = pixelate(bleed)
+out1 = os.path.join(ROOT, "assets/icon/icon-1024.png")
+bleed.save(out1)
+print("wrote", out1)
 
-# sink the hull INTO the sea: repaint water over its bottom slice, then a
-# continuous foam waterline where steel meets water
-d = ImageDraw.Draw(img)
-wl = by + int(bh * 0.80)
-for y in range(wl, min(S, by + bh + 20)):
-    t = (y - horizon) / (S - horizon)
-    d.line([(0, y), (S, y)], fill=(
-        int(0x4f - 0x22 * t), int(0x7d - 0x2e * t), int(0x99 - 0x1f * t)))
-d.rounded_rectangle([bx - 30, wl - 10, bx + bw + 30, wl + 12], radius=11,
-                    fill=(0xea, 0xf4, 0xf8))
-d.rounded_rectangle([bx + bw * 0.15, wl + 16, bx + bw * 0.5, wl + 30], radius=7,
-                    fill=(0xbf, 0xd9, 0xe4))
+# 2) TRANSPARENT-CORNER version (macOS / marketing)
+rounded = im.convert("RGBA")
+rpx = rounded.load()
+for cx, cy, dx, dy in corners:
+    for j in range(R):
+        y = cy + dy * j
+        for i in range(R):
+            x = cx + dx * i
+            if outside(x, y):
+                r, g, b, _ = rpx[x, y]
+                rpx[x, y] = (r, g, b, 0)
+            else:
+                break
+# same pixel treatment, alpha preserved
+rgb = pixelate(rounded.convert("RGB"))
+alpha = rounded.split()[3].resize((128, 128), Image.LANCZOS).resize((1024, 1024), Image.NEAREST)
+rounded = rgb.convert("RGBA")
+rounded.putalpha(alpha)
+out2 = os.path.join(ROOT, "assets/icon/batlogo-rounded.png")
+rounded.save(out2)
+print("wrote", out2)
 
-out = os.path.join(ROOT, "assets/icon")
-os.makedirs(out, exist_ok=True)
-master = os.path.join(out, "icon-1024.png")
-img.save(master)
-print("wrote", master)
-
-# install into the vendored engine's iOS appiconset (single-size, Xcode 14+)
+# 3) install the full-bleed icon into the vendored engine's iOS appiconset
 iconset = os.path.join(ROOT, "engine/platform/xcode/Images.xcassets/iOS AppIcon.appiconset")
 for f in os.listdir(iconset):
     os.remove(os.path.join(iconset, f))
-img.save(os.path.join(iconset, "icon-1024.png"))
+bleed.save(os.path.join(iconset, "icon-1024.png"))
 with open(os.path.join(iconset, "Contents.json"), "w") as f:
     f.write('{\n  "images" : [\n    {\n      "filename" : "icon-1024.png",\n'
             '      "idiom" : "universal",\n      "platform" : "ios",\n'

@@ -113,20 +113,13 @@ function BoatSelect:buildBackground(sw, sh)
     Scene.dithGradient(0, horizon, VW, VH - horizon,
         config.colors.water_top, config.colors.water_deep, 8)
 
-    -- horizon islands (grass crest over a sandy base), like the title screen's
+    -- horizon depth + islands with tree tufts, like the title screen's
+    Scene.hazeHills(0, VW, horizon, VH)
     local grass, gdk = config.colors.grass.top, config.colors.grass.lip
     local sand = config.colors.sand.top
-    local function island(cx, halfW, height)
-        Scene.hill(cx, horizon + math.floor(VH * 0.008), halfW, math.floor(height * 0.35), sand, sand)
-        Scene.hill(cx, horizon, halfW * 0.84, height, gdk, grass)
-    end
-    island(VW * 0.11, VW * 0.085, VH * 0.10)
-    island(VW * 0.68, VW * 0.055, VH * 0.07)
-    island(VW * 0.92, VW * 0.095, VH * 0.13)
-
-    Scene.cloud(VW * 0.22, VH * 0.10, VW * 0.07)
-    Scene.cloud(VW * 0.52, VH * 0.055, VW * 0.045)
-    Scene.cloud(VW * 0.70, VH * 0.14, VW * 0.055)
+    Scene.island(VW * 0.11, horizon, VW * 0.085, VH * 0.10, grass, gdk, sand)
+    Scene.island(VW * 0.68, horizon, VW * 0.055, VH * 0.07, grass, gdk, sand)
+    Scene.island(VW * 0.92, horizon, VW * 0.095, VH * 0.13, grass, gdk, sand)
 
     local sunX, sunY, sunR = VW * 0.85, VH * 0.115, math.floor(VH * 0.06)
     Scene.sun(sunX, sunY, sunR)
@@ -136,6 +129,18 @@ function BoatSelect:buildBackground(sw, sh)
     love.graphics.setColor(1, 1, 1)
     self.bg, self.bgW, self.bgH = cv, sw, sh
     self.bgScale, self.bgHorizon = scale, horizon * scale
+
+    -- the shared live layer (sun rays, glitter, drifting clouds, gulls)
+    self.liveScene = {
+        x = 0, y = 0, w = sw, h = sh,
+        horizon = horizon * scale, blk = math.max(2, scale), scale = scale,
+        sun = { x = sunX * scale, y = sunY * scale, r = sunR * scale },
+        clouds = Scene.makeClouds({
+            { w = 0.07, yf = 0.10, speed = 8 },
+            { w = 0.045, yf = 0.055, speed = 5 },
+            { w = 0.055, yf = 0.15, speed = 6 },
+        }, VW, 0, VH, scale),
+    }
 end
 
 function BoatSelect:drawBackground(sw, sh)
@@ -144,6 +149,7 @@ function BoatSelect:drawBackground(sw, sh)
     end
     love.graphics.setColor(1, 1, 1)
     love.graphics.draw(self.bg, 0, 0, 0, self.bgScale, self.bgScale)
+    Scene.drawLive(self.liveScene, self.t)
 
     -- tiny sailboats drifting across the horizon band
     local t = self.t
@@ -542,7 +548,7 @@ function BoatSelect:drawPreview(L, def)
         -- spin the rendered 3D-model frames like a turntable (centred in the preview)
         love.graphics.push()
         love.graphics.translate(L.cx, L.previewY + bob)
-        Objects.drawBoatFrames(def.frames, 0, 0, self.t * 0.7, L.previewW * 1.1,
+        Objects.drawBoatFrames(def.frames, 0, 0, self.t * 0.7, L.previewW * 0.85,
             def.frameOffset, def.frameCW, { 1, 1, 1 }, 0.5)
         love.graphics.pop()
     elseif def.model then
@@ -572,6 +578,49 @@ function BoatSelect:drawPreview(L, def)
         local ry = L.previewY + bob * 0.3
         ropeAcross(L.cx - rw, L.cx + rw, ry, 22 * L.k, math.max(3, 7 * L.k))
         padlock(L.cx, ry + 22 * L.k + 34 * L.k, 52 * L.k)
+    end
+
+    -- The artist's boat gets a tiny hanging sign under the hull: his own name
+    -- is the one word a pre-reader recognizes, plus a little heart. Swings
+    -- gently and rides the boat's bob. Data-driven: boats.lua `artist`.
+    if def.artist then
+        local f = self.game.fonts.small
+        local name, rest = def.artist, " har laget denne!"
+        local nw, rw2 = f:getWidth(name), f:getWidth(rest)
+        local heart = 10 * L.k
+        local pw = nw + rw2 + heart + 30 * L.k
+        local ph = f:getHeight() + 10 * L.k
+        local rl = 11 * L.k                              -- rope length
+        love.graphics.push()
+        love.graphics.translate(L.cx, L.previewY + L.previewW * 0.10 + bob * 0.8)
+        love.graphics.rotate(math.sin(self.t * 1.1) * 0.04)
+        love.graphics.scale(0.8, 0.8)      -- compact: the strip below stays clear
+        love.graphics.setColor(0.62, 0.50, 0.34)         -- two short ropes
+        love.graphics.setLineWidth(math.max(2, 2.5 * L.k))
+        love.graphics.line(-pw * 0.30, 0, -pw * 0.30, rl)
+        love.graphics.line(pw * 0.30, 0, pw * 0.30, rl)
+        love.graphics.setColor(0.34, 0.24, 0.15)         -- the little plank
+        love.graphics.rectangle("fill", -pw / 2, rl, pw, ph, 4 * L.k, 4 * L.k)
+        love.graphics.setColor(0.52, 0.38, 0.24)
+        love.graphics.setLineWidth(math.max(1, 1.5 * L.k))
+        love.graphics.rectangle("line", -pw / 2 + 2 * L.k, rl + 2 * L.k, pw - 4 * L.k, ph - 4 * L.k, 3 * L.k, 3 * L.k)
+        love.graphics.setFont(f)
+        local tx0 = -(nw + rw2 + heart + 4 * L.k) / 2
+        local ty0 = rl + (ph - f:getHeight()) / 2
+        love.graphics.setColor(1, 0.85, 0.35)            -- his name pops gold
+        love.graphics.print(name, tx0, ty0)
+        love.graphics.setColor(0.93, 0.88, 0.78)
+        love.graphics.print(rest, tx0 + nw, ty0)
+        local hx = tx0 + nw + rw2 + 4 * L.k + heart / 2  -- and a little heart
+        local hy = ty0 + f:getHeight() / 2
+        love.graphics.setColor(0.90, 0.25, 0.30)
+        love.graphics.circle("fill", hx - heart * 0.22, hy - heart * 0.12, heart * 0.28)
+        love.graphics.circle("fill", hx + heart * 0.22, hy - heart * 0.12, heart * 0.28)
+        love.graphics.polygon("fill", hx - heart * 0.48, hy - heart * 0.02,
+            hx + heart * 0.48, hy - heart * 0.02, hx, hy + heart * 0.5)
+        love.graphics.setLineWidth(1)
+        love.graphics.pop()
+        love.graphics.setColor(1, 1, 1)
     end
 end
 

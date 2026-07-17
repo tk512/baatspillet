@@ -68,8 +68,15 @@ if [ "${1:-}" = "archive" ]; then
     # Manual DISTRIBUTION signing: works with zero registered devices
     xcodebuild -project "$XCODEPROJ" -scheme love-ios -configuration Release         -destination "generic/platform=iOS" -derivedDataPath "$ENGINE/build"         -archivePath "$ENGINE/build/Batspillet.xcarchive"         CODE_SIGN_STYLE=Manual         CODE_SIGN_IDENTITY="Apple Distribution"         PROVISIONING_PROFILE_SPECIFIER="Batspillet AppStore"         CURRENT_PROJECT_VERSION="$BUILD_NO"         DEVELOPMENT_TEAM="$TEAM_ID" -quiet archive
     echo ">> exporting .ipa for App Store Connect…"
-    xcodebuild -exportArchive -archivePath "$ENGINE/build/Batspillet.xcarchive"         -exportOptionsPlist ios/ExportOptions.plist         -exportPath "$ENGINE/build/export"
-    echo ">> upload with: xcrun altool --upload-app … or Xcode Organizer / Transporter"
+    # xcodebuild polls every Xcode-known Apple ID and whines about stale ones;
+    # with manual signing none are needed — filter that noise, keep real errors
+    EXPLOG="$ENGINE/build/export-log.txt"
+    if ! xcodebuild -exportArchive -archivePath "$ENGINE/build/Batspillet.xcarchive"         -exportOptionsPlist ios/ExportOptions.plist         -exportPath "$ENGINE/build/export" > "$EXPLOG" 2>&1; then
+        cat "$EXPLOG"; exit 1
+    fi
+    grep -vE "IDEDistribution|DVTServices|DVTPortal|DVTDeveloper|DVTAppleID|session has expired|Failed to log in|creationTimestamp|httpCode|protocolVersion|requestUrl|responseId|resultCode|resultString|userLocale|userString|payload = |NSLocalized|NSUnderlying|^\}|^    \}" "$EXPLOG" || true
+    mv -f "$ENGINE/build/export/love.ipa" "$ENGINE/build/export/Batspillet.ipa" 2>/dev/null || true
+    echo ">> engine/build/export/Batspillet.ipa — drag into Transporter to deliver"
     exit 0
 fi
 

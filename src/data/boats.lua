@@ -20,7 +20,20 @@ return {
         turn     = 1.8,
         capacity = 2,
         sprite   = "boat1.png",
+        artist   = "Finn-Erik",        -- his boat: hangs a small credit sign in the chooser
         color    = {0.85, 0.30, 0.25},
+    },
+    {
+        id       = "nasse_noff",
+        name     = "Nasse Nøff",       -- stubby little tug-ferry, free boat #2
+        speed    = 155,
+        accel    = 95,
+        turn     = 1.7,
+        capacity = 3,
+        -- 8-view turnsheet frames (raw/bat-turnsheet.png via tools/make_turnsheet.py)
+        frames   = "nasse_noff",
+        spriteWidth = 118,             -- gameplay-only size (preview scales itself)
+        color    = {0.16, 0.22, 0.32}, -- navy hull for the placeholder fallback
     },
     {
         id       = "fishing_boat",

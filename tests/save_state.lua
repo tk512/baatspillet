@@ -242,6 +242,20 @@ eq(Game:isPremium(), true, "premium: persisted")
 eq(Game:getBoatDef("finnes_ikke").id, Game.data.boats[1].id,
     "boats: unknown id falls back to the first boat")
 
+-- utf8: json \u decoding + latin-1 save repair ------------------------------------
+eq(json.decode('{"n": "T\\u00f8ffe"}').n, "T\195\184ffe",
+    "json: \\u00f8 decodes to UTF-8 bytes, not Latin-1")
+eq(json.decode('{"n": "\\u0041"}').n, "A", "json: ascii \\u escape")
+eq(Game.repairUtf8("Nasse N\195\184ff"), "Nasse N\195\184ff",
+    "repairUtf8: valid UTF-8 untouched")
+eq(Game.repairUtf8("T\248ffe"), "T\195\184ffe",
+    "repairUtf8: Latin-1 bytes re-encoded to UTF-8")
+eq(Game.repairUtf8(nil), nil, "repairUtf8: non-strings pass through")
+-- a save written by the old decoder: corrupt name is repaired on load
+reset('{"boatNames": {"fishing_boat": "T\248ffe"}}')
+eq(Game.state.boatNames.fishing_boat, "T\195\184ffe",
+    "loadSave: Latin-1 boat name repaired to UTF-8")
+
 -- ---------------------------------------------------------------------------------
 print(string.format("%d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

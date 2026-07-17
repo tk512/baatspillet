@@ -212,9 +212,8 @@ function Menu:buildBackground(sw, sh)
     Scene.dithGradient(sx, horizonY, sceneW, seaBottom - horizonY + 1,
         config.colors.water_top, config.colors.water_deep, 8)
 
-    -- a few drifting clouds high in the sky
-    pixelCloud(sx + sceneW * 0.24, sy + sceneH * 0.14, sceneW * 0.12)
-    pixelCloud(sx + sceneW * 0.55, sy + sceneH * 0.08, sceneW * 0.08)
+    -- (clouds are no longer baked -- they drift live; see the cloud sprites
+    -- built after the canvas, and the drift pass in draw())
 
     -- sun (upper right) with a soft layered glow + shimmer on the water
     local sunX, sunY = sx + sceneW * 0.81, sy + sceneH * 0.18
@@ -222,16 +221,13 @@ function Menu:buildBackground(sw, sh)
     Scene.sun(sunX, sunY, sunR)
     Scene.sunReflection(sunX, horizonY, seaBottom, sunR, sceneH * 0.018)
 
-    -- islands on the horizon (grass crest over a sandy beach base)
+    -- haze back-range + islands with tree tufts (shared pixel-scene language)
+    Scene.hazeHills(sx, sceneW, horizonY, sceneH)
     local grass, gdk = config.colors.grass.top, config.colors.grass.lip
     local sand = config.colors.sand.top
-    local function island(cx, halfW, height)
-        pixelHill(cx, horizonY + math.floor(sceneH * 0.01), halfW, math.floor(height * 0.35), sand, sand)
-        pixelHill(cx, horizonY, halfW * 0.84, height, gdk, grass)
-    end
-    island(sx + sceneW * 0.17, sceneW * 0.11, sceneH * 0.15)
-    island(sx + sceneW * 0.46, sceneW * 0.07, sceneH * 0.09)
-    island(sx + sceneW * 0.90, sceneW * 0.12, sceneH * 0.19)
+    Scene.island(sx + sceneW * 0.17, horizonY, sceneW * 0.11, sceneH * 0.15, grass, gdk, sand)
+    Scene.island(sx + sceneW * 0.46, horizonY, sceneW * 0.07, sceneH * 0.09, grass, gdk, sand)
+    Scene.island(sx + sceneW * 0.90, horizonY, sceneW * 0.12, sceneH * 0.19, grass, gdk, sand)
 
     -- a little lighthouse standing ON the left island's crest
     local lhX = sx + sceneW * 0.21
@@ -250,11 +246,21 @@ function Menu:buildBackground(sw, sh)
 
     love.graphics.setCanvas()
     love.graphics.setColor(1, 1, 1, 1)
+
+    -- Cloud sprites for the live layer (shared builder; drifted in draw()).
+    self.clouds = Scene.makeClouds({
+        { w = 0.12, yf = 0.14, speed = 9 },
+        { w = 0.08, yf = 0.07, speed = 5 },
+        { w = 0.10, yf = 0.24, speed = 7 },
+    }, sceneW, sy, sceneH, sy_s)
+
     -- scene rect in screen coords (the animated layer draws at full res)
     self.bgScaleX, self.bgScaleY = sx_s, sy_s
     self.scene = {
         x = sx * sx_s, y = sy * sy_s, w = sceneW * sx_s, h = sceneH * sy_s,
-        horizon = horizonY * sy_s, blk = math.max(2, sy_s),
+        horizon = horizonY * sy_s, blk = math.max(2, sy_s), scale = sy_s,
+        sun = { x = sunX * sx_s, y = sunY * sy_s, r = sunR * sy_s },   -- for the live glow
+        clouds = self.clouds,
     }
     return cv
 end
@@ -471,6 +477,10 @@ function Menu:draw()
     -- over the wooden frame).
     local S = self.scene
     love.graphics.setScissor(S.x, S.y, S.w, S.h)
+
+    -- The shared live layer: breathing sun + rays, water glitter, drifting
+    -- clouds, wheeling gulls (src/ui/pixelscene.lua, same on every chooser).
+    Scene.drawLive(S, self.t)
 
     -- gently rolling foam wave-rows over the sea
     for r = 1, 6 do

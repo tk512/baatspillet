@@ -148,7 +148,10 @@ end
 function Boat:cargoCount() return #self.cargo end
 function Boat:hasRoom()    return #self.cargo < self.capacity end
 
-function Boat:setDestination(x, y) self.destX, self.destY, self.coastT = x, y, 0 end
+function Boat:setDestination(x, y)
+    self.destX, self.destY, self.coastT = x, y, 0
+    self.destBumps = 0
+end
 function Boat:clearDestination()   self.destX, self.destY = nil, nil end
 
 local function angleDiff(a, b)
@@ -247,6 +250,16 @@ function Boat:softHit()
     if self.bumpCooldown == 0 then
         Assets.playSfx("bump")
         self.bumpCooldown = 0.35
+        -- A tapped course that runs into land would ping-pong forever (bounce
+        -- away, auto-steer back, bounce again). After a few bumps, give the
+        -- tap up and glide out -- the next tap starts fresh.
+        if self.destX then
+            self.destBumps = (self.destBumps or 0) + 1
+            if self.destBumps >= 3 then
+                self:clearDestination()
+                if self.touchCoast then self.coastT = 0.8 end
+            end
+        end
     end
 end
 

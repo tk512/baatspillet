@@ -412,16 +412,34 @@ function World:spawnPowerPlant()
 end
 
 -- Find a nearby water tile to start the boat on (spirals out from a guess).
+-- First pass insists on OPEN water -- clearance in all 8 directions -- so the
+-- boat never wakes up wedged in a crevice between two islands (Amerika's
+-- mid-strait did exactly that); second pass takes any water as a fallback.
 function World:findStartWater(gx, gy)
     local T = config.TILE
-    for r = 0, 40 do
-        for a = 0, math.max(1, r * 6) do
-            local ang = (a / math.max(1, r * 6)) * math.pi * 2
-            local x = gx + math.cos(ang) * r * T
-            local y = gy + math.sin(ang) * r * T
-            if x > 0 and y > 0 and x < config.WORLD_WIDTH and y < config.WORLD_HEIGHT
-               and self.terrain:isWater(x, y) then
-                return x, y
+    local DIRS = { {1,0},{-1,0},{0,1},{0,-1},{0.7,0.7},{0.7,-0.7},{-0.7,0.7},{-0.7,-0.7} }
+    local function openWater(x, y, clearance)
+        if not (x > 0 and y > 0 and x < config.WORLD_WIDTH and y < config.WORLD_HEIGHT)
+           or not self.terrain:isWater(x, y) then return false end
+        for _, d in ipairs(DIRS) do
+            if not self.terrain:isWater(x + d[1] * clearance, y + d[2] * clearance) then
+                return false
+            end
+        end
+        return true
+    end
+    for _, clearance in ipairs({ T * 4, 0 }) do
+        for r = 0, 60 do
+            for a = 0, math.max(1, r * 6) do
+                local ang = (a / math.max(1, r * 6)) * math.pi * 2
+                local x = gx + math.cos(ang) * r * T
+                local y = gy + math.sin(ang) * r * T
+                if clearance > 0 and openWater(x, y, clearance) then
+                    return x, y
+                elseif clearance == 0 and x > 0 and y > 0 and x < config.WORLD_WIDTH
+                       and y < config.WORLD_HEIGHT and self.terrain:isWater(x, y) then
+                    return x, y
+                end
             end
         end
     end
@@ -649,6 +667,14 @@ function World:update(dt)
         if self.dockPulse.t > 1.0 then self.dockPulse = nil end
     end
     if (self.findPortHint or 0) > 0 then self.findPortHint = self.findPortHint - dt end
+    if self.findPortHintDelay then          -- the post-treasure "Finn en havn!" reprise
+        self.findPortHintDelay = self.findPortHintDelay - dt
+        if self.findPortHintDelay <= 0 then
+            self.findPortHintDelay = nil
+            self.findPortHint = 8
+            Assets.playNamedVoice("finn_en_havn")
+        end
+    end
 
     if self.game.touchCamera then
         -- Touch: no edge-hover scrolling (a tap near the edge pins the synthetic
@@ -1048,7 +1074,14 @@ function World:winTreasure(t)
     if not Assets.playNamedVoice("skatt") then Assets.playSfx("coin", 0.8) end
     self:showToast("Skatt! +" .. config.TREASURE.GOLD .. " gull")
 
-    if self:allTreasuresFound() then self:openWinScreen() end
+    if self:allTreasuresFound() then
+        self:openWinScreen()
+    else
+        -- After the treasure celebration settles, nudge the captain onward:
+        -- the same "Finn en havn!" banner + voice as the very first voyage
+        -- (normal oppdrag resume now, and a pre-reader needs the cue).
+        self.findPortHintDelay = 3.5
+    end
 end
 
 function World:openWinScreen()
@@ -1457,20 +1490,27 @@ function World:drawDockPulse()
     local tx2, ty2 = self.camera:worldToScreen(dp.p.x, dp.p.y)
     local px, py = self.camera:worldToScreen(dp.p:dockPoint())
     local r = Scale.overlay(120)
+    -- mood palettes: gold = plain tap, good = the oppdrag's harbour (green,
+    -- "yes, here!"), wrong = any other while carrying (soft red, "not this one")
+    local M = ({
+        gold  = { town = {1.0, 0.72, 0.25, 0.22}, pier = {1.0, 0.85, 0.4, 0.18}, glint = {1, 0.95, 0.7} },
+        good  = { town = {0.30, 0.95, 0.35, 0.26}, pier = {0.55, 1.0, 0.55, 0.20}, glint = {0.8, 1, 0.8} },
+        wrong = { town = {1.0, 0.30, 0.22, 0.18}, pier = {1.0, 0.45, 0.38, 0.14}, glint = {1, 0.72, 0.62} },
+    })[dp.mood or "gold"]
     love.graphics.setBlendMode("add")
-    love.graphics.setColor(1.0, 0.72, 0.25, 0.22 * a)     -- the town glows
+    love.graphics.setColor(M.town[1], M.town[2], M.town[3], M.town[4] * a)   -- the town glows
     love.graphics.ellipse("fill", tx2, ty2, r * 1.25, r * 0.75)
-    love.graphics.setColor(1.0, 0.85, 0.4, 0.18 * a)      -- ...and the pier
+    love.graphics.setColor(M.pier[1], M.pier[2], M.pier[3], M.pier[4] * a)   -- ...and the pier
     love.graphics.ellipse("fill", px, py, r * 0.55, r * 0.35)
     love.graphics.setBlendMode("alpha")
-    for i = 1, 6 do                                        -- gold glints popping
+    for i = 1, 6 do                                        -- glints popping
         local ph = dp.t * 3 - i * 0.12
         if ph > 0 and ph < 0.6 then
             local f = math.sin(ph / 0.6 * math.pi)
             local gx = tx2 + math.cos(i * 2.4) * r * (0.3 + i * 0.12)
             local gy = ty2 + math.sin(i * 2.4) * r * (0.2 + i * 0.07)
             local sr = Scale.overlay(7) * f
-            love.graphics.setColor(1, 0.95, 0.7, f * a)
+            love.graphics.setColor(M.glint[1], M.glint[2], M.glint[3], f * a)
             love.graphics.line(gx - sr, gy, gx + sr, gy)
             love.graphics.line(gx, gy - sr, gx, gy + sr)
         end
@@ -1564,10 +1604,10 @@ function World:drawMissionPointer()
     -- A clear-but-friendly arrow above the boat: smaller than it used to be,
     -- and it HOPS forward toward the target ("this way! this way!") instead of
     -- just hovering — playful, and the motion itself points.
-    local hop = math.max(0, math.sin(t * 2.6)) * Scale.overlay(10)
+    local hop = math.max(0, math.sin(t * 2.6)) * Scale.overlay(8)
     local hx = bx + math.cos(ang) * hop
-    local hy = by - Scale.overlay(80) + math.sin(t * 3) * 5 + math.sin(ang) * hop
-    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(1.05)
+    local hy = by - Scale.overlay(64) + math.sin(t * 3) * 4 + math.sin(ang) * hop
+    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(0.7)
     love.graphics.push()
     love.graphics.translate(hx, hy)
     love.graphics.rotate(ang)
@@ -1585,12 +1625,12 @@ function World:drawMissionPointer()
          15,  20,   -- head bottom corner
     }
     love.graphics.setColor(0, 0, 0, 0.28)                -- soft drop shadow
-    love.graphics.push(); love.graphics.translate(3, 4)
+    love.graphics.push(); love.graphics.translate(2, 3)
     love.graphics.polygon("fill", arrow); love.graphics.pop()
     love.graphics.setColor(0.99, 0.83, 0.22)             -- bright gold fill
     love.graphics.polygon("fill", arrow)
-    love.graphics.setColor(0.10, 0.08, 0.05)             -- thick dark outline
-    love.graphics.setLineWidth(6); love.graphics.polygon("line", arrow)
+    love.graphics.setColor(0.10, 0.08, 0.05)             -- dark outline
+    love.graphics.setLineWidth(4); love.graphics.polygon("line", arrow)
     love.graphics.setLineWidth(1)
     love.graphics.pop()
     love.graphics.setColor(1, 1, 1)
@@ -1674,16 +1714,16 @@ function World:drawTreasurePointer()
     end
 
     -- the arrow, bobbing above the boat (same friendly size as the gold one)
-    local hop2 = math.max(0, math.sin(t * 2.6)) * Scale.overlay(10)
+    local hop2 = math.max(0, math.sin(t * 2.6)) * Scale.overlay(8)
     local hx = bx + math.cos(ang) * hop2
-    local hy = by - Scale.overlay(78) + math.sin(t * 3) * 5 + math.sin(ang) * hop2
-    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(1.1)
+    local hy = by - Scale.overlay(62) + math.sin(t * 3) * 4 + math.sin(ang) * hop2
+    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(0.75)
     love.graphics.push(); love.graphics.translate(hx, hy); love.graphics.rotate(ang); love.graphics.scale(s, s)
     local arrow = { 32, 0, 13, -18, 13, -8, -26, -12, -15, 0, -26, 12, 13, 8, 13, 18 }
     love.graphics.setColor(0, 0, 0, 0.28)
     love.graphics.push(); love.graphics.translate(3, 4); love.graphics.polygon("fill", arrow); love.graphics.pop()
     love.graphics.setColor(TREASURE_ARROW); love.graphics.polygon("fill", arrow)
-    love.graphics.setColor(0.10, 0.06, 0.03); love.graphics.setLineWidth(5); love.graphics.polygon("line", arrow)
+    love.graphics.setColor(0.10, 0.06, 0.03); love.graphics.setLineWidth(4); love.graphics.polygon("line", arrow)
     love.graphics.setLineWidth(1)
     love.graphics.pop()
     love.graphics.setColor(1, 1, 1)
@@ -1996,7 +2036,12 @@ function World:mousepressed(x, y, button)
             local d1 = (wx - dpx) ^ 2 + (wy - dpy) ^ 2      -- the pier itself
             local d2 = (wx - p.x) ^ 2 + (wy - p.y) ^ 2      -- the town itself
             if d1 < 130 * 130 or d2 < 170 * 170 then
-                self.dockPulse = { p = p, t = 0 }
+                -- On an oppdrag the highlight answers the question a pre-reader
+                -- is really asking: "is it THIS one?" — green for the delivery
+                -- harbour, soft red for any other. No cargo: the usual gold.
+                local m = self.boat.cargo[1]
+                local mood = m and (p.id == m.toId and "good" or "wrong") or "gold"
+                self.dockPulse = { p = p, t = 0, mood = mood }
                 break
             end
         end

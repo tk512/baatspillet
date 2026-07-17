@@ -285,6 +285,47 @@ end
 -- Load the save, falling back to the .bak when the main file is corrupt
 -- (an iOS app kill mid-write truncates it — the backup means "lose a few
 -- seconds", never "lose the child's whole world").
+-- Validate a string as UTF-8; if invalid, re-encode it as Latin-1 -> UTF-8
+-- (the one corruption our old JSON decoder produced). Pure Lua: also runs
+-- under plain luajit in the tests.
+function Game.repairUtf8(s)
+    if type(s) ~= "string" then return s end
+    local i, n, valid = 1, #s, true
+    while i <= n do
+        local b = s:byte(i)
+        if b < 0x80 then
+            i = i + 1
+        elseif b >= 0xC2 and b <= 0xDF then
+            local b2 = s:byte(i + 1)
+            if b2 and b2 >= 0x80 and b2 <= 0xBF then i = i + 2 else valid = false; break end
+        elseif b >= 0xE0 and b <= 0xEF then
+            local b2, b3 = s:byte(i + 1), s:byte(i + 2)
+            if b2 and b3 and b2 >= 0x80 and b2 <= 0xBF and b3 >= 0x80 and b3 <= 0xBF then
+                i = i + 3
+            else valid = false; break end
+        elseif b >= 0xF0 and b <= 0xF4 then
+            local b2, b3, b4 = s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
+            if b2 and b3 and b4 and b2 >= 0x80 and b2 <= 0xBF and b3 >= 0x80 and b3 <= 0xBF
+               and b4 >= 0x80 and b4 <= 0xBF then
+                i = i + 4
+            else valid = false; break end
+        else
+            valid = false; break
+        end
+    end
+    if valid then return s end
+    local out = {}
+    for j = 1, n do
+        local b = s:byte(j)
+        if b < 0x80 then
+            out[#out + 1] = string.char(b)
+        else
+            out[#out + 1] = string.char(0xC0 + math.floor(b / 0x40), 0x80 + b % 0x40)
+        end
+    end
+    return table.concat(out)
+end
+
 function Game:loadSave()
     self.state = defaultState()
     local contents, data
@@ -334,6 +375,12 @@ function Game:loadSave()
             self.state.boatNames = data.boatNames or self.state.boatNames
             if data.boatName and not data.boatNames then
                 self.state.boatNames[self.state.selectedBoat] = data.boatName
+            end
+            -- Repair names saved by the old \uXXXX decoder, which wrote
+            -- Latin-1 bytes ("T\xF8ffe") -- invalid UTF-8 that crashes text
+            -- drawing the moment the name is shown.
+            for id, nm in pairs(self.state.boatNames) do
+                self.state.boatNames[id] = Game.repairUtf8(nm)
             end
             if data.premium ~= nil then self.state.premium = data.premium end
             if data.hintFindPort ~= nil then self.state.hintFindPort = data.hintFindPort end

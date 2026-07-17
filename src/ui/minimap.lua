@@ -195,7 +195,7 @@ function Minimap:draw()
         love.graphics.setFont(f)
         local label = "Båtspillet"
         local lx = ox + t * 2 + 4                    -- left-aligned on the plaque
-        local base = 16 + t * 2 + f:getHeight() * 0.22   -- just kisses the map edge
+        local base = 16 + t * 2 + f:getHeight() * 0.45   -- low enough that the top never clips (dipping into the map is fine)
         local tt = love.timer.getTime()
         local i = 0
         for _, code in utf8.codes(label) do

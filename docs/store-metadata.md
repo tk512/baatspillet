@@ -7,19 +7,29 @@
 - Primærspråk: Norsk (bokmål) · Kategori: Games → Family (IKKE Kids-kategorien i v1)
 - Aldersgrense: 4+ (spørreskjemaet: ingen vold/frykt/gambling — mild tegneserie-sjørøver)
 
-## Beskrivelse (utkast)
-Seil mellom norske byer i ditt eget båtspill! Frakt passasjerer og fisk,
-tjen gullmynter, kjøp proviant i havnebutikken – og hold utkikk etter den
-late sjørøveren. Finn skattekart hos havnesjefene, kappseil mot sjørøverskuta
-til sandbankene, og samle alle skattene i albumet ditt.
+## Promotional text (170 tegn, kan endres uten review)
+«Seil, frakt og finn skatter i norske farvann – et rolig og eventyrlig
+båtspill for barn, med ekte barnestemme og null reklame.»
 
-Laget av en pappa til sønnen sin (5) – all tale er ekte barnestemme, og
-spillet kan spilles helt uten å kunne lese.
+## Beskrivelse
+Ute på sjøen ligger småbyene og venter. Og midt mellom dem vugger en båt
+som du styrer.
 
-- Rolig og snilt: båten synker aldri, havnene er alltid trygge
-- Norsk tale og norske byer
-- Oppdrag, skattejakt, delfiner, ubåt og fyrverkeri
-- Ingen reklame, ingen sporing – én valgfri Kaptein-pakke (alle finbåtene)
+Havnesjefene trenger hjelp: passasjerer skal hjem til sitt, og fisken skal
+fram før kvelden. For hver tur får du blanke gullmynter, og av og til et
+gammelt skattekart. Da gjelder det å seile av sted, for der ute venter en
+sjørøverskute – ikke så farlig, bare litt lat og lur – som gjerne vil ha
+skatten først.
+
+Ingen må kunne lese for å være kaptein her. En ekte guttestemme forteller deg
+alt underveis, og båten kan aldri synke, samme hvor det bærer.
+
+Og har du lyst på mer, finnes Kaptein-pakken: alle finbåtene og hele Amerika,
+med snøøyer, ørkenkyst og byer så store som New York.
+
+Spillet passer best for barn mellom 4 og 12, men alle som liker båter får
+være med. Ingen reklame og ingen mas. En pappa laget det til gutten sin – og
+nå er det ditt.
 
 ## Nøkkelord (100 tegn)
 `båt,barnespill,seile,skattejakt,norsk,barn,ferje,hav,sjørøver,fisk,spill for barn`

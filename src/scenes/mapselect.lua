@@ -81,13 +81,31 @@ function MapSelect:drawBackground(sw, sh)
         Scene.dithGradient(0, 0, VW, horizon, { 0.36, 0.60, 0.88 }, { 0.82, 0.90, 0.96 }, 10)
         Scene.dithGradient(0, horizon, VW, VH - horizon,
             config.colors.water_top, config.colors.water_deep, 8)
-        Scene.sun(VW * 0.88, VH * 0.10, math.floor(VH * 0.055))
-        Scene.cloud(VW * 0.25, VH * 0.09, VW * 0.06)
+        -- same depth + life as the title screen: haze range, treed islands
+        -- at the edges (the middle stays clear behind the map cards)
+        Scene.hazeHills(0, VW, horizon, VH)
+        local grass, gdk = config.colors.grass.top, config.colors.grass.lip
+        local sand = config.colors.sand.top
+        Scene.island(VW * 0.06, horizon, VW * 0.08, VH * 0.09, grass, gdk, sand)
+        Scene.island(VW * 0.95, horizon, VW * 0.09, VH * 0.11, grass, gdk, sand)
+        local sunX, sunY, sunR = VW * 0.88, VH * 0.10, math.floor(VH * 0.055)
+        Scene.sun(sunX, sunY, sunR)
+        Scene.sunReflection(sunX, horizon, VH, sunR, VH * 0.016)
         love.graphics.setCanvas()
         self.bg, self.bgW, self.bgH, self.bgScale = cv, sw, sh, scale
+        self.liveScene = {
+            x = 0, y = 0, w = sw, h = sh,
+            horizon = horizon * scale, blk = math.max(2, scale), scale = scale,
+            sun = { x = sunX * scale, y = sunY * scale, r = sunR * scale },
+            clouds = Scene.makeClouds({
+                { w = 0.06, yf = 0.09, speed = 7 },
+                { w = 0.045, yf = 0.05, speed = 5 },
+            }, VW, 0, VH, scale),
+        }
     end
     love.graphics.setColor(1, 1, 1)
     love.graphics.draw(self.bg, 0, 0, 0, self.bgScale, self.bgScale)
+    Scene.drawLive(self.liveScene, self.t)
 end
 
 function MapSelect:layout()

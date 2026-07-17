@@ -103,8 +103,20 @@ local function decode_string(s, i)
             if map[n] then
                 buf[#buf + 1] = map[n]; i = i + 2
             elseif n == 'u' then
-                local hex = s:sub(i + 2, i + 5)
-                buf[#buf + 1] = string.char(tonumber(hex, 16) % 256)
+                -- \uXXXX must decode to UTF-8 bytes, not string.char(cp)
+                -- (which writes Latin-1 for cp 0x80..0xFF and corrupts names
+                -- like "Tøffe" into invalid UTF-8 that crashes text drawing)
+                local cp = tonumber(s:sub(i + 2, i + 5), 16)
+                if cp < 0x80 then
+                    buf[#buf + 1] = string.char(cp)
+                elseif cp < 0x800 then
+                    buf[#buf + 1] = string.char(0xC0 + math.floor(cp / 0x40),
+                                                0x80 + cp % 0x40)
+                else
+                    buf[#buf + 1] = string.char(0xE0 + math.floor(cp / 0x1000),
+                                                0x80 + math.floor(cp / 0x40) % 0x40,
+                                                0x80 + cp % 0x40)
+                end
                 i = i + 6
             else
                 error("json: bad escape \\" .. n)
