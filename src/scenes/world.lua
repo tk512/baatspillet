@@ -525,6 +525,11 @@ function World:drawClouds()
 end
 
 function World:update(dt)
+    -- Clamp dt spikes (GC pause, app resume, load hitch): movement is
+    -- pos += speed*dt with point-sampled collision, so one huge step can
+    -- tunnel through a skerry and snap back -- a visible teleport.
+    dt = math.min(dt, 1 / 30)
+
     -- Safety net: never stay stuck in right-drag panning across a modal opening
     -- or a loss of window focus (a release can be swallowed in either case).
     if self.panning and (self.dock or self.album or self.mapReveal or self.winScreen or self.pause
@@ -1737,6 +1742,15 @@ local function fogNoise(a, b)
     return (n % 1024) / 1024
 end
 
+-- Sub-diamond corner for the frayed fog edge: bilinear height across the tile,
+-- projected. File-scope on purpose -- defining this inside drawFog's sub-cell
+-- loop allocated up to 25 closures per boundary tile PER FRAME (GC stutter).
+local function fogCorner(u, v, z00, z10, z01, z11, bx0, by0, T)
+    local z = z00 * (1 - u) * (1 - v) + z10 * u * (1 - v)
+            + z01 * (1 - u) * v       + z11 * u * v
+    return Iso.project(bx0 + u * T, by0 + v * T, z)
+end
+
 -- Cover every visible, not-yet-explored tile with dark "unknown". Interior fog
 -- is one diamond per tile (cheap); along the reveal boundary the tile is frayed
 -- into granular sub-diamonds (a noise-dithered edge, like the coastline / peaks),
@@ -1783,15 +1797,10 @@ function World:drawFog()
                         if r < fogNoise(i * K + a, j * K + b) then
                             local u0, u1 = a / K, (a + 1) / K
                             local v0, v1 = b / K, (b + 1) / K
-                            local function P(u, v)
-                                local z = z00 * (1 - u) * (1 - v) + z10 * u * (1 - v)
-                                        + z01 * (1 - u) * v       + z11 * u * v
-                                return Iso.project(bx0 + u * T, by0 + v * T, z)
-                            end
-                            local ax, ay = P(u0, v0)
-                            local bx, by = P(u1, v0)
-                            local cx, cy = P(u1, v1)
-                            local dx, dy = P(u0, v1)
+                            local ax, ay = fogCorner(u0, v0, z00, z10, z01, z11, bx0, by0, T)
+                            local bx, by = fogCorner(u1, v0, z00, z10, z01, z11, bx0, by0, T)
+                            local cx, cy = fogCorner(u1, v1, z00, z10, z01, z11, bx0, by0, T)
+                            local dx, dy = fogCorner(u0, v1, z00, z10, z01, z11, bx0, by0, T)
                             love.graphics.polygon("fill", ax, ay, bx, by, cx, cy, dx, dy)
                         end
                     end

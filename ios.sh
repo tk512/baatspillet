@@ -60,13 +60,22 @@ fi
 
 # ── App Store archive + export (needs the paid developer account) ──────────
 # TEAM_ID=XXXXXXXXXX ./ios.sh archive → .ipa under engine/build/export
+#
+# Versioning (Apple has TWO numbers):
+#   CFBundleVersion (build number)  = timestamp below: unique + increasing on
+#     every archive automatically — required per TestFlight upload. Never set
+#     by hand.
+#   CFBundleShortVersionString (marketing version, what users/review see) =
+#     APP_VERSION, default 1.0. Bump ONLY for a new App Store release:
+#       TEAM_ID=… APP_VERSION=1.1 ./ios.sh archive
 if [ "${1:-}" = "archive" ]; then
     cp ios/love-ios.plist "$ENGINE/platform/xcode/ios/love-ios.plist"
     ./build.sh love
     BUILD_NO="$(date +%Y%m%d%H%M)"   # unique, increasing — Apple requires it per upload
-    echo ">> archiving (build $BUILD_NO)…"
+    APP_VERSION="${APP_VERSION:-1.0}"
+    echo ">> archiving (version $APP_VERSION, build $BUILD_NO)…"
     # Manual DISTRIBUTION signing: works with zero registered devices
-    xcodebuild -project "$XCODEPROJ" -scheme love-ios -configuration Release         -destination "generic/platform=iOS" -derivedDataPath "$ENGINE/build"         -archivePath "$ENGINE/build/Batspillet.xcarchive"         CODE_SIGN_STYLE=Manual         CODE_SIGN_IDENTITY="Apple Distribution"         PROVISIONING_PROFILE_SPECIFIER="Batspillet AppStore"         CURRENT_PROJECT_VERSION="$BUILD_NO"         DEVELOPMENT_TEAM="$TEAM_ID" -quiet archive
+    xcodebuild -project "$XCODEPROJ" -scheme love-ios -configuration Release         -destination "generic/platform=iOS" -derivedDataPath "$ENGINE/build"         -archivePath "$ENGINE/build/Batspillet.xcarchive"         CODE_SIGN_STYLE=Manual         CODE_SIGN_IDENTITY="Apple Distribution"         PROVISIONING_PROFILE_SPECIFIER="Batspillet AppStore"         CURRENT_PROJECT_VERSION="$BUILD_NO"         MARKETING_VERSION="$APP_VERSION"         DEVELOPMENT_TEAM="$TEAM_ID" -quiet archive
     echo ">> exporting .ipa for App Store Connect…"
     # xcodebuild polls every Xcode-known Apple ID and whines about stale ones;
     # with manual signing none are needed — filter that noise, keep real errors

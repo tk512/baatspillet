@@ -115,9 +115,14 @@ end
 
 function Camera:attach()
     local cx, cy = Iso.project(self.gx, self.gy)
-    -- Snap to whole pixels so tile edges don't shimmer as the map scrolls.
-    local ox = math.floor(love.graphics.getWidth()  / 2 - cx * self.zoom + 0.5 + self.shakeX)
-    local oy = math.floor(love.graphics.getHeight() / 2 - cy * self.zoom + 0.5 + self.shakeY)
+    -- Snap to whole DEVICE pixels so tile edges stay crisp. Snapping to whole
+    -- units (the old floor) stepped in 2-3 device-pixel jumps on retina while
+    -- the glide-follow camera moved fractionally every frame -- the boat
+    -- visibly juddered up/down against the water. Device-pixel snapping keeps
+    -- the crispness with steps too small to see (and is identical on dpi 1).
+    local dpi = love.graphics.getDPIScale()
+    local ox = math.floor((love.graphics.getWidth()  / 2 - cx * self.zoom + self.shakeX) * dpi + 0.5) / dpi
+    local oy = math.floor((love.graphics.getHeight() / 2 - cy * self.zoom + self.shakeY) * dpi + 0.5) / dpi
     love.graphics.push()
     love.graphics.translate(ox, oy)
     love.graphics.scale(self.zoom, self.zoom)
@@ -131,8 +136,9 @@ end
 -- on-screen UI hints like the mission pointer.
 function Camera:worldToScreen(gx, gy)
     local cx, cy = Iso.project(self.gx, self.gy)
-    local ox = math.floor(love.graphics.getWidth()  / 2 - cx * self.zoom + 0.5)
-    local oy = math.floor(love.graphics.getHeight() / 2 - cy * self.zoom + 0.5)
+    local dpi = love.graphics.getDPIScale()
+    local ox = math.floor((love.graphics.getWidth()  / 2 - cx * self.zoom) * dpi + 0.5) / dpi
+    local oy = math.floor((love.graphics.getHeight() / 2 - cy * self.zoom) * dpi + 0.5) / dpi
     local ix, iy = Iso.project(gx, gy, 0)
     return ix * self.zoom + ox, iy * self.zoom + oy
 end

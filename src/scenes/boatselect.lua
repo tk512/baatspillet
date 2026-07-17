@@ -580,38 +580,36 @@ function BoatSelect:drawPreview(L, def)
         padlock(L.cx, ry + 22 * L.k + 34 * L.k, 52 * L.k)
     end
 
-    -- The artist's boat gets a tiny hanging sign under the hull: his own name
-    -- is the one word a pre-reader recognizes, plus a little heart. Swings
-    -- gently and rides the boat's bob. Data-driven: boats.lua `artist`.
+    -- The artist's boat gets a small credit board BESIDE the preview: his own
+    -- name is the one word a pre-reader recognizes, plus a little heart.
+    -- Static (small text + wobble = unreadable), clamped to the screen edge
+    -- so it stays visible on iPhone. Data-driven: boats.lua `artist`.
     if def.artist then
         local f = self.game.fonts.small
         local name, rest = def.artist, " har laget denne!"
         local nw, rw2 = f:getWidth(name), f:getWidth(rest)
         local heart = 10 * L.k
-        local pw = nw + rw2 + heart + 30 * L.k
-        local ph = f:getHeight() + 10 * L.k
-        local rl = 11 * L.k                              -- rope length
+        local pw = nw + rw2 + heart + 26 * L.k
+        local ph = f:getHeight() + 12 * L.k
+        local sw = love.graphics.getWidth()
+        local bx0 = L.cx + L.previewW * 0.52              -- to the right of the boat
+        local s = math.min(1, (sw - 12 * L.k - bx0) / pw) -- never off-screen (iPhone!)
         love.graphics.push()
-        love.graphics.translate(L.cx, L.previewY + L.previewW * 0.10 + bob * 0.8)
-        love.graphics.rotate(math.sin(self.t * 1.1) * 0.04)
-        love.graphics.scale(0.8, 0.8)      -- compact: the strip below stays clear
-        love.graphics.setColor(0.62, 0.50, 0.34)         -- two short ropes
-        love.graphics.setLineWidth(math.max(2, 2.5 * L.k))
-        love.graphics.line(-pw * 0.30, 0, -pw * 0.30, rl)
-        love.graphics.line(pw * 0.30, 0, pw * 0.30, rl)
-        love.graphics.setColor(0.34, 0.24, 0.15)         -- the little plank
-        love.graphics.rectangle("fill", -pw / 2, rl, pw, ph, 4 * L.k, 4 * L.k)
+        love.graphics.translate(bx0, L.previewY - ph * 0.5)
+        love.graphics.scale(s, s)
+        love.graphics.setColor(0.34, 0.24, 0.15)          -- the little board
+        love.graphics.rectangle("fill", 0, 0, pw, ph, 4 * L.k, 4 * L.k)
         love.graphics.setColor(0.52, 0.38, 0.24)
         love.graphics.setLineWidth(math.max(1, 1.5 * L.k))
-        love.graphics.rectangle("line", -pw / 2 + 2 * L.k, rl + 2 * L.k, pw - 4 * L.k, ph - 4 * L.k, 3 * L.k, 3 * L.k)
+        love.graphics.rectangle("line", 2 * L.k, 2 * L.k, pw - 4 * L.k, ph - 4 * L.k, 3 * L.k, 3 * L.k)
         love.graphics.setFont(f)
-        local tx0 = -(nw + rw2 + heart + 4 * L.k) / 2
-        local ty0 = rl + (ph - f:getHeight()) / 2
-        love.graphics.setColor(1, 0.85, 0.35)            -- his name pops gold
+        local tx0 = 10 * L.k
+        local ty0 = (ph - f:getHeight()) / 2
+        love.graphics.setColor(1, 0.85, 0.35)             -- his name pops gold
         love.graphics.print(name, tx0, ty0)
         love.graphics.setColor(0.93, 0.88, 0.78)
         love.graphics.print(rest, tx0 + nw, ty0)
-        local hx = tx0 + nw + rw2 + 4 * L.k + heart / 2  -- and a little heart
+        local hx = tx0 + nw + rw2 + heart / 2             -- and a little heart
         local hy = ty0 + f:getHeight() / 2
         love.graphics.setColor(0.90, 0.25, 0.30)
         love.graphics.circle("fill", hx - heart * 0.22, hy - heart * 0.12, heart * 0.28)

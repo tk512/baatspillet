@@ -34,26 +34,57 @@ function HUD.draw(world)
     local pad  = math.max(6, math.floor(smH * 0.55))
     local gap  = math.floor(smH * 0.32)
     local cr   = nmH * 0.54                               -- coin radius (doubloon-sized)
-    local goldStr  = tostring(world.game.state.coins) .. " gull"
-    local boatStr  = "Båt: " .. (world.boat.displayName or world.boat.def.name)
-    local cargoStr = "Last: " .. world.boat:cargoCount() .. " / " .. world.boat.capacity
+
+    -- HUD strings + inventory list are CACHED and rebuilt only when the values
+    -- behind them change: building them fresh every frame is steady garbage
+    -- feeding the GC (micro-stutter while sailing).
+    local hc = world._hudCache
+    if not hc then hc = { owned = {}, pool = {} }; world._hudCache = hc end
+    local game = world.game
+    if hc.coins ~= game.state.coins then
+        hc.coins = game.state.coins
+        hc.goldStr = tostring(hc.coins) .. " gull"
+    end
+    local bname = world.boat.displayName or world.boat.def.name
+    if hc.boatName ~= bname then
+        hc.boatName = bname
+        hc.boatStr = "Båt: " .. bname
+    end
+    local ccount = world.boat:cargoCount()
+    if hc.cargo ~= ccount or hc.cap ~= world.boat.capacity then
+        hc.cargo, hc.cap = ccount, world.boat.capacity
+        hc.cargoStr = "Last: " .. ccount .. " / " .. world.boat.capacity
+    end
+    local goldStr, boatStr, cargoStr = hc.goldStr, hc.boatStr, hc.cargoStr
 
     -- Bought goods (the "inventory") shown under the boat/cargo rows as a row of
     -- symbols only -- no text -- so a non-reader recognises them at a glance (and
     -- so Finn-Erik's drawings can replace them later via assets/icons/<icon>.png).
-    local owned = {}
-    for _, it in ipairs(world.game.data.shop) do
-        if it.food then
-            local n = world.game:foodCount(it.id)
-            if n > 0 then owned[#owned + 1] = { it = it, count = n } end
-        elseif it.ammo then
-            local n = world.game:ammoCount()
-            if n > 0 then owned[#owned + 1] = { it = it, count = n } end
-        elseif it.stack then
-            local n = world.game:cannonCount()
-            if n > 0 then owned[#owned + 1] = { it = it, count = n } end
-        elseif world.game:owns(it.id) then
-            owned[#owned + 1] = { it = it }
+    -- A numeric signature of all the counts decides when the list is rebuilt.
+    local sig = 0
+    for _, it in ipairs(game.data.shop) do
+        local n = (it.food and game:foodCount(it.id)) or (it.ammo and game:ammoCount())
+            or (it.stack and game:cannonCount()) or (game:owns(it.id) and 1) or 0
+        sig = sig * 61 + n
+    end
+    local owned = hc.owned
+    if hc.invSig ~= sig then
+        hc.invSig = sig
+        for k = #owned, 1, -1 do owned[k] = nil end
+        for _, it in ipairs(game.data.shop) do
+            local n
+            if it.food then n = game:foodCount(it.id)
+            elseif it.ammo then n = game:ammoCount()
+            elseif it.stack then n = game:cannonCount()
+            elseif game:owns(it.id) then n = 1 end
+            if n and n > 0 then
+                local e = hc.pool[#owned + 1]
+                if not e then e = {}; hc.pool[#owned + 1] = e end
+                e.it = it
+                e.count = (it.food or it.ammo or it.stack) and n or nil
+                e.lbl = (e.count and e.count > 1) and ("x" .. e.count) or nil
+                owned[#owned + 1] = e
+            end
         end
     end
     local invIcon = nmH * 0.9                             -- inventory icon size
@@ -92,7 +123,9 @@ function HUD.draw(world)
         local by, bh = ky + pauseKey * 0.28 + off, pauseKey * 0.44
         love.graphics.rectangle("fill", kx + pauseKey * 0.34 - bw / 2 + off, by, bw, bh, 1, 1)
         love.graphics.rectangle("fill", kx + pauseKey * 0.66 - bw / 2 + off, by, bw, bh, 1, 1)
-        world._pauseBtnRect = { x = leftX, y = 16, w = pw, h = ph }
+        local r = world._pauseBtnRect
+        if not r then r = {}; world._pauseBtnRect = r end
+        r.x, r.y, r.w, r.h = leftX, 16, pw, ph
     end
 
     -- row 1: coin + gold count
@@ -119,9 +152,9 @@ function HUD.draw(world)
             local cxk = ix + pad + col * (invIcon + invGap) + invIcon * 0.5
             local cyk = startY + row * (invIcon + invGap) + invIcon * 0.5
             Icons.draw(e.it.icon, cxk, cyk, invIcon)
-            if e.count and e.count > 1 then        -- food stock: "xN" badge
+            if e.lbl then                          -- food stock: "xN" badge (cached)
                 love.graphics.setFont(fonts.small)
-                local lbl = "x" .. e.count
+                local lbl = e.lbl
                 love.graphics.setColor(0, 0, 0, 0.55)
                 love.graphics.print(lbl, cxk + invIcon * 0.5 - fonts.small:getWidth(lbl) + 1, cyk + invIcon * 0.3 + 1)
                 love.graphics.setColor(WOOD.text)
@@ -169,7 +202,9 @@ function HUD.drawTreasureBar(world, x, y, t)
     local pw = contentW + (pad + t * 2) * 2
     local ph = (pad + t * 2) * 2 + smH + gapi + slot
     local ix, iy = plaque(x, y, pw, ph, t)
-    world._skatterRect = { x = x, y = y, w = pw, h = ph }   -- click target -> album
+    local sr = world._skatterRect                            -- click target -> album
+    if not sr then sr = {}; world._skatterRect = sr end
+    sr.x, sr.y, sr.w, sr.h = x, y, pw, ph
 
     love.graphics.setFont(fonts.small)
     love.graphics.setColor(WOOD.accent)
@@ -195,7 +230,8 @@ function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     local s    = nmH * 0.9                                 -- icon size
     local markW, markH = nmH * 1.05, nmH * 0.95            -- harbour badge (Bryggen emblem)
     local dest = m.toName
-    local countStr = "×" .. m.count
+    m._countStr = m._countStr or ("×" .. m.count)   -- count is fixed per mission
+    local countStr = m._countStr
 
     local wLabel = fonts.normal:getWidth("Oppdrag")
     local wCount = fonts.normal:getWidth(countStr)
