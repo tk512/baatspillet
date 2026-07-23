@@ -423,7 +423,8 @@ function Terrain:scatterProps()
                     local bio = config.BIOMES[t.biome or "green"] or config.BIOMES.green
                     local f = fbm(cx / config.FOREST_SCALE, cy / config.FOREST_SCALE, seed + 200)
                     if f > config.FOREST_THRESH + (bio.forest or 0) then
-                        self.props[#self.props + 1] = { tx = i, ty = j, kind = "forest", z = 0, salt = i * 131 + j * 977 }
+                        self.props[#self.props + 1] = { tx = i, ty = j, kind = "forest", z = 0,
+                            salt = i * 131 + j * 977, biome = t.biome }
                     elseif (i * 31 + j * 7) % 13 == 0 then
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "house", z = 0 }
                     end
@@ -452,6 +453,132 @@ function Terrain:visibleRange(minGx, minGy, maxGx, maxGy)
     local i1 = math.min(self.nx, math.ceil(maxGx / T) + 2)
     local j1 = math.min(self.ny, math.ceil(maxGy / T) + 3)
     return i0, j0, i1, j1
+end
+
+-- Ground texture atlas: hand-drawn iso tile art (assets/tiles/gress/) baked
+-- once into a mipmapped atlas. The land mesh UV-maps each flat tile's top
+-- diamond onto a deterministic variant, so the whole ground still draws as
+-- ONE textured mesh. Rocky, snowy and beach subcells sample the solid-white
+-- cell instead (vertex colour alone), keeping today's cliffs/snow/dithered
+-- beach. Missing art -> nil, and the mesh stays untextured (placeholder-first).
+-- The art is NEUTRALIZED at build: each tile is normalized so its average
+-- colour becomes even grey, and the land mesh's vertex colours (the game's
+-- own palette + biome + snow + rock + shade pipeline) re-tint it — the art
+-- is a pure detail layer, so it can never clash with the game's colours and
+-- the dithered transitions to plain ground stay subtle. NORM sets the grey
+-- level; the mesh multiplies vertex colours by 1/NORM to compensate.
+local ATLAS_NORM = 0.8
+local gressAtlas   -- nil = untried, false = art absent (cached across F6 regens)
+local function groundAtlas()
+    if gressAtlas ~= nil then return gressAtlas or nil end
+    local names = {
+        grass = { "grass1", "grass2", "grass3", "grass4", "grass5",
+                  "grass6", "grass7", "grass8", "grass9", "grass10" },
+        dirt  = { "dirt1", "dirt2", "dirt3", "dirt4" },
+    }
+    local CW, CH = 128, 64
+    local list = {}
+    for set, ns in pairs(names) do
+        for _, n in ipairs(ns) do
+            local ok, id = pcall(love.image.newImageData, "assets/tiles/gress/" .. n .. ".png")
+            if ok and id then list[#list + 1] = { set = set, id = id } end
+        end
+    end
+    if #list == 0 then gressAtlas = false; return nil end
+
+    local cols = 4
+    local rows = math.ceil((#list + 1) / cols)
+    local AW, AH = cols * CW, rows * CH
+    local cv = love.graphics.newCanvas(AW, AH)
+    local prev = love.graphics.getCanvas()
+    love.graphics.push("all")
+    love.graphics.setCanvas(cv)
+    love.graphics.origin()
+    love.graphics.clear(0, 0, 0, 0)
+    love.graphics.setColor(1, 1, 1)
+    local out = { grass = {}, dirt = {} }
+    local pad = 2                     -- inset against mipmap bleed between cells
+    for k, e in ipairs(list) do
+        local col = (k - 1) % cols
+        local row = math.floor((k - 1) / cols)
+        -- Only the block's TOP SURFACE goes into the atlas — the art also
+        -- paints the block's soil thickness below it, which we never render.
+        -- Measure the face's real quadrilateral: the outermost opaque columns
+        -- are the side corners (their first opaque pixel = corner height),
+        -- the centre columns give the top corner, and the bottom corner —
+        -- hidden against the soil — follows by symmetry. Cropping that exact
+        -- band keeps every soil pixel out of the atlas.
+        local id = e.id
+        local w, h = id:getDimensions()
+        -- neutralize: average opaque colour -> ATLAS_NORM grey (per channel,
+        -- so the art's own hue goes away and vertex colour brings the game's)
+        local sr, sg, sb, n = 0, 0, 0, 0
+        for y = 0, h - 1, 2 do
+            for x = 0, w - 1, 2 do
+                local r, g, b, a = id:getPixel(x, y)
+                if a > 0.1 then sr, sg, sb, n = sr + r, sg + g, sb + b, n + 1
+                end
+            end
+        end
+        if n > 0 then
+            local kr = ATLAS_NORM / math.max(0.05, sr / n)
+            local kg = ATLAS_NORM / math.max(0.05, sg / n)
+            local kb = ATLAS_NORM / math.max(0.05, sb / n)
+            id:mapPixel(function(_, _, r, g, b, a)
+                return math.min(1, r * kr), math.min(1, g * kg),
+                    math.min(1, b * kb), a
+            end)
+        end
+        local function firstOpaque(x)
+            for y = 0, h - 1 do
+                local _, _, _, a = id:getPixel(x, y)
+                if a > 0.05 then return y end
+            end
+            return nil
+        end
+        local xL, yL, xR, yR
+        for x = 0, w - 1 do
+            yL = firstOpaque(x)
+            if yL then xL = x; break end
+        end
+        for x = w - 1, 0, -1 do
+            yR = firstOpaque(x)
+            if yR then xR = x; break end
+        end
+        local yT = math.huge
+        for x = math.floor(w / 2) - 2, math.floor(w / 2) + 2 do
+            local y = firstOpaque(x)
+            if y and y < yT then yT = y end
+        end
+        yT = yT + math.floor(w * 0.02)   -- grass tufts poke above the face; split the difference
+        local mid = (yL + yR) / 2
+        local yB = math.min(h - 1, mid + (mid - yT))
+        local cw2 = xR - xL + 1
+        local ch2 = math.max(1, math.floor(yB - yT + 1))
+        local img = love.graphics.newImage(id)
+        local q = love.graphics.newQuad(xL, yT, cw2, ch2, w, h)
+        love.graphics.draw(img, q, col * CW, row * CH, 0, CW / cw2, CH / ch2)
+        out[e.set][#out[e.set] + 1] = {
+            (col * CW + pad) / AW, (row * CH + pad) / AH,
+            (CW - 2 * pad) / AW, (CH - 2 * pad) / AH,
+        }
+    end
+    local wk = #list                  -- the solid-white cell
+    local wcol, wrow = wk % cols, math.floor(wk / cols)
+    love.graphics.rectangle("fill", wcol * CW, wrow * CH, CW, CH)
+    love.graphics.pop()
+    love.graphics.setCanvas(prev)
+
+    local id = love.graphics.readbackTexture and love.graphics.readbackTexture(cv)
+        or cv:newImageData()
+    local img = love.graphics.newImage(id, { mipmaps = true })
+    img:setFilter("linear", "linear")
+    img:setMipmapFilter("linear")
+    id:release()
+    cv:release()
+    gressAtlas = { img = img, grass = out.grass, dirt = out.dirt,
+        whiteX = (wcol * CW + CW / 2) / AW, whiteY = (wrow * CH + CH / 2) / AH }
+    return gressAtlas
 end
 
 -- Draw a tile PNG (flat, centred, fit to TILE). Returns false if not present.
@@ -600,10 +727,16 @@ function Terrain:buildLandMesh()
                (gC[3] + (snow[3] - gC[3]) * sa) * f
     end
 
-    local function emit(gx, gy, z, r, g, b)
+    local function emit(gx, gy, z, r, g, b, tu, tv)
         local px, py = Iso.project(gx, gy, z)
-        v[#v + 1] = { px, py, 0, 0, r, g, b, 1 }
+        v[#v + 1] = { px, py, tu or 0, tv or 0, r, g, b, 1 }
     end
+
+    -- Ground art: flat grass subcells UV into the atlas; everything else
+    -- (rock, snow, beach, no art) samples its solid-white cell.
+    local atlas = groundAtlas()
+    local wx, wy = 0, 0
+    if atlas then wx, wy = atlas.whiteX, atlas.whiteY end
 
     local order = {}
     for i = 1, self.nx do
@@ -638,6 +771,16 @@ function Terrain:buildLandMesh()
         local grassC = bio.grass or grass
         local rockC  = bio.rock or rock
         local sandC  = bio.sand or sandTop
+        -- this tile's ground art variant (deterministic); desert uses the dirt
+        -- set, snow stays plain (frozen ground reads better untextured)
+        local cell
+        if atlas and not tile.build then
+            local set = (tile.biome == "desert") and atlas.dirt
+                or (tile.biome ~= "snow") and atlas.grass or nil
+            if set and #set > 0 then
+                cell = set[1 + (i * 131 + j * 977) % #set]
+            end
+        end
         local sSt, sFu = snowStart, snowFull
         if bio.snowAt then
             sSt, sFu = (bio.snowAt - 2) * M.STEP, bio.snowAt * M.STEP
@@ -675,7 +818,9 @@ function Terrain:buildLandMesh()
                 if rk < 0 then rk = 0 elseif rk > 1 then rk = 1 end
 
                 local mr, mg, mb
-                if beachable and cz < 5 and self:isBeach(cgx, cgy) then
+                local sa = (cz - sSt) / math.max(1, sFu - sSt)
+                local beach = beachable and cz < 5 and self:isBeach(cgx, cgy)
+                if beach then
                     -- the beach reaches into this tile: sand, same grain noise
                     local n = fbm(cgx / 21, cgy / 21, seed + 900)
                     local f = 0.84 + 0.26 * n
@@ -686,13 +831,44 @@ function Terrain:buildLandMesh()
                 mr = (mr + (rockC[1] - mr) * rk) * sh
                 mg = (mg + (rockC[2] - mg) * rk) * sh
                 mb = (mb + (rockC[3] - mb) * rk) * sh
-                emit(gx0, gy0, h00, mr, mg, mb); emit(gx1, gy0, h10, mr, mg, mb); emit(gx1, gy1, h11, mr, mg, mb)
-                emit(gx0, gy0, h00, mr, mg, mb); emit(gx1, gy1, h11, mr, mg, mb); emit(gx0, gy1, h01, mr, mg, mb)
+                -- Flat open ground samples the (neutralized) art, re-tinted by
+                -- these very colours — rocky/snowy/beach subcells stay on the
+                -- white cell, and since both share one colour pipeline the
+                -- rk/sa dither line between them is texture-only, not colour.
+                local tex = cell and not beach and rk < 0.5 and sa < 0.35
+                if not tex then
+                    emit(gx0, gy0, h00, mr, mg, mb, wx, wy)
+                    emit(gx1, gy0, h10, mr, mg, mb, wx, wy)
+                    emit(gx1, gy1, h11, mr, mg, mb, wx, wy)
+                    emit(gx0, gy0, h00, mr, mg, mb, wx, wy)
+                    emit(gx1, gy1, h11, mr, mg, mb, wx, wy)
+                    emit(gx0, gy1, h01, mr, mg, mb, wx, wy)
+                else
+                    -- compensate the atlas normalization (art mean = NORM grey)
+                    local gain = 1 / ATLAS_NORM
+                    mr = math.min(1, mr * gain)
+                    mg = math.min(1, mg * gain)
+                    mb = math.min(1, mb * gain)
+                    -- the tile's (u,w) square maps onto the art diamond:
+                    -- atlas x follows u-w, atlas y follows u+w
+                    local ax, ay, aw, ah = cell[1], cell[2], cell[3], cell[4]
+                    local u00x, u00y = ax + (u0 - w0 + 1) * 0.5 * aw, ay + (u0 + w0) * 0.5 * ah
+                    local u10x, u10y = ax + (u1 - w0 + 1) * 0.5 * aw, ay + (u1 + w0) * 0.5 * ah
+                    local u11x, u11y = ax + (u1 - w1 + 1) * 0.5 * aw, ay + (u1 + w1) * 0.5 * ah
+                    local u01x, u01y = ax + (u0 - w1 + 1) * 0.5 * aw, ay + (u0 + w1) * 0.5 * ah
+                    emit(gx0, gy0, h00, mr, mg, mb, u00x, u00y)
+                    emit(gx1, gy0, h10, mr, mg, mb, u10x, u10y)
+                    emit(gx1, gy1, h11, mr, mg, mb, u11x, u11y)
+                    emit(gx0, gy0, h00, mr, mg, mb, u00x, u00y)
+                    emit(gx1, gy1, h11, mr, mg, mb, u11x, u11y)
+                    emit(gx0, gy1, h01, mr, mg, mb, u01x, u01y)
+                end
             end
         end
     end
     if #v > 0 then
         self.landMesh = love.graphics.newMesh(v, "triangles", "static")
+        if atlas then self.landMesh:setTexture(atlas.img) end
     end
 end
 

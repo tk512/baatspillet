@@ -45,17 +45,11 @@ function HUD.draw(world)
         hc.coins = game.state.coins
         hc.goldStr = tostring(hc.coins) .. " gull"
     end
-    local bname = world.boat.displayName or world.boat.def.name
-    if hc.boatName ~= bname then
-        hc.boatName = bname
-        hc.boatStr = "Båt: " .. bname
-    end
-    local ccount = world.boat:cargoCount()
-    if hc.cargo ~= ccount or hc.cap ~= world.boat.capacity then
-        hc.cargo, hc.cap = ccount, world.boat.capacity
-        hc.cargoStr = "Last: " .. ccount .. " / " .. world.boat.capacity
-    end
-    local goldStr, boatStr, cargoStr = hc.goldStr, hc.boatStr, hc.cargoStr
+    -- Just the gold (+ the bought-goods symbols below): boat name and cargo
+    -- count used to have rows here, but the name is on the boat-select screen
+    -- and the cargo is already visible on the Oppdrag panel — a shorter plaque
+    -- covers less sea.
+    local goldStr = hc.goldStr
 
     -- Bought goods (the "inventory") shown under the boat/cargo rows as a row of
     -- symbols only -- no text -- so a non-reader recognises them at a glance (and
@@ -98,10 +92,9 @@ function HUD.draw(world)
     local row1W = cr * 2 + gap + fonts.normal:getWidth(goldStr)
     -- a finger-sized pause key column reserved along the plaque's right edge
     local pauseKey = math.max(34, math.floor(nmH * 1.2))
-    local contentW = math.max(row1W, fonts.small:getWidth(boatStr),
-        fonts.small:getWidth(cargoStr), invW) + pauseKey + pad
+    local contentW = math.max(row1W, invW) + pauseKey + pad
     local pw = contentW + (pad + t * 2) * 2
-    local ph = (pad + t * 2) * 2 + nmH + gap + smH + gap + smH
+    local ph = (pad + t * 2) * 2 + nmH
     if #owned > 0 then ph = ph + gap + smH + gap + invRows * (invIcon + invGap) end
     local ix, iy = plaque(leftX, 16, pw, ph, t)
 
@@ -133,16 +126,10 @@ function HUD.draw(world)
     love.graphics.setFont(fonts.normal)
     love.graphics.setColor(c.gold)
     love.graphics.print(goldStr, ix + pad + cr * 2 + gap, iy + pad)
-    -- rows 2 & 3: boat + cargo
-    love.graphics.setFont(fonts.small)
-    love.graphics.setColor(WOOD.text)
-    local ry = iy + pad + nmH + gap
-    love.graphics.print(boatStr, ix + pad, ry)
-    love.graphics.print(cargoStr, ix + pad, ry + smH + gap)
 
     -- inventory: "Kjøpt:" header then a wrapped row of symbols only
     if #owned > 0 then
-        local oy = ry + (smH + gap) * 2
+        local oy = iy + pad + nmH + gap
         love.graphics.setFont(fonts.small)
         love.graphics.setColor(WOOD.accent)
         love.graphics.print("Kjøpt:", ix + pad, oy)

@@ -110,7 +110,7 @@ function World:load(game)
         elseif p.kind == "forest" then
             self.objects:add({
                 tx = p.tx, ty = p.ty, z = pz, kind = "forest",
-                draw = function(_, g) Objects.drawForest(g, p.salt) end,
+                draw = function(_, g) Objects.drawForest(g, p.salt, p.biome) end,
             })
         elseif p.kind == "house" and self:solidLand(p.tx, p.ty) then
             self.objects:add({
@@ -1486,8 +1486,10 @@ end
 -- While on a mission, draw a big bouncing arrow above the boat pointing toward
 -- the destination town, plus a pulsing ring on that town, so a non-reader
 -- always knows where to go next.
--- Tap-a-harbour feedback: the HARBOUR itself lights up — a warm additive
--- glow over the town + pier and a handful of gold glints, fading over ~0.9s.
+-- Tap-a-harbour feedback: the PIER lights up as the real destination — a
+-- strong glow, an expanding ring and gold glints on the dock itself — while
+-- the town behind only gets a soft echo, so a pre-reader learns "the boat
+-- goes to the bryggen, not the houses". Fades over ~1s.
 function World:drawDockPulse()
     local dp = self.dockPulse
     if not dp then return end
@@ -1503,17 +1505,24 @@ function World:drawDockPulse()
         wrong = { town = {1.0, 0.30, 0.22, 0.18}, pier = {1.0, 0.45, 0.38, 0.14}, glint = {1, 0.72, 0.62} },
     })[dp.mood or "gold"]
     love.graphics.setBlendMode("add")
-    love.graphics.setColor(M.town[1], M.town[2], M.town[3], M.town[4] * a)   -- the town glows
-    love.graphics.ellipse("fill", tx2, ty2, r * 1.25, r * 0.75)
-    love.graphics.setColor(M.pier[1], M.pier[2], M.pier[3], M.pier[4] * a)   -- ...and the pier
-    love.graphics.ellipse("fill", px, py, r * 0.55, r * 0.35)
+    love.graphics.setColor(M.town[1], M.town[2], M.town[3], M.town[4] * 0.55 * a) -- soft echo on the town
+    love.graphics.ellipse("fill", tx2, ty2, r * 1.1, r * 0.65)
+    love.graphics.setColor(M.pier[1], M.pier[2], M.pier[3],                       -- the pier is the star
+        math.min(1, M.pier[4] * 2.4) * a)
+    love.graphics.ellipse("fill", px, py, r * 0.85, r * 0.5)
     love.graphics.setBlendMode("alpha")
-    for i = 1, 6 do                                        -- glints popping
+    -- crisp expanding ring on the pier: "THIS is where the boat goes"
+    local ring = r * (0.35 + 0.55 * dp.t)
+    love.graphics.setLineWidth(math.max(2, Scale.overlay(5) * a))
+    love.graphics.setColor(M.glint[1], M.glint[2], M.glint[3], 0.9 * a)
+    love.graphics.ellipse("line", px, py, ring, ring * 0.5)
+    love.graphics.setLineWidth(1)
+    for i = 1, 6 do                                        -- glints popping over the dock
         local ph = dp.t * 3 - i * 0.12
         if ph > 0 and ph < 0.6 then
             local f = math.sin(ph / 0.6 * math.pi)
-            local gx = tx2 + math.cos(i * 2.4) * r * (0.3 + i * 0.12)
-            local gy = ty2 + math.sin(i * 2.4) * r * (0.2 + i * 0.07)
+            local gx = px + math.cos(i * 2.4) * r * (0.25 + i * 0.09)
+            local gy = py + math.sin(i * 2.4) * r * (0.15 + i * 0.05)
             local sr = Scale.overlay(7) * f
             love.graphics.setColor(M.glint[1], M.glint[2], M.glint[3], f * a)
             love.graphics.line(gx - sr, gy, gx + sr, gy)
@@ -2039,20 +2048,26 @@ function World:mousepressed(x, y, button)
         end
         self.shipPopup = nil                -- tap open water -> close any card and sail
         local wx, wy = self.camera:screenToWorld(x, y)
-        self.boat:setDestination(wx, wy)
-        for _, p in ipairs(self.ports) do   -- tapped ON a harbour? light it up
+        -- Tapped a harbour — the pier OR the town behind it? A kid tapping
+        -- the TOWN means "sail there", so the destination snaps to its dock;
+        -- never to the buildings (that just beached the boat by the coast).
+        local hitPort
+        for _, p in ipairs(self.ports) do
             local dpx, dpy = p:dockPoint()
             local d1 = (wx - dpx) ^ 2 + (wy - dpy) ^ 2      -- the pier itself
             local d2 = (wx - p.x) ^ 2 + (wy - p.y) ^ 2      -- the town itself
-            if d1 < 130 * 130 or d2 < 170 * 170 then
-                -- On an oppdrag the highlight answers the question a pre-reader
-                -- is really asking: "is it THIS one?" — green for the delivery
-                -- harbour, soft red for any other. No cargo: the usual gold.
-                local m = self.boat.cargo[1]
-                local mood = m and (p.id == m.toId and "good" or "wrong") or "gold"
-                self.dockPulse = { p = p, t = 0, mood = mood }
-                break
-            end
+            if d1 < 130 * 130 or d2 < 170 * 170 then hitPort = p; break end
+        end
+        if hitPort then
+            -- On an oppdrag the highlight answers the question a pre-reader
+            -- is really asking: "is it THIS one?" — green for the delivery
+            -- harbour, soft red for any other. No cargo: the usual gold.
+            local m = self.boat.cargo[1]
+            local mood = m and (hitPort.id == m.toId and "good" or "wrong") or "gold"
+            self.dockPulse = { p = hitPort, t = 0, mood = mood }
+            self.boat:setDestination(hitPort:dockPoint())
+        else
+            self.boat:setDestination(wx, wy)
         end
     elseif button == 2 then
         self.panning = true

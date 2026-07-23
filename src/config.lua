@@ -356,6 +356,19 @@ config.AMBIENT_VISIT = {
 -- moment, porpoising alongside the bow, then diving away again. Pure ambient
 -- joy: never solid, never blocking, only on open water. Voice hook:
 -- assets/voice/delfiner.ogg plays as they arrive.
+-- Boat wake (ALL player boats — photo, frames and live-3D): foam puffs and
+-- ripple rings are dropped at the stern's WORLD position and stay where they
+-- fell, so the trail traces the actual track (a turn leaves a curve, not a
+-- swinging fan) and dissipates quickly.
+config.WAKE = {
+    SPACING  = 9,     -- ground px sailed between foam drops
+    LIFE     = 1.4,   -- seconds before a drop fully dissipates
+    DRIFT    = 7,     -- sideways spread speed of the foam (ground px/s)
+    STERN    = 22,    -- ground px from boat centre back to the propeller
+    MIN_SPD  = 0.08,  -- fraction of top speed before any foam appears
+    RING_ODDS = 0.22, -- chance a drop is a ripple ring instead of a foam puff
+}
+
 config.DOLPHINS = {
     TRIGGER_FRAC = 0.75, -- they come when you sail faster than this × top speed
     PLAY_TIME    = 14,   -- how long they frolic alongside (s)
@@ -410,11 +423,13 @@ config.PREMIUM = {
     -- .storekit test file) exactly. Product ids are only scoped to the app,
     -- so short is fine.
     PRODUCT_ID = "skep.batspillet.kapteinpakken",
-    -- Kaptein-pakken = the SHIPS (all premium boats, incl. future ones).
-    -- Future map packs (Amerika, Asia …) will be their own products — so don't
-    -- promise maps here; early buyers must get everything this card lists.
+    -- Kaptein-pakken = all premium SHIPS (incl. future ones) + the Amerika
+    -- map. Future EXTRA maps (Asia …) may be their own products — early
+    -- buyers must get everything this card lists, so only promise what ships
+    -- with the pack today.
     perks = {
         "Alle de fine båtene",
+        "Amerika-kartet!",
         "Nye båter som kommer!",
     },
 }

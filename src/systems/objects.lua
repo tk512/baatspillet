@@ -15,9 +15,10 @@
 -- A `sprite` PNG is blitted to cover the footprint; otherwise `draw(obj, g)`
 -- paints the in-code placeholder.
 
-local config = require("src.config")
-local Assets = require("src.assets")
-local Iso    = require("src.systems.iso")
+local config  = require("src.config")
+local Assets  = require("src.assets")
+local Iso     = require("src.systems.iso")
+local Model3D = require("src.systems.model3d")
 
 local Objects = {}
 Objects.__index = Objects
@@ -206,11 +207,34 @@ end
 
 -- A dense forest tile: many overlapping trees so neighbouring forest tiles blend
 -- into one woodland. `salt` makes the layout deterministic per tile; layouts
--- never change, so each is computed once and cached. All trees are the soft
--- code-drawn kind (no pixel-art sprites) -- they read better at a glance.
+-- never change, so each is computed once and cached. Trees are real 3D models
+-- (assets/models/trees.obj) baked ONCE to smooth sprites in a few leaf-colour
+-- variants — never pixel art, and never per-frame 3D. The soft code-drawn
+-- tree remains the fallback so the game always runs with no art.
 local forestCache = {}
 
-function Objects.drawForest(g, salt)
+-- The tree pack's per-variant colours (a healthy mixed woodland) and the
+-- per-biome tint the whole tree gets on non-green islands.
+local TREE_TRUNK = { 0.40, 0.29, 0.18 }
+local TREE_PALETTES = {
+    { Body = TREE_TRUNK, Leaves = { 0.27, 0.42, 0.20 } },  -- classic green
+    { Body = TREE_TRUNK, Leaves = { 0.35, 0.50, 0.22 } },  -- light summer green
+    { Body = TREE_TRUNK, Leaves = { 0.21, 0.37, 0.23 } },  -- deep pine
+    { Body = TREE_TRUNK, Leaves = { 0.44, 0.51, 0.24 } },  -- yellow-green birch
+}
+local TREE_TINTS = {
+    snow = { 0.80, 0.88, 1.00 },   -- frosted
+    lush = { 0.86, 0.97, 0.82 },   -- deeper eastern woods
+}
+local treePack   -- nil = untried, false = pack absent
+local function trees3d()
+    if treePack == nil then
+        treePack = Model3D.bakeVariants("trees", TREE_PALETTES, 96) or false
+    end
+    return treePack or nil
+end
+
+function Objects.drawForest(g, salt, biome)
     local c = config.colors
     local z = g.z or 0
     local trees = forestCache[salt]
@@ -225,24 +249,40 @@ function Objects.drawForest(g, salt)
         for k = 1, config.FOREST_DENSITY do
             local gx = g.gx0 + rnd() * (g.gx1 - g.gx0)
             local gy = g.gy0 + rnd() * (g.gy1 - g.gy0)
-            trees[k] = { gx, gy, 0.85 + rnd() * 0.5 }
+            trees[k] = { gx, gy, 0.85 + rnd() * 0.5, rnd(), rnd(), rnd() }
         end
         table.sort(trees, function(a, b) return (a[1] + a[2]) < (b[1] + b[2]) end)
         forestCache[salt] = trees
     end
 
+    local pack = trees3d()
+    local tint = biome and TREE_TINTS[biome]
     for _, t in ipairs(trees) do
         local sx, sy = Iso.project(t[1], t[2], z)
         local sc = t[3]
         love.graphics.setColor(0, 0, 0, 0.10)
         love.graphics.ellipse("fill", sx, sy + 2, 9 * sc, 4 * sc)
-        love.graphics.setColor(c.tree_trunk)
-        love.graphics.rectangle("fill", sx - 2 * sc, sy - 12 * sc, 4 * sc, 12 * sc)
-        love.graphics.setColor(c.tree_leaf)
-        love.graphics.circle("fill", sx, sy - 18 * sc, 10 * sc)
-        love.graphics.setColor(c.tree_leaf_hi)
-        love.graphics.circle("fill", sx - 3 * sc, sy - 21 * sc, 6 * sc)
+        if pack then
+            local vn = #pack
+            local v = 1 + math.floor(t[4] * vn)
+            -- a pack may end with a bare/dead tree: keep those uncommon
+            if v > 4 and t[5] > 0.35 then v = 1 + math.floor(t[5] * math.min(4, vn)) end
+            local pk = pack[v]
+            local s2 = 44 * sc / pk.h
+            if tint then love.graphics.setColor(tint)
+            else love.graphics.setColor(1, 1, 1) end
+            love.graphics.draw(pk.img, sx, sy, 0,
+                (t[6] < 0.5) and -s2 or s2, s2, pk.w / 2, pk.groundY)
+        else
+            love.graphics.setColor(c.tree_trunk)
+            love.graphics.rectangle("fill", sx - 2 * sc, sy - 12 * sc, 4 * sc, 12 * sc)
+            love.graphics.setColor(c.tree_leaf)
+            love.graphics.circle("fill", sx, sy - 18 * sc, 10 * sc)
+            love.graphics.setColor(c.tree_leaf_hi)
+            love.graphics.circle("fill", sx - 3 * sc, sy - 21 * sc, 6 * sc)
+        end
     end
+    love.graphics.setColor(1, 1, 1)
 end
 
 -- A skerry: a small rocky outcrop sitting in open water, ringed by a gentle
@@ -549,6 +589,14 @@ local function boatFrames(name)
 end
 
 function Objects.hasBoatFrames(name) return name ~= nil and boatFrames(name) ~= nil end
+
+-- Live 3D boat (an OBJ rendered in real 3D each frame, smooth rotation) —
+-- thin pass-throughs so scenes keep a single Objects.* import for boat art.
+-- See src/systems/model3d.lua.
+function Objects.hasModel3D(name) return Model3D.has(name) end
+function Objects.drawModel3D(name, gx, gy, angle, width, yawDeg, tint, anchorFrac)
+    return Model3D.draw(name, gx, gy, angle, width, yawDeg, tint, anchorFrac)
+end
 
 -- anchorFrac: vertical anchor as a fraction of frame height (1 = bottom, the
 -- waterline, for sailing/thumbnails; ~0.5 = centred, for the big spinning preview).

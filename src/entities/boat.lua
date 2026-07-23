@@ -45,6 +45,13 @@ function Boat.new(def, x, y)
     self.safeX, self.safeY = self.x, self.y  -- last position known to be water
     self.balls    = {}   -- player cannonballs in flight (only if a cannon is owned)
     self.cannonT  = 0    -- time until the cannon can fire again
+    -- Wake trail: a fixed pool of foam puffs / ripple rings dropped at the
+    -- stern's WORLD position (they stay where they fell as the boat sails on).
+    -- Slots are reused ring-buffer style — no per-frame allocations.
+    self.wake     = {}
+    for i = 1, 48 do self.wake[i] = { age = 1, life = 0 } end   -- born dead
+    self.wakeHead = 1
+    self.wakeDist = 0
     return self
 end
 
@@ -204,6 +211,7 @@ function Boat:update(dt)
     self.y = self.y + math.sin(self.angle) * self.speed * dt
 
     self:clampToWorld()
+    self:updateWake(dt)
 end
 
 function Boat:clampToWorld()
@@ -268,60 +276,106 @@ local function rot(px, py, a, ox, oy)
     return ox + px * c - py * s, oy + px * s + py * c
 end
 
--- Foam wake for the photo billboard. It trails horizontally off the stern along
--- the waterline (an iso wake would just hide behind the tall sprite): a froth at
--- the hull plus foam dabs that fan out, drift back and fade.
-function Boat:drawWake(sx, sy, want)
-    local t = love.timer.getTime()
-    local vsx = (math.cos(self.angle) - math.sin(self.angle)) * Iso.SX
-    local wdir = (vsx >= 0) and -1 or 1       -- bow faces travel; wake goes opposite
-    local spd = 0
-    if self.maxSpeed and self.maxSpeed > 0 then spd = math.min(1, self.speed / self.maxSpeed) end
-
-    if spd <= 0.05 then return end            -- no foam when the boat is still
-
-    local sternX = sx + wdir * want * 0.30
-    local line = sy + want * 0.02             -- the waterline
-
-    -- a small churning froth right at the stern
-    for k = 1, 5 do
-        local nz = math.sin(t * 8 + k * 1.7) * 0.5 + 0.5
-        love.graphics.setColor(1, 1, 1, (0.25 + 0.30 * nz) * spd)
-        love.graphics.circle("fill",
-            sternX + wdir * k * want * 0.018,
-            line + (k % 3 - 1) * want * 0.03 + nz * want * 0.012,
-            want * (0.03 + 0.025 * nz))
+-- Age the wake trail and drop new foam along the track (config.WAKE). Every
+-- SPACING ground px sailed, one pool slot is reborn at the stern's world
+-- position with a little sideways drift — so the trail follows where the boat
+-- actually WAS: turning leaves a curved track, not a swinging fan.
+function Boat:updateWake(dt)
+    local W = config.WAKE
+    for i = 1, #self.wake do
+        local p = self.wake[i]
+        if p.age < p.life then
+            p.age = p.age + dt
+            p.x, p.y = p.x + p.vx * dt, p.y + p.vy * dt
+        end
     end
 
-    -- a short trailing wake: little noisy foam dabs that drift back and fade
-    local n = 14
-    for k = 1, n do
-        local ph = (t * 0.5 + k / n) % 1
-        local fade = (1 - ph) * spd
-        if fade > 0.01 then
-            local jx = math.sin(t * 6 + k * 5.1) * want * 0.025
-            local fx = sternX + wdir * ph * want * 0.7 + jx
-            local fan = (0.03 + ph * 0.11) * want
-            local nz = math.sin(t * 5 + k * 2.3) * want * 0.02
-            local r = want * (0.022 + ph * 0.03) * (0.7 + 0.6 * (math.sin(t * 9 + k) * 0.5 + 0.5))
-            for row = -1, 1, 2 do
-                love.graphics.setColor(1, 1, 1, 0.65 * fade)
-                love.graphics.circle("fill", fx, line + row * fan + nz, r)
+    local spd = 0
+    if self.maxSpeed and self.maxSpeed > 0 then spd = math.min(1, self.speed / self.maxSpeed) end
+    if spd < W.MIN_SPD then self.wakeDist = 0; return end
+
+    self.wakeDist = self.wakeDist + self.speed * dt
+    local ca, sa = math.cos(self.angle), math.sin(self.angle)
+    local sternX, sternY = self.x - ca * W.STERN, self.y - sa * W.STERN
+    while self.wakeDist >= W.SPACING do
+        self.wakeDist = self.wakeDist - W.SPACING
+        local p = self.wake[self.wakeHead]
+        self.wakeHead = (self.wakeHead % #self.wake) + 1
+        local side = love.math.random() * 2 - 1          -- -1..1 across the stern
+        p.x    = sternX - sa * side * 5
+        p.y    = sternY + ca * side * 5
+        p.vx   = -sa * side * W.DRIFT - ca * 3           -- spread out + slip aft
+        p.vy   =  ca * side * W.DRIFT - sa * 3
+        p.age  = 0
+        p.life = W.LIFE * (0.7 + 0.6 * love.math.random())
+        p.r    = 2.2 + 2.8 * love.math.random()
+        p.a0   = (0.30 + 0.40 * spd) * (0.7 + 0.3 * love.math.random())
+        p.ring = love.math.random() < W.RING_ODDS        -- ripple, not foam
+    end
+end
+
+-- Draw the wake trail (shared by EVERY boat type — photo, frames, live 3D):
+-- foam puffs grow and fade where they were dropped; ripple rings expand as
+-- iso-squashed ellipses. Plus a little churning froth right at the propeller.
+function Boat:drawWake()
+    local W = config.WAKE
+    for i = 1, #self.wake do
+        local p = self.wake[i]
+        if p.age < p.life then
+            local f = 1 - p.age / p.life
+            local sx, sy = Iso.project(p.x, p.y, 0)
+            if p.ring then
+                local r = p.r + p.age * 14
+                love.graphics.setColor(1, 1, 1, 0.35 * f * p.a0 * 2)
+                love.graphics.ellipse("line", sx, sy, r, r * 0.5)
+            else
+                love.graphics.setColor(1, 1, 1, p.a0 * f)
+                love.graphics.circle("fill", sx, sy, p.r * (1 + p.age * 1.1))
+                love.graphics.setColor(0.92, 0.97, 0.99, p.a0 * f * 0.5)
+                love.graphics.circle("fill", sx, sy, p.r * 0.6)
             end
-            love.graphics.setColor(0.92, 0.97, 0.99, 0.35 * fade)
-            love.graphics.circle("fill", fx, line + nz * 0.5, r * 0.85)
+        end
+    end
+
+    -- churn at the propeller while under way
+    local spd = 0
+    if self.maxSpeed and self.maxSpeed > 0 then spd = math.min(1, self.speed / self.maxSpeed) end
+    if spd > W.MIN_SPD then
+        local t = love.timer.getTime()
+        local sternX = self.x - math.cos(self.angle) * W.STERN
+        local sternY = self.y - math.sin(self.angle) * W.STERN
+        local sx, sy = Iso.project(sternX, sternY, 0)
+        for k = 1, 4 do
+            local nz = math.sin(t * 8 + k * 1.7) * 0.5 + 0.5
+            love.graphics.setColor(1, 1, 1, (0.22 + 0.28 * nz) * spd)
+            love.graphics.circle("fill",
+                sx + math.sin(t * 6 + k * 2.6) * 4,
+                sy + (k % 3 - 1) * 2.5 + nz * 1.5,
+                3.0 + 2.2 * nz)
         end
     end
     love.graphics.setColor(1, 1, 1)
 end
 
 function Boat:draw()
+    -- The wake trail first, whatever the art style — it lies on the water
+    -- under everything else.
+    self:drawWake()
+
+    -- Live 3D boat (def.model3d = OBJ under assets/models/): rendered in real
+    -- 3D every frame, so it rotates smoothly as you steer. Highest fidelity;
+    -- takes priority. Falls through if the model file is absent.
+    if self.def.model3d and Objects.hasModel3D(self.def.model3d) then
+        local want = self.def.spriteWidth or config.BOAT_SPRITE_WIDTH
+        Objects.drawModel3D(self.def.model3d, self.x, self.y, self.angle, want,
+            self.def.modelYaw)
+        return
+    end
+
     -- Rendered-frames boat (a real 3D model baked to frames): picks the frame by
     -- heading, so it turns as you steer. Highest fidelity; takes priority.
     if self.def.frames and Objects.hasBoatFrames(self.def.frames) then
-        local sx, sy = Iso.project(self.x, self.y, 0)
         local want = self.def.spriteWidth or config.BOAT_SPRITE_WIDTH
-        self:drawWake(sx, sy, want)
         Objects.drawBoatFrames(self.def.frames, self.x, self.y, self.angle, want,
             self.def.frameOffset, self.def.frameCW)
         return
@@ -349,15 +403,12 @@ function Boat:draw()
         local sx, sy = Iso.project(self.x, self.y, 0)
         local want = (self.def.spriteWidth or config.BOAT_SPRITE_WIDTH)
         local scale = want / img:getWidth()
-        self:drawWake(sx, sy, want)
         love.graphics.setColor(1, 1, 1)
         love.graphics.draw(img, sx, sy, 0, scale * flip, scale,
             img:getWidth() / 2, img:getHeight() * 0.85)
         return
     end
     if self.def.model == "yacht" then          -- premium code-drawn "3D" boat
-        local sxc, syc = Iso.project(self.x, self.y, 0)
-        self:drawVolumetricWake(sxc, syc)
         Objects.drawYacht(self.x, self.y, self.angle, self.def.color, 1.0, 0)
         return
     end
@@ -378,11 +429,10 @@ function Boat:drawVolumetric()
         deck[#deck + 1] = { dx, dy }
     end
 
-    -- Soft shadow / wake on the water.
+    -- Soft shadow on the water (the wake itself is the shared trail).
     local sxc, syc = Iso.project(self.x, self.y, 0)
     love.graphics.setColor(0, 0, 0, 0.16)
     love.graphics.ellipse("fill", sxc, syc + 4, 26, 13)
-    self:drawVolumetricWake(sxc, syc)
 
     -- Hull side walls; hidden faces get painted over by the deck.
     love.graphics.setColor(c.boat_hull_dk)
@@ -404,19 +454,6 @@ function Boat:drawVolumetric()
 
     -- Cabin: a little box sitting on the deck, in the player boat's color.
     self:drawCabin(c)
-end
-
--- Old simple wake, kept only for the code-drawn volumetric fallback boat.
-function Boat:drawVolumetricWake(sxc, syc)
-    if self.speed < 25 then return end
-    local a = math.min(0.35, self.speed / self.maxSpeed * 0.35)
-    -- two streaks trailing the stern (opposite the heading)
-    local bx, by = rot(-26, 0, self.angle, self.x, self.y)
-    local px, py = Iso.project(bx, by, 0)
-    love.graphics.setColor(1, 1, 1, a)
-    love.graphics.ellipse("fill", px, py + 2, 10, 5)
-    love.graphics.setColor(1, 1, 1, a * 0.6)
-    love.graphics.ellipse("fill", (px + sxc) / 2, (py + syc) / 2 + 2, 7, 3)
 end
 
 function Boat:drawCabin(c)

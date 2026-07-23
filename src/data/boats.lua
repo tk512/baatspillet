@@ -30,6 +30,11 @@ return {
         accel    = 95,
         turn     = 1.7,
         capacity = 3,
+        -- Live 3D textured model (assets/models/nasse_noff.obj + .png — the
+        -- png is recoloured happy Piglet-pink from the asset's dark green);
+        -- the old 8-view turnsheet below stays as the fallback.
+        model3d  = "nasse_noff",
+        modelYaw = 0,
         -- 8-view turnsheet frames (raw/bat-turnsheet.png via tools/make_turnsheet.py)
         frames   = "nasse_noff",
         spriteWidth = 118,             -- gameplay-only size (preview scales itself)
@@ -37,25 +42,19 @@ return {
     },
     {
         id       = "fishing_boat",
-        name     = "Tøffe",       -- "The Fishing Boat"
+        name     = "Tøffe",       -- the little tug (live 3D)
         speed    = 175,
         accel    = 110,
         turn     = 2.0,
         capacity = 4,
         premium  = true,               -- unlocked by the one premium pack (config.PREMIUM)
+        -- Live 3D voxel tug (assets/models/toffe.obj + .mtl); the old photo
+        -- sprite stays as the fallback if the model can't load.
+        model3d  = "toffe",
+        modelYaw = 0,
+        spriteWidth = 105,
         sprite   = "boat2.png",
         color    = {0.30, 0.55, 0.85},
-    },
-    {
-        id       = "cargo_ship",
-        name     = "Balder",      -- "The Cargo Ship"
-        speed    = 210,
-        accel    = 70,
-        turn     = 1.4,
-        capacity = 8,
-        premium  = true,
-        sprite   = "boat3.png",
-        color    = {0.95, 0.70, 0.20},
     },
     {
         id       = "yacht",
@@ -65,14 +64,33 @@ return {
         turn     = 1.9,
         capacity = 5,
         premium  = true,
-        -- A real 3D model rendered to frames at assets/boats/yacht/0..N.png is used
-        -- when present (see tools/render_boat_frames.md); until then it falls back to
-        -- the code-drawn volumetric boat (model="yacht"). frameOffset/frameCW tune the
-        -- render's starting angle / spin direction without re-rendering.
+        -- Live 3D textured model (assets/models/vannvittig.obj + .png — same
+        -- hull as Nasse Nøff, its own paint job). Fallbacks below: baked
+        -- frames if they ever exist, else the code-drawn volumetric boat.
+        model3d  = "vannvittig",
+        modelYaw = 0,
+        spriteWidth = 110,
         frames     = "yacht",
         frameOffset = 0,
         frameCW    = true,
         model      = "yacht",
         color      = {0.20, 0.45, 0.80},
+    },
+    {
+        id       = "vikingskipet",
+        name     = "Vikingskipet",     -- dragon-headed longship (premium)
+        speed    = 190,
+        accel    = 100,
+        turn     = 1.7,
+        capacity = 6,
+        premium  = true,
+        -- Live 3D: assets/models/vikingskipet.obj rendered in real 3D each
+        -- frame (src/systems/model3d.lua) — rotates smoothly as you steer.
+        -- modelYaw (degrees) turns the model so the bow leads; tweak it here
+        -- if a model's bow points the wrong way, no re-export needed.
+        model3d  = "vikingskipet",
+        modelYaw = 90,
+        spriteWidth = 115,             -- long low ship; keep it modest on screen
+        color    = {0.45, 0.30, 0.18}, -- wooden hull for the placeholder fallback
     },
 }

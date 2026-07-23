@@ -544,8 +544,16 @@ function BoatSelect:drawPreview(L, def)
     local bob = math.sin(self.t * 1.5) * 5 * L.k
     -- Locked boats stay FULL COLOUR (grey reads as "broken" to a child; pretty
     -- + rope + padlock reads as "for later"). See the lock overlay below.
-    if def.frames and Objects.hasBoatFrames(def.frames) then
-        -- spin the rendered 3D-model frames like a turntable (centred in the preview)
+    if def.model3d and Objects.hasModel3D(def.model3d) then
+        -- spin the live 3D model like a turntable (centred in the preview;
+        -- drawn AFTER the strip, so the hero boat sweeps over the buttons)
+        love.graphics.push()
+        love.graphics.translate(L.cx, L.previewY + bob)
+        Objects.drawModel3D(def.model3d, 0, 0, self.t * 0.7, L.previewW * 0.85,
+            def.modelYaw, { 1, 1, 1 }, 0.5)
+        love.graphics.pop()
+    elseif def.frames and Objects.hasBoatFrames(def.frames) then
+        -- spin the rendered 3D-model frames like a turntable (same hero treatment)
         love.graphics.push()
         love.graphics.translate(L.cx, L.previewY + bob)
         Objects.drawBoatFrames(def.frames, 0, 0, self.t * 0.7, L.previewW * 0.85,
@@ -626,9 +634,17 @@ end
 -- the Kaptein-pakken card's mini showcases).
 local function boatArt(r, def)
     local t = math.max(2, math.floor(r.h * 0.12))
+    local has3d = def.model3d and Objects.hasModel3D(def.model3d)
     local hasFrames = def.frames and Objects.hasBoatFrames(def.frames)
-    local img = (not def.model and not hasFrames) and def.sprite and Assets.image("boats/" .. def.sprite)
-    if hasFrames then
+    local img = (not def.model and not hasFrames and not has3d)
+        and def.sprite and Assets.image("boats/" .. def.sprite)
+    if has3d then
+        love.graphics.push()
+        love.graphics.translate(r.x + r.w / 2, r.y + r.h * 0.85)
+        Objects.drawModel3D(def.model3d, 0, 0, -0.6, r.w * 0.78,
+            def.modelYaw, { 1, 1, 1 })
+        love.graphics.pop()
+    elseif hasFrames then
         love.graphics.push()
         love.graphics.translate(r.x + r.w / 2, r.y + r.h * 0.85)
         Objects.drawBoatFrames(def.frames, 0, 0, -0.6, r.w * 0.78,
@@ -871,8 +887,6 @@ function BoatSelect:draw()
     love.graphics.setColor(W.text)
     love.graphics.print(title, tx, ty)
 
-    self:drawPreview(L, def)
-
     if self.editing then
         nameField(L.editBox, self:displayName(), (self.t * 2) % 1 < 0.5, fonts.big)
         self:drawKeyboard()
@@ -888,6 +902,10 @@ function BoatSelect:draw()
         actionButton("bs.sail", L.sail, self:owned(), self:owned() and "Sett seil!" or "Lås opp", fonts.big)
         button("bs.back", L.back, "Tilbake", fonts.small)
     end
+
+    -- The hero preview LAST, so the big spinning boat sails right over the
+    -- thumbnails and buttons — prettier, and the boat owns the screen.
+    self:drawPreview(L, def)
 
     if self.offer == "gate" then self:drawGate()
     elseif self.offer then self:drawOffer() end
