@@ -14,7 +14,13 @@ from PIL import Image
 
 OG   = "/Users/tk/proj/OpenGFX"
 DEST = os.path.join(os.path.dirname(__file__), "..", "assets", "props", "houses")
-PICK = [1, 2, 7, 8, 11, 17, 18]      # indices in the towns02 contact sheet
+# Indices in the towns02 contact sheet, in THIS pnml's file order. Preview them
+# with the matching index space before editing, or the picks silently shift:
+#   python3 tools/preview_opengfx_sheet.py houses/towns02.png \
+#           --pnml base-4588-houses-tropic.pnml
+# 4 and 5 are two more plain cottages. (12, an awninged village shop, was tried
+# and dropped: at one tile wide it reads as a coloured blob rather than a shop.)
+PICK = [1, 2, 7, 8, 11, 17, 18, 4, 5]
 
 sheet = Image.open(OG + "/sprites/png/houses/towns02.png").convert("RGBA")
 pnml  = open(OG + "/sprites/base/base-4588-houses-tropic.pnml").read()

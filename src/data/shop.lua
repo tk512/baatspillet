@@ -10,8 +10,11 @@
 -- The Kanon (`stack = true`) auto-fires at pirates and can be bought again and
 -- again: every cannon comes with a locker of balls (config.CANNON.START_AMMO)
 -- and each extra one makes the battery fire a bit faster (config.CANNON).
--- Kanonkuler (`ammo = N`) is a re-buyable pack of N balls -- the cannon spends
--- one per shot and goes quiet when the locker is empty.
+-- Kanonkuler (`ammo = N`) is a re-buyable CRATE of N balls -- the cannon spends
+-- one per shot and goes quiet when the locker is empty. Sized for a child
+-- hammering the tap-to-fire trigger (~2 balls a second), not for the automatic
+-- battery alone: a crate is roughly one delivery's earnings, so a big battle
+-- costs a voyage's pay rather than the whole afternoon's.
 -- The rest are FOOD (`food = true`): provisions you can buy again and again and
 -- stock up on. The crew + passengers eat them on voyages (see World eating), so
 -- the maths of saving up, buying, and using up stays front and centre.
@@ -25,5 +28,5 @@ return {
     { id = "sitroner", name = "Sitroner", price = 15,  desc = "Friske sitroner.", icon = "lemon",  food = true },
     { id = "epler",    name = "Epler",    price = 8,   desc = "Røde epler.",      icon = "apple",  food = true },
     { id = "ost",      name = "Ost",      price = 14,  desc = "Gul ost.",         icon = "cheese", food = true },
-    { id = "kanonkuler", name = "Kanonkuler", price = 15,  desc = "Fem nye kuler.",     icon = "kanonkuler", ammo = 5 },
+    { id = "kanonkuler", name = "Kanonkuler", price = 20,  desc = "En hel kasse med kuler!", icon = "kanonkuler", ammo = 25 },
 }

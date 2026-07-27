@@ -5,12 +5,20 @@
 -- world) and bakes the revealed terrain into one texture, repainting only the
 -- cells that newly light up -- no per-frame terrain scan, no per-frame allocs.
 --
--- The world's gameplay plane is flat (gx, gy); only the 3D view is isometric. So
--- this map is a straight top-down scaling of that plane: x = gx, y = gy. Ports,
--- the boat and the camera viewport are drawn over the texture each frame.
+-- The map is drawn in the SAME isometric projection as the world, so it comes
+-- out as a diamond rather than a rectangle. That is deliberate and worth
+-- keeping: when the map was a straight top-down scaling (x = gx, y = gy) it
+-- disagreed with the view by a 45-degree rotation, so a child who looked at the
+-- map, decided the chest was "up and to the left", and then sailed that way on
+-- screen went somewhere else entirely. Up on this map is now up in the world.
+--
+-- Everything therefore goes through Iso.project, exactly like the world does --
+-- the texture (drawn rotated + squashed), the port pips, the treasure X's, the
+-- boat and the camera viewport.
 
 local config = require("src.config")
 local utf8  = require("utf8")
+local Iso   = require("src.systems.iso")
 local Scale = require("src.ui.scale")
 local Retro  = require("src.ui.retro")
 
@@ -87,40 +95,182 @@ function Minimap:refresh()
     return changed
 end
 
+-- Push a closed polygon outward by `m`, the way a mitred picture frame goes
+-- round a painting: every EDGE moves along its own normal and neighbouring
+-- edges are re-intersected. At a sharp corner that intersection lands well
+-- beyond the original vertex -- which is exactly the long point a real frame
+-- has where two mitred lengths meet, and what the map's east/west corners were
+-- missing when the frame was a stroked path (a stroke can only flat-cut or
+-- spike there). Offsetting the VERTICES instead does not work at all: see the
+-- note in draw().
+local function offsetPolygon(pts, m)
+    local n = #pts / 2
+    local cx, cy = 0, 0
+    for k = 1, #pts, 2 do cx = cx + pts[k]; cy = cy + pts[k + 1] end
+    cx, cy = cx / n, cy / n
+
+    local px, py, dx, dy = {}, {}, {}, {}
+    for i = 1, n do
+        local j = (i % n) + 1
+        local ax, ay = pts[i * 2 - 1], pts[i * 2]
+        local bx, by = pts[j * 2 - 1], pts[j * 2]
+        local ex, ey = bx - ax, by - ay
+        local len = math.sqrt(ex * ex + ey * ey)
+        ex, ey = ex / len, ey / len
+        local nx, ny = -ey, ex                       -- one of the two normals...
+        local mx, my = (ax + bx) * 0.5, (ay + by) * 0.5
+        if (mx + nx - cx) ^ 2 + (my + ny - cy) ^ 2 < (mx - cx) ^ 2 + (my - cy) ^ 2 then
+            nx, ny = -nx, -ny                        -- ...the one pointing outward
+        end
+        px[i], py[i] = ax + nx * m, ay + ny * m
+        dx[i], dy[i] = ex, ey
+    end
+
+    local out = {}
+    for i = 1, n do
+        local a = ((i - 2) % n) + 1                  -- the edge arriving at vertex i
+        local cross = dx[a] * dy[i] - dy[a] * dx[i]
+        if math.abs(cross) < 1e-9 then               -- parallel: no miter to find
+            out[i * 2 - 1], out[i * 2] = px[i], py[i]
+        else
+            local tx, ty = px[i] - px[a], py[i] - py[a]
+            local tt = (tx * dy[i] - ty * dx[i]) / cross
+            out[i * 2 - 1] = px[a] + dx[a] * tt
+            out[i * 2] = py[a] + dy[a] * tt
+        end
+    end
+    return out
+end
+
+-- The map diamond's four corners: the world's four corners, projected. Not
+-- symmetric -- a 12000x8000 world puts the top vertex 40% across and the bottom
+-- at 60%. Given in a box iw x ih with its origin at (0, 0).
+local function diamond(iw, ih, worldW, worldH)
+    local fx = worldH / (worldW + worldH)
+    local fy = worldH / (worldW + worldH)
+    return { iw * fx, 0,                 -- top    = world (0, 0)
+             iw, ih * (1 - fy),          -- right  = world (W, 0)
+             iw * (1 - fx), ih,          -- bottom = world (W, H)
+             0, ih * fy }                -- left   = world (0, H)
+end
+
+-- Where the map plaque sits, as PURE geometry (no drawing). The HUD reads this
+-- to keep the shelf clear of the map, and re-deriving the sizing rule over
+-- there would guarantee the two drift apart the first time either is tweaked.
+-- Also hands back the frame polygons so draw() can't disagree with the space
+-- reserved for them -- a mitred corner reaches further out than the band width,
+-- so the padding has to come from the actual geometry, not a guess.
+function Minimap:layout()
+    local sw = love.graphics.getWidth()
+    local t  = math.max(2, math.floor(self.world.game.fonts.small:getHeight() * 0.20))
+    -- A touch bigger than the old rectangular map: the diamond is 2:1 so it's
+    -- shorter than the 3:2 rectangle was, and the width buys back legibility
+    -- without costing the height we just saved.
+    local iw = Scale.phone and math.floor(math.max(160, math.min(215, sw * 0.17)))
+        or math.floor(math.max(200, math.min(300, sw * 0.21)))
+    -- The iso diamond's aspect is SX:SY (2:1), NOT the world's w:h -- projecting
+    -- a rectangle 45 degrees always yields a 2:1 diamond however long the world
+    -- is. Handily that's shorter than the old 3:2, which buys back height on a
+    -- phone.
+    local ih = math.floor(iw * Iso.SY / Iso.SX)
+    local band = math.max(2, t * 1.3)                  -- wooden surround, per side
+
+    local inner = diamond(iw, ih, self.worldW, self.worldH)
+    local outer = offsetPolygon(inner, band)
+    local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
+    for k = 1, #outer, 2 do
+        minX = math.min(minX, outer[k]);     maxX = math.max(maxX, outer[k])
+        minY = math.min(minY, outer[k + 1]); maxY = math.max(maxY, outer[k + 1])
+    end
+    local padL, padT = math.ceil(-minX) + 1, math.ceil(-minY) + 1
+    local outerW = math.ceil(maxX) + padL + 1
+    local outerH = math.ceil(maxY) + padT + 1
+
+    -- 8px from the screen edge, not 16: the frame reads as part of the border.
+    return sw - 8 - outerW, 8, outerW, outerH, iw, ih, t, band, padL, padT,
+           inner, outer
+end
+
 function Minimap:draw()
     local world = self.world
     local fonts = world.game.fonts
     local c     = config.colors
     local sw    = love.graphics.getWidth()
 
-    -- Frame: a wooden plaque sized to the world's aspect ratio, top-right.
-    local t  = math.max(2, math.floor(fonts.small:getHeight() * 0.20))
-    local iw = Scale.phone and math.floor(math.max(135, math.min(185, sw * 0.14)))
-        or math.floor(math.max(170, math.min(260, sw * 0.18)))
-    local ih = math.floor(iw * self.h / self.w)
-    local outerW, outerH = iw + t * 4, ih + t * 4
-    local ox = sw - 16 - outerW
-    local ix, iy = Retro.plaque(ox, 16, outerW, outerH, t)
+    -- Frame: a wooden DIAMOND that follows the map, not a rectangle with the
+    -- map sitting inside it leaving four empty corners.
+    local ox, oy, outerW, outerH, iw, ih, t, band, padL, padT, dInner, dOuter
+        = self:layout()
+    local ix, iy = ox + padL, oy + padT
 
-    -- The explored map itself.
+    -- Iso space for the whole world is a diamond spanning
+    --   x: -worldH*SX .. worldW*SX      y: 0 .. (worldW+worldH)*SY
+    -- so shift x by worldH*SX to start at zero, then scale that box into the well.
+    local SX, SY = Iso.SX, Iso.SY
+    local dw, dh = (self.worldW + self.worldH) * SX, (self.worldW + self.worldH) * SY
+    local kx, ky = iw / dw, ih / dh
+    local x0 = self.worldH * SX
+
+    local function toScreen(gx, gy)
+        return ix + ((gx - gy) * SX + x0) * kx, iy + ((gx + gy) * SY) * ky
+    end
+
+    -- Frame polygons come from layout() (so the reserved space and the drawing
+    -- can't disagree); shift them from box-local into screen coords.
+    local inner, outer = {}, {}
+    for k = 1, 8, 2 do
+        inner[k], inner[k + 1] = ix + dInner[k], iy + dInner[k + 1]
+        outer[k], outer[k + 1] = ix + dOuter[k], iy + dOuter[k + 1]
+    end
+
+    -- Wooden surround: a filled MITRED ring (offsetPolygon above). Two earlier
+    -- attempts were wrong in instructive ways -- pushing the four vertices
+    -- diagonally left the shallow top/bottom edges with no frame at all, and a
+    -- thick stroke had to flat-cut the sharp east/west corners, where a real
+    -- mitred frame comes to a point.
+    local W = Retro.WOOD
+    love.graphics.setColor(0, 0, 0, 0.5)
+    love.graphics.setLineWidth(2)
+    love.graphics.polygon("line", outer)               -- silhouette
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(W.face)
+    love.graphics.polygon("fill", outer)               -- the plank
+    love.graphics.setColor(W.deep)                     -- the well behind the map
+    love.graphics.polygon("fill", inner)
+
+    -- The explored map itself, rotated into the diamond. LÖVE composes
+    -- transforms outermost-first, so scale-then-rotate here means the texture is
+    -- ROTATED first and squashed after -- which is exactly Iso.project written
+    -- as a matrix: [SX,-SX; SY,SY] = diag(SX*root2, SY*root2) * rotate(45).
+    -- (draw()'s own angle/scale arguments can't express this: they scale first.)
+    local cell, SQ2 = self.fog.cell, math.sqrt(2)
     love.graphics.setColor(1, 1, 1)
-    love.graphics.draw(self.tex, ix, iy, 0, iw / self.w, ih / self.h)
+    love.graphics.push()
+    love.graphics.translate(ix + x0 * kx, iy)
+    love.graphics.scale(kx, ky)
+    love.graphics.scale(cell * SX * SQ2, cell * SY * SQ2)
+    love.graphics.rotate(math.pi / 4)
+    love.graphics.draw(self.tex, 0, 0)
+    love.graphics.pop()
 
     -- Overlays stay inside the map well even when something sits at the edge.
     love.graphics.setScissor(ix, iy, iw, ih)
-    local function toScreen(gx, gy)
-        return ix + (gx / self.worldW) * iw, iy + (gy / self.worldH) * ih
-    end
 
-    -- Camera viewport: a thin "you are looking here" rectangle (Civ-style). The
-    -- iso view is a diamond in ground space; groundBounds() gives its bbox, which
-    -- reads fine as an approximate frame.
-    local minGx, minGy, maxGx, maxGy = world.camera:groundBounds()
-    local vx1, vy1 = toScreen(math.max(0, minGx), math.max(0, minGy))
-    local vx2, vy2 = toScreen(math.min(self.worldW, maxGx), math.min(self.worldH, maxGy))
+    -- Camera viewport: project the four SCREEN corners back to the ground and
+    -- forward again through the map's projection. On an iso map that traces the
+    -- true view (an upright rectangle), rather than the over-large bounding
+    -- diamond that groundBounds() would give.
+    local vw, vh = love.graphics.getWidth(), love.graphics.getHeight()
+    local quad = {}
+    for _, cr in ipairs({ { 0, 0 }, { vw, 0 }, { vw, vh }, { 0, vh } }) do
+        local gx, gy = world.camera:screenToWorld(cr[1], cr[2])
+        local px, py = toScreen(gx, gy)
+        quad[#quad + 1] = px
+        quad[#quad + 1] = py
+    end
     love.graphics.setColor(1, 1, 1, 0.55)
     love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", vx1, vy1, vx2 - vx1, vy2 - vy1)
+    love.graphics.polygon("line", quad)
 
     -- Ports we've discovered: a town-coloured pip with a dark surround.
     for _, port in ipairs(world.ports) do
@@ -186,6 +336,21 @@ function Minimap:draw()
     love.graphics.circle("fill", bx, by, 2.5)
 
     love.graphics.setScissor()
+
+    -- Bevel the wooden diamond, drawn last so it sits over the map's edge: the
+    -- two upper faces catch the light, the two lower ones fall into shadow --
+    -- the same raised-plank language Retro.plaque uses on the square panels.
+    local function edge(a, b, col, wdt)
+        love.graphics.setColor(col)
+        love.graphics.setLineWidth(wdt)
+        love.graphics.line(inner[a], inner[a + 1], inner[b], inner[b + 1])
+    end
+    local lw = math.max(1.5, t * 0.9)
+    edge(7, 1, W.hi, lw)      -- left  -> top   (lit)
+    edge(1, 3, W.hi, lw)      -- top   -> right (lit)
+    edge(3, 5, W.lo, lw)      -- right -> bottom (shadow)
+    edge(5, 7, W.lo, lw)      -- bottom -> left  (shadow)
+    love.graphics.setLineWidth(1)
 
     -- "Båtspillet!" in the intro's rainbow letters, big and proud: starts at
     -- the map's left edge and dips into the map itself (fonts.normal is

@@ -254,18 +254,40 @@ end
 -- Parental gate (Kids-category rule: a child must not be able to reach the
 -- purchase alone). A multiplication question stops a 5-year-old cold but is
 -- trivial for the grown-up he fetches. Fresh numbers every time.
-function BoatSelect:openGate()
+-- Roll a fresh question. SIX answers, not three: a child who simply taps gets
+-- through a three-way choice one time in three, which is no gate at all. The
+-- wrong answers are deliberately PLAUSIBLE -- the classic near-misses you get
+-- from miscounting (off by one row, off by one column, off by one) -- so none
+-- of them can be dismissed at a glance without actually doing the sum.
+-- `tries` survives a re-roll, so guessing can't be ground out indefinitely.
+function BoatSelect:openGate(keepTries)
     local a, b = love.math.random(6, 9), love.math.random(6, 9)
     local right = a * b
-    local answers = { right, right + love.math.random(1, 5), right - love.math.random(1, 5) }
-    -- shuffle
-    for i = #answers, 2, -1 do
+
+    local pool = { right + a, right - a, right + b, right - b,
+                   right + 1, right - 1, right + 10, right - 10 }
+    for i = #pool, 2, -1 do                       -- shuffle the pool
+        local j = love.math.random(i)
+        pool[i], pool[j] = pool[j], pool[i]
+    end
+    local answers, seen = { right }, { [right] = true }
+    for _, v in ipairs(pool) do
+        if #answers >= 6 then break end
+        if v > 0 and not seen[v] then seen[v] = true; answers[#answers + 1] = v end
+    end
+    for i = #answers, 2, -1 do                    -- shuffle the answers
         local j = love.math.random(i)
         answers[i], answers[j] = answers[j], answers[i]
     end
     local correct
     for i, v in ipairs(answers) do if v == right then correct = i end end
-    self.gate = { q = ("Hva er %d × %d?"):format(a, b), answers = answers, correct = correct }
+
+    self.gate = {
+        q = ("Hva er %d × %d?"):format(a, b),
+        answers = answers, correct = correct,
+        tries = keepTries or 0,
+        wrong = keepTries and keepTries > 0 or false,   -- show the "try again" line
+    }
     self.offer = "gate"
 end
 
@@ -748,20 +770,26 @@ function BoatSelect:gateLayout()
     local pw = math.min(sw * 0.72, 560 * k)
     local pad, btnH = 26 * k, 64 * k
     local y = pad
-    local titleY = y; y = y + 44 * k + 10 * k
+    local titleY = y; y = y + 44 * k + 8 * k
+    local subY = y;   y = y + 22 * k + 14 * k      -- the line addressed to the adult
     local qY = y;     y = y + 34 * k + 16 * k
-    local ansY = y;   y = y + btnH + 14 * k
+    local ansY = y;   y = y + btnH * 2 + 12 * k + 14 * k   -- two rows of three
     local tilbakeY = y; y = y + 42 * k + pad
     local ph = y
     local px, py = (sw - pw) / 2, (sh - ph) / 2
     local aw = (pw - pad * 2 - 24 * k) / 3
     local answers = {}
-    for i = 1, 3 do
-        answers[i] = { x = px + pad + (i - 1) * (aw + 12 * k), y = py + ansY, w = aw, h = btnH }
+    for i = 1, 6 do
+        local col, row = (i - 1) % 3, math.floor((i - 1) / 3)
+        answers[i] = {
+            x = px + pad + col * (aw + 12 * k),
+            y = py + ansY + row * (btnH + 12 * k),
+            w = aw, h = btnH,
+        }
     end
     return {
         k = k, x = px, y = py, w = pw, h = ph,
-        titleY = py + titleY, qY = py + qY,
+        titleY = py + titleY, subY = py + subY, qY = py + qY,
         answers = answers,
         tilbake = { x = px + pw / 2 - 95 * k, y = py + tilbakeY, w = 190 * k, h = 42 * k },
     }
@@ -774,9 +802,19 @@ function BoatSelect:drawGate()
     love.graphics.setColor(0, 0, 0, 0.6); love.graphics.rectangle("fill", 0, 0, sw, sh)
     Retro.plaque(G.x, G.y, G.w, G.h, math.max(3, math.floor(G.h / 70)))
 
+    -- Two audiences, two lines: the big one is for the child holding the iPad
+    -- (go and fetch a grown-up), the small one is for the grown-up who arrives
+    -- and needs to know what they're being asked to approve.
     love.graphics.setFont(fonts.big); love.graphics.setColor(W.accent)
     local t1 = "Spør en voksen!"
     love.graphics.print(t1, G.x + G.w / 2 - fonts.big:getWidth(t1) / 2, G.titleY)
+
+    love.graphics.setFont(fonts.small)
+    local sub = self.gate.wrong
+        and "Ikke helt! Prøv en gang til – regn ut svaret."
+        or  "Til den voksne: regn ut svaret for å kjøpe Kaptein-pakken."
+    love.graphics.setColor(self.gate.wrong and { 0.90, 0.55, 0.35 } or W.text)
+    love.graphics.print(sub, G.x + G.w / 2 - fonts.small:getWidth(sub) / 2, G.subY)
 
     love.graphics.setFont(fonts.normal); love.graphics.setColor(W.text)
     love.graphics.print(self.gate.q, G.x + G.w / 2 - fonts.normal:getWidth(self.gate.q) / 2, G.qY)
@@ -994,8 +1032,19 @@ function BoatSelect:mousereleased(x, y, button)
         local G = self:gateLayout()
         for i, r in ipairs(G.answers) do
             if Retro.released("bs.gate" .. i, x, y) then
-                if i == self.gate.correct then self:startBuy()
-                else self.offer = "card" end     -- wrong answer: no purchase
+                if i == self.gate.correct then
+                    self:startBuy()
+                else
+                    -- Wrong: never the same question twice, so a guesser can't
+                    -- work it out by elimination. After GATE_TRIES the gate
+                    -- closes altogether and they have to start over.
+                    local tries = (self.gate.tries or 0) + 1
+                    if tries >= (config.PREMIUM.GATE_TRIES or 3) then
+                        self.offer = "card"      -- give up: no purchase
+                    else
+                        self:openGate(tries)     -- fresh numbers, same session
+                    end
+                end
                 return
             end
         end

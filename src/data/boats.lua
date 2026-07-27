@@ -11,21 +11,13 @@
 --   sprite    optional PNG in assets/boats/ (else placeholder art)
 --   color     {r,g,b} hull color for the placeholder
 
+-- ORDER MATTERS: the first entry is the DEFAULT boat -- it's what a new save
+-- starts with (Game defaultState) and what getBoatDef falls back to for an
+-- unknown id. The chooser also lists them in this order.
 return {
     {
-        id       = "starter_boat",
-        name     = "Sundferjen",       -- the little sound-ferry
-        speed    = 140,
-        accel    = 90,
-        turn     = 1.8,
-        capacity = 2,
-        sprite   = "boat1.png",
-        artist   = "Finn-Erik",        -- his boat: hangs a small credit sign in the chooser
-        color    = {0.85, 0.30, 0.25},
-    },
-    {
         id       = "nasse_noff",
-        name     = "Nasse Nøff",       -- stubby little tug-ferry, free boat #2
+        name     = "Nasse Nøff",       -- stubby little tug-ferry: the boat you start with
         speed    = 155,
         accel    = 95,
         turn     = 1.7,
@@ -39,6 +31,17 @@ return {
         frames   = "nasse_noff",
         spriteWidth = 118,             -- gameplay-only size (preview scales itself)
         color    = {0.16, 0.22, 0.32}, -- navy hull for the placeholder fallback
+    },
+    {
+        id       = "starter_boat",
+        name     = "Sundferjen",       -- the little sound-ferry
+        speed    = 140,
+        accel    = 90,
+        turn     = 1.8,
+        capacity = 2,
+        sprite   = "boat1.png",
+        artist   = "Finn-Erik",        -- his boat: hangs a small credit sign in the chooser
+        color    = {0.85, 0.30, 0.25},
     },
     {
         id       = "fishing_boat",

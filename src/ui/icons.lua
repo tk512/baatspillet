@@ -194,14 +194,71 @@ function Icons.draw(kind, x, y, s)
         love.graphics.rectangle("fill", x - s * 0.06, y + s * 0.06, s * 0.12, s * 0.12)
 
     elseif kind == "book" then
-        love.graphics.setColor(0.62, 0.30, 0.24)                                          -- cover
-        love.graphics.rectangle("fill", x - s * 0.36, y - s * 0.42, s * 0.72, s * 0.84, 2, 2)
-        love.graphics.setColor(0.94, 0.90, 0.80)                                          -- pages
-        love.graphics.rectangle("fill", x - s * 0.28, y - s * 0.34, s * 0.60, s * 0.68)
-        love.graphics.setColor(0.85, 0.68, 0.28)                                          -- spine + star
-        love.graphics.rectangle("fill", x - s * 0.36, y - s * 0.42, s * 0.10, s * 0.84)
-        love.graphics.setColor(0.80, 0.55, 0.20)
-        for i = -1, 1 do love.graphics.line(x - s * 0.20, y + i * s * 0.16, x + s * 0.26, y + i * s * 0.16) end
+        -- An OPEN book with a gold star on the page. Drawn closed (a rectangle
+        -- inside a rectangle) it read as a plain box at button size -- one
+        -- playtester took it for a treasure chest. The open silhouette is
+        -- unmistakable even at 27px, and the star says "the things I've found"
+        -- to someone who can't read the word "album".
+        love.graphics.setColor(0.50, 0.24, 0.19)                                          -- cover, peeking out
+        love.graphics.polygon("fill", x - s * 0.48, y - s * 0.14, x, y - s * 0.26,
+            x + s * 0.48, y - s * 0.14, x + s * 0.48, y + s * 0.34,
+            x, y + s * 0.26, x - s * 0.48, y + s * 0.34)
+        love.graphics.setColor(0.95, 0.92, 0.83)                                          -- left page
+        love.graphics.polygon("fill", x - s * 0.44, y - s * 0.13, x - s * 0.03, y - s * 0.24,
+            x - s * 0.03, y + s * 0.20, x - s * 0.44, y + s * 0.28)
+        love.graphics.setColor(0.88, 0.85, 0.75)                                          -- right page (shaded)
+        love.graphics.polygon("fill", x + s * 0.03, y - s * 0.24, x + s * 0.44, y - s * 0.13,
+            x + s * 0.44, y + s * 0.28, x + s * 0.03, y + s * 0.20)
+        love.graphics.setColor(0.40, 0.19, 0.14)                                          -- spine
+        love.graphics.setLineWidth(math.max(1, s * 0.05))
+        love.graphics.line(x, y - s * 0.25, x, y + s * 0.24)
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(0.95, 0.78, 0.28)                                          -- the sticker: a gold star
+        local star = {}
+        for i = 0, 9 do
+            local a = -math.pi / 2 + i * (math.pi / 5)
+            local rr = (i % 2 == 0) and s * 0.17 or s * 0.07
+            star[#star + 1] = x - s * 0.23 + math.cos(a) * rr
+            star[#star + 1] = y + s * 0.02 + math.sin(a) * rr
+        end
+        love.graphics.polygon("fill", star)
+
+    elseif kind == "map" then
+        -- The treasure map: aged parchment with a curled edge and a red X. Shown
+        -- in the shelf while a hunt is live. Real art: assets/icons/map.png
+        -- (assets/ui/treasuremap.png is the big reveal card, a different thing).
+        love.graphics.setColor(0.86, 0.76, 0.53)
+        love.graphics.rectangle("fill", x - s * 0.40, y - s * 0.34, s * 0.80, s * 0.68, 2, 2)
+        love.graphics.setColor(0.72, 0.61, 0.40)                                          -- curled top edge
+        love.graphics.rectangle("fill", x - s * 0.40, y - s * 0.34, s * 0.80, s * 0.10)
+        love.graphics.setColor(0.60, 0.50, 0.32)                                          -- dashed route
+        for i = -2, 1 do
+            love.graphics.rectangle("fill", x + i * s * 0.16, y + s * 0.06, s * 0.08, s * 0.035)
+        end
+        love.graphics.setColor(0.76, 0.20, 0.16)                                          -- the X
+        love.graphics.setLineWidth(math.max(2, s * 0.07))
+        love.graphics.line(x + s * 0.10, y - s * 0.14, x + s * 0.30, y + s * 0.04)
+        love.graphics.line(x + s * 0.30, y - s * 0.14, x + s * 0.10, y + s * 0.04)
+        love.graphics.setLineWidth(1)
+
+    elseif kind == "container" then
+        -- Two stacked shipping containers. Deliberately NOT the wooden crate and
+        -- NOT the treasure chest: New York ships containers, and borrowing the
+        -- chest made its cargo look like treasure. Ribbed sides + a flat top so
+        -- it reads as steel at a glance. Real art: assets/icons/container.png.
+        local function box(by, col, dark)
+            love.graphics.setColor(col)
+            love.graphics.rectangle("fill", x - s * 0.44, by, s * 0.88, s * 0.30)
+            love.graphics.setColor(dark)
+            for i = -3, 3 do                                                              -- corrugated ribs
+                love.graphics.rectangle("fill", x + i * s * 0.12 - s * 0.015, by + s * 0.04,
+                    s * 0.03, s * 0.22)
+            end
+            love.graphics.rectangle("fill", x - s * 0.44, by, s * 0.88, s * 0.035)         -- top rail
+            love.graphics.rectangle("fill", x - s * 0.44, by + s * 0.265, s * 0.88, s * 0.035)
+        end
+        box(y + s * 0.06, { 0.72, 0.34, 0.28 }, { 0.48, 0.20, 0.16 })                     -- lower: red
+        box(y - s * 0.30, { 0.30, 0.48, 0.66 }, { 0.18, 0.30, 0.44 })                     -- upper: blue
 
     else                                                                                  -- generic crate
         love.graphics.setColor(0.60, 0.45, 0.28)

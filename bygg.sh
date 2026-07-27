@@ -1,16 +1,16 @@
 #!/bin/bash
 # Båtspillet — build & release console (iOS/iPadOS + App Store).
 #
-#   ./ios.sh            — interactive menu (when run in a terminal)
-#   ./ios.sh ipad       — build + run in the iPad simulator
-#   ./ios.sh iphone     — build + run in the iPhone simulator
-#   ./ios.sh device     — build + install on a plugged-in iPad/iPhone
-#   ./ios.sh archive    — App Store .ipa (version auto-bumps from ios/VERSION)
-#   ./ios.sh setup      — one-time: build the macOS engine app (build.sh packages it)
-#   ./ios.sh xcode      — open the vendored engine project (manual device runs)
+#   ./bygg.sh            — interactive menu (when run in a terminal)
+#   ./bygg.sh ipad       — build + run in the iPad simulator
+#   ./bygg.sh iphone     — build + run in the iPhone simulator
+#   ./bygg.sh device     — build + install on a plugged-in iPad/iPhone
+#   ./bygg.sh archive    — App Store .ipa (version auto-bumps from ios/VERSION)
+#   ./bygg.sh setup      — one-time: build the macOS engine app (build.sh packages it)
+#   ./bygg.sh xcode      — open the vendored engine project (manual device runs)
 #
 # SIM_NAME / PHONE_SIM_NAME env override the preferred simulators. A bare
-# `./ios.sh` outside a terminal (scripts, CI) runs `ipad`, like before.
+# `./bygg.sh` outside a terminal (scripts, CI) runs `ipad`, like before.
 #
 # The engine is VENDORED at ./engine (LÖVE 12-dev + Apple deps; see
 # engine/VENDORED.md), so this repo builds forever with no network. LÖVE 12's
@@ -79,7 +79,7 @@ do_sim() {
 }
 
 # ── real device: build + install on a connected iPad/iPhone ────────────────
-# Needs a signing team: TEAM_ID=XXXXXXXXXX ./ios.sh device
+# Needs a signing team: TEAM_ID=XXXXXXXXXX ./bygg.sh device
 # (free personal team works — the id is in Xcode ▸ Settings ▸ Accounts).
 do_device() {
     sync_plist
@@ -95,7 +95,7 @@ do_device() {
 }
 
 # ── App Store archive + export (needs the paid developer account) ──────────
-# ./ios.sh archive → .ipa under engine/build/export
+# ./bygg.sh archive → .ipa under engine/build/export
 #
 # Versioning (Apple has TWO numbers):
 #   CFBundleVersion (build number)  = timestamp below: unique + increasing on
@@ -106,7 +106,7 @@ do_device() {
 #     archive (1.0 → 1.0.1 → 1.0.2 …) so a duplicate version can never ship.
 #     Deliberate minor/major releases override it — the override becomes the
 #     new baseline in the file:
-#       APP_VERSION=1.1 ./ios.sh archive
+#       APP_VERSION=1.1 ./bygg.sh archive
 #     Commit ios/VERSION together with the release.
 do_archive() {
     sync_plist
@@ -163,7 +163,7 @@ do_mac() {
    - App Sandbox entitlements for the love-macosx target
    - macOS provisioning profile + distribution signing (archive-style)
    - export as .pkg + the separate macOS app record in App Store Connect
-   (./ios.sh setup still builds the desktop engine app for development.)
+   (./bygg.sh setup still builds the desktop engine app for development.)
 EOF
 }
 

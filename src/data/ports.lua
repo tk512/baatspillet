@@ -8,8 +8,11 @@
 --   x, y      approximate location (snapped to a coast)
 --   color     {r,g,b} accent for the roof + destination flag
 --   size      city size: tiny / small / medium / large (see config.CITY_SIZES)
---   master    optional harbour master's name, shown as "Havnesjef <master>";
---             matches assets/ports/portraits/<id>.png. Omit for plain "Havnesjef".
+--   master    optional harbour master's name, shown as "Havnesjef <master>".
+--             A LIST of names -- { "Solveig", "Frida" } -- turns the title
+--             plural: "Havnesjefer Solveig og Frida". Either way the portrait
+--             is assets/ports/portraits/<id>.png (one photo of all of them).
+--             Omit for a plain "Havnesjef".
 --   produces  what this town sends:
 --               { mode = "passengers", label = "Passasjerer", icon = "passenger" }
 --               { mode = "cargo",      label = "Fisk",        icon = "fish" }
@@ -34,9 +37,9 @@ return {
         produces = { mode = "passengers", label = "Passasjerer", icon = "passenger" },
     },
     {
-        id    = "floro",
-        name  = "Florø",
-        master = "Håkon",
+        id    = "skiparviken",
+        name  = "Skiparviken",
+        master = { "Solveig", "Frida" },   -- this harbour is run by two havnesjefer
         x     = 8700, y = 3400,        -- south coast of the NE island
         color = {0.30, 0.62, 0.66},
         size  = "medium",

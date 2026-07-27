@@ -165,18 +165,34 @@ end
 -- Combined island-mask value at a world point (1 at a centre, 0 past the
 -- radius). The shape that carved the islands, reused to raise elevation toward
 -- each island's middle.
--- Which island "owns" this spot (max mask contribution) decides its biome;
--- open water and unclaimed land default to "green" (the Norge baseline).
-function Terrain:biomeAt(gx, gy)
-    local best, bio = 0, "green"
+-- Which island "owns" this spot: the one contributing most mask here, or nil
+-- over open water and unclaimed land. Everything that varies per island (biome,
+-- and whether it's a remote wilderness) reads from this one lookup.
+function Terrain:islandAt(gx, gy)
+    local best, owner = 0, nil
     for _, isl in ipairs(config.ISLANDS) do
         local dx, dy = gx - isl.x, gy - isl.y
         local d = math.sqrt(dx * dx + dy * dy) / isl.radius
         if d < 1 and (1 - d) > best then
-            best, bio = 1 - d, isl.biome or "green"
+            best, owner = 1 - d, isl
         end
     end
-    return bio
+    return owner
+end
+
+-- Biome of the owning island; unclaimed ground is "green" (the Norge baseline).
+function Terrain:biomeAt(gx, gy)
+    local isl = self:islandAt(gx, gy)
+    return (isl and isl.biome) or "green"
+end
+
+-- A REMOTE island (maps.lua `remote = true`) grows no countryside houses, so it
+-- stays wilderness: forest, rock and coast, with no scattered farms and — since
+-- the country roads link neighbouring houses — no roads either. Sailing past one
+-- should feel like nobody lives there.
+function Terrain:isRemoteAt(gx, gy)
+    local isl = self:islandAt(gx, gy)
+    return isl ~= nil and isl.remote == true
 end
 
 function Terrain:islandMask(gx, gy)
@@ -425,7 +441,11 @@ function Terrain:scatterProps()
                     if f > config.FOREST_THRESH + (bio.forest or 0) then
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "forest", z = 0,
                             salt = i * 131 + j * 977, biome = t.biome }
-                    elseif (i * 31 + j * 7) % 13 == 0 then
+                    elseif bio.scrub and f > config.FOREST_THRESH + bio.scrub then
+                        -- desert: cactus and low bushes where woods can't grow
+                        self.props[#self.props + 1] = { tx = i, ty = j, kind = "scrub", z = 0,
+                            salt = i * 131 + j * 977, biome = t.biome }
+                    elseif (i * 31 + j * 7) % 13 == 0 and not self:isRemoteAt(cx, cy) then
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "house", z = 0 }
                     end
                 end

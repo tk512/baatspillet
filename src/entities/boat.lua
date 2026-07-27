@@ -45,6 +45,7 @@ function Boat.new(def, x, y)
     self.safeX, self.safeY = self.x, self.y  -- last position known to be water
     self.balls    = {}   -- player cannonballs in flight (only if a cannon is owned)
     self.cannonT  = 0    -- time until the cannon can fire again
+    self.tapT     = 0    -- separate cooldown for player-aimed (tapped) shots
     -- Wake trail: a fixed pool of foam puffs / ripple rings dropped at the
     -- stern's WORLD position (they stay where they fell as the boat sails on).
     -- Slots are reused ring-buffer style — no per-frame allocations.
@@ -66,6 +67,7 @@ end
 function Boat:updateCannon(dt, target, onHit, game)
     local C = config.CANNON
     self.cannonT = math.max(0, self.cannonT - dt)
+    self.tapT    = math.max(0, (self.tapT or 0) - dt)
 
     for i = #self.balls, 1, -1 do
         local b = self.balls[i]
@@ -101,16 +103,46 @@ end
 -- a random angular SPREAD, then commit the ball to that straight path. Because
 -- the pirate keeps moving and our aim is off, a moving ship is hard to hit -- as
 -- it should be for a 5-year-old's first cannon.
-function Boat:fireCannon(target, dist)
+-- `spread` overrides the aim error for one shot (tapFire passes the tighter
+-- TAP_SPREAD); omitted, it's the automatic battery's usual wild SPREAD.
+function Boat:fireCannon(target, dist, spread)
     local C = config.CANNON
     local ang = math.atan2(target.y - self.y, target.x - self.x)
-    ang = ang + (love.math.random() * 2 - 1) * C.SPREAD
+    ang = ang + (love.math.random() * 2 - 1) * (spread or C.SPREAD)
     self.balls[#self.balls + 1] = {
         x = self.x, y = self.y,
         vx = math.cos(ang) * C.BALL_SPEED, vy = math.sin(ang) * C.BALL_SPEED,
         life = 0, plan = dist / C.BALL_SPEED,
     }
     Assets.playSfx("cannon", 0.8)
+end
+
+-- A shot the PLAYER aimed, fired by tapping the pirate (World:mousepressed).
+-- It runs on its OWN cooldown, so it never has to wait for the automatic
+-- battery -- tapping always feels like it did something. The auto-cannon is
+-- pushed back by the same interval afterwards so the two never double-fire.
+-- Returns what happened, so the caller can react without re-deriving it:
+--   "fired" · "wait" (still cooling down) · "empty" (no cannonballs left)
+--   "far" (out of range) · nil (no cannon aboard)
+-- "far" and nil deliberately fall through to normal sailing in the caller: a
+-- child tapping a distant pirate means "go there", and that IS how you close
+-- to firing range.
+function Boat:tapFire(target, game)
+    if not (game and game:owns("cannon")) then return nil end
+    local C = config.CANNON
+    local dx, dy = target.x - self.x, target.y - self.y
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist > C.FIRE_RANGE then return "far" end
+    if (self.tapT or 0) > 0 then return "wait" end
+    if not game:useAmmo() then return "empty" end
+    -- Extra cannons speed the tapped shot exactly as they speed the automatic
+    -- battery, so buying a second Kanon means something to the child hammering
+    -- the trigger and not just to the autopilot.
+    local iv = C.TAP_INTERVAL / (game.cannonRate and game:cannonRate() or 1)
+    self.tapT = iv
+    self.cannonT = math.max(self.cannonT, iv)
+    self:fireCannon(target, dist, C.TAP_SPREAD)
+    return "fired"
 end
 
 -- Cannonballs arc over the water (a parabolic screen height), like the pirate's.

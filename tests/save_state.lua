@@ -11,32 +11,18 @@
 
 package.path = "./?.lua;" .. package.path
 
--- Minimal LÖVE stub: an in-memory filesystem is all the save/state functions
--- touch. Fonts, scenes and audio are never called from here.
-local files = {}
-love = {
-    filesystem = {
-        getInfo = function(p) return files[p] ~= nil and { type = "file" } or nil end,
-        read    = function(p) return files[p] end,
-        write   = function(p, s) files[p] = s; return true end,
-    },
-}
+-- The LÖVE stub and the assertion helpers are shared with the other test files
+-- (tests/harness.lua); `files` is the stub's in-memory filesystem, which the
+-- save tests seed and re-read.
+local H = require("tests.harness")
+local files = H.installLove()
 
 local config = require("src.config")
 local json   = require("src.json")
 local Game   = require("src.game")
 Game.data = { boats = require("src.data.boats") }
 
--- tiny harness ---------------------------------------------------------------
-local passed, failed = 0, 0
-local function check(cond, msg)
-    if cond then passed = passed + 1
-    else failed = failed + 1; print("FAIL: " .. msg) end
-end
-local function eq(got, want, msg)
-    check(got == want, string.format("%s (got %s, want %s)",
-        msg, tostring(got), tostring(want)))
-end
+local check, eq = H.check, H.eq
 -- Fresh in-memory "disk" (optionally pre-seeded with a save file) + reload.
 local function reset(saved)
     for k in pairs(files) do files[k] = nil end
@@ -47,8 +33,16 @@ end
 -- fresh defaults --------------------------------------------------------------
 reset()
 eq(Game.state.coins, 0, "fresh: no gold")
-eq(Game.state.selectedBoat, "starter_boat", "fresh: starter boat selected")
-eq(Game.state.unlockedBoats[1], "starter_boat", "fresh: starter boat unlocked")
+-- Asserted against boats.lua's FIRST entry rather than a hard-coded id: the
+-- rule is "the first boat is the default", and the failure this catches is
+-- someone reordering boats.lua without updating defaultState -- which would
+-- silently start new players in a different boat.
+local defaultBoat = Game.data.boats[1]
+eq(Game.state.selectedBoat, defaultBoat.id, "fresh: the default boat is selected")
+eq(Game.state.unlockedBoats[1], defaultBoat.id, "fresh: the default boat is unlocked")
+check(not defaultBoat.premium,
+    "the default boat must be FREE -- a new player would otherwise start in a boat "
+    .. "they don't own (" .. defaultBoat.id .. ")")
 eq(Game.state.ammo, 0, "fresh: no cannonballs")
 eq(Game.state.cannons, 0, "fresh: no cannons")
 eq(Game.state.premium, false, "fresh: no premium")
@@ -149,7 +143,7 @@ eq(Game:mapState("norge").discoveredIslands[1], "bergen", "migration: old island
 -- partial save (old version / hand-edited): missing fields fall to defaults ----
 reset('{"coins":42}')
 eq(Game.state.coins, 42, "partial: kept coins")
-eq(Game.state.selectedBoat, "starter_boat", "partial: default boat")
+eq(Game.state.selectedBoat, Game.data.boats[1].id, "partial: default boat")
 eq(Game.state.ammo, 0, "partial: default ammo")
 
 -- corrupt / empty file: never crash, start fresh --------------------------------
@@ -257,5 +251,4 @@ eq(Game.state.boatNames.fishing_boat, "T\195\184ffe",
     "loadSave: Latin-1 boat name repaired to UTF-8")
 
 -- ---------------------------------------------------------------------------------
-print(string.format("%d passed, %d failed", passed, failed))
-if failed > 0 then os.exit(1) end
+H.report()

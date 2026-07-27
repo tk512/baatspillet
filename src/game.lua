@@ -8,6 +8,7 @@ local Assets = require("src.assets")
 local json   = require("src.json")
 local Scale  = require("src.ui.scale")
 local Retro  = require("src.ui.retro")
+local Profiler = require("src.systems.profiler")
 
 local Game = {}
 
@@ -17,8 +18,8 @@ Game.SAVE_BAK  = "savegame.json.bak"   -- last-known-good copy (crash safety)
 local function defaultState()
     return {
         coins            = 0,
-        unlockedBoats    = { "starter_boat" },
-        selectedBoat     = "starter_boat",  -- boat chosen on the start screen
+        unlockedBoats    = { "nasse_noff" },
+        selectedBoat     = "nasse_noff",    -- the default boat (boats.lua's first entry)
         selectedMap      = "norge",         -- world chosen on the map screen
         boatNames        = {},              -- player's name per boat id (absent = the boat's own)
         premium          = false,           -- the one "Kaptein-pakken" unlock (all premium content)
@@ -78,27 +79,32 @@ function Game:update(dt)
     -- Cap dt so a hitch (e.g. window drag) never teleports the boat.
     if dt > 0.05 then dt = 0.05 end
     local p = self.profile
-    if p and p.on then
-        local t0 = love.timer.getTime()
-        if self.scene and self.scene.update then self.scene:update(dt) end
-        p.upd = p.upd * 0.9 + (love.timer.getTime() - t0) * 1000 * 0.1   -- ms, smoothed
-    elseif self.scene and self.scene.update then
-        self.scene:update(dt)
+    -- Time the scene when EITHER the on-screen overlay (F3) or the CSV
+    -- recorder (F4) wants it; otherwise skip the clock reads entirely.
+    local t0 = ((p and p.on) or Profiler.on) and love.timer.getTime() or nil
+    if self.scene and self.scene.update then self.scene:update(dt) end
+    if t0 then
+        local ms = (love.timer.getTime() - t0) * 1000
+        self._updMs, self._dt = ms, dt
+        if p and p.on then p.upd = p.upd * 0.9 + ms * 0.1 end   -- smoothed, for the overlay
     end
     Retro.updateFx(dt)   -- button star-bursts live above scenes
 end
 
 function Game:draw()
     local p = self.profile
-    if p and p.on then
-        local t0 = love.timer.getTime()
-        if self.scene and self.scene.draw then self.scene:draw() end
-        p.drw = p.drw * 0.9 + (love.timer.getTime() - t0) * 1000 * 0.1   -- ms, smoothed
-        self:drawProfiler()
-    elseif self.scene and self.scene.draw then
-        self.scene:draw()
+    local t0 = ((p and p.on) or Profiler.on) and love.timer.getTime() or nil
+    if self.scene and self.scene.draw then self.scene:draw() end
+    if t0 then
+        local ms = (love.timer.getTime() - t0) * 1000
+        self._drawMs = ms
+        if p and p.on then p.drw = p.drw * 0.9 + ms * 0.1 end
     end
+    if p and p.on then self:drawProfiler() end
     Retro.drawFx()
+    -- One CSV row per frame, last thing, so getStats() covers the whole frame.
+    Profiler.frame(self._dt or 0, self._updMs or 0, self._drawMs or 0,
+        (self.sceneName == "world") and self.scene or nil)
 end
 
 -- Compact dev overlay. Draw timings are CPU submit time (not GPU); FPS reflects
@@ -513,6 +519,12 @@ function Game:keypressed(key, scancode, isrepeat)
         self:reloadData(); return
     elseif config.DEV and key == "f3" then
         self.profile.on = not self.profile.on; return   -- toggle dev profiler
+    elseif config.DEV and key == "f4" then
+        -- Record every frame to profile.csv in the save dir (F4 again to stop
+        -- and flush). Play normally while it runs, then analyse the file.
+        local path = Profiler.toggle()
+        print(path and ("profiling -> " .. path) or "profiling stopped (flushed)")
+        return
     elseif key == "m" then
         config.AUDIO_ON = not config.AUDIO_ON
         Assets.refreshAudio(); return
@@ -586,6 +598,7 @@ function Game:onFocus()
 end
 
 function Game:quit()
+    Profiler.stop()   -- flush whatever hasn't been written yet
     self:save()
     return false  -- allow the quit
 end

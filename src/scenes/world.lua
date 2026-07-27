@@ -8,6 +8,7 @@
 
 local config       = require("src.config")
 local Scale        = require("src.ui.scale")
+local Profiler     = require("src.systems.profiler")
 local Retro        = require("src.ui.retro")
 local Assets       = require("src.assets")
 local Iso          = require("src.systems.iso")
@@ -43,7 +44,7 @@ local World = {}
 local HOUSE_SPRITES = {
     "props/houses/house_1.png", "props/houses/house_2.png", "props/houses/house_3.png",
     "props/houses/house_4.png", "props/houses/house_5.png", "props/houses/house_6.png",
-    "props/houses/house_7.png",
+    "props/houses/house_7.png", "props/houses/house_8.png", "props/houses/house_9.png",
 }
 local function houseSprite(i, j)
     return HOUSE_SPRITES[(i * 7 + j * 13) % #HOUSE_SPRITES + 1]
@@ -55,19 +56,74 @@ end
 local COUNTRY_HOUSES = {
     "props/house.png", "props/house.png", "props/house.png", "props/house.png",
     "props/houses/house_1.png", "props/houses/house_2.png", "props/houses/house_7.png",
+    "props/houses/house_8.png", "props/houses/house_9.png",
 }
+
+-- FARM DISTRICTS. Norway between the towns is farmed, not just dotted with the
+-- same brick house over and over. Countryside buildings are placed one tile in
+-- thirteen (terrain.lua), so neighbours are rare and a farm building on its own
+-- would just read as an odd house. Instead we hash a COARSE cell (4x4 tiles):
+-- every building inside a farm cell draws from the farm set, so a farm arrives
+-- as a cluster -- farmhouse, barn, silo and a pig pen together. The country
+-- roads already link neighbouring countryside buildings, so farms get their own
+-- tracks for free.
+local FARM_SPRITES = {
+    "props/farm/farmhouse.png", "props/farm/barn.png",
+    "props/farm/silo.png", "props/farm/pigs.png",
+}
+local FARM_CELL   = 4    -- tiles per side of a farm district
+local FARM_ODDS   = 5    -- one coarse cell in this many is farmland
+
+-- Named landmarks a town can be given in its ports file (`landmarks = {"airport"}`).
+-- Each is a CLUSTER of sprites placed on consecutive tiles just past the built-up
+-- edge, so it reads as one installation rather than three odd buildings. A
+-- control tower says "big foreign city" to a five-year-old far more loudly than
+-- any change of housing style could.
+local LANDMARKS = {
+    airport = {
+        "props/airport/tower.png",
+        "props/airport/terminal.png",
+        "props/airport/hangar.png",
+    },
+}
+
 local function countryHouseSprite(i, j)
+    local ci, cj = math.floor(i / FARM_CELL), math.floor(j / FARM_CELL)
+    if (ci * 31 + cj * 17) % FARM_ODDS == 0 then
+        return FARM_SPRITES[(i * 7 + j * 13) % #FARM_SPRITES + 1]
+    end
     return COUNTRY_HOUSES[(i * 7 + j * 13) % #COUNTRY_HOUSES + 1]
 end
 
 -- Apartment blocks for the dense core of bigger towns (deterministic per tile).
-local BLOCK_SPRITES = {
-    "props/blocks/block_1.png", "props/blocks/block_2.png",
-    "props/blocks/block_3.png", "props/blocks/block_4.png",
+-- The set is chosen PER MAP: Bergen and Oslo get the modest Scandinavian blocks,
+-- while Amerika's downtowns get real high-rises (tools/extract_opengfx_blocks.py).
+-- Glass skyscrapers in a Norwegian fjord town would be plain wrong, so never
+-- collapse these back into one list. An unknown map falls back to `norge`.
+local BLOCK_SETS = {
+    norge = {
+        "props/blocks/block_1.png", "props/blocks/block_2.png",
+        "props/blocks/block_3.png", "props/blocks/block_4.png",
+    },
+    amerika = {},   -- filled below: us_1..21
 }
-local function blockSprite(i, j)
-    return BLOCK_SPRITES[(i * 5 + j * 11) % #BLOCK_SPRITES + 1]
+for n = 1, 21 do
+    BLOCK_SETS.amerika[n] = ("props/blocks/us_%d.png"):format(n)
 end
+
+local function blockSprite(i, j, set)
+    local s = BLOCK_SETS[set] or BLOCK_SETS.norge
+    return s[(i * 5 + j * 11) % #s + 1]
+end
+
+-- Tap box for firing at the pirate (see World:mousepressed). Its hull is 60 long
+-- in local space (pirate.lua HULL) scaled by PIRATE.LENGTH, and the black sails
+-- tower well above the waterline. Generous on purpose: a child aiming a finger
+-- at a moving ship needs slack, and the worst case of a too-big box is that a
+-- tap right beside the pirate shoots instead of sailing there -- which, with a
+-- pirate that close, is what you meant anyway.
+local PIRATE_TAP_W = 60 * (config.PIRATE.LENGTH or 2.6)
+local PIRATE_TAP_H = 95
 
 function World:load(game)
     self.game    = game
@@ -104,13 +160,18 @@ function World:load(game)
         Loader.tick()
         local ptile = self.terrain.tiles[p.tx][p.ty]
         local pz = ptile.z or 0                       -- sit the prop on the terrain height
-        if (p.kind == "forest" or p.kind == "house")
+        if (p.kind == "forest" or p.kind == "house" or p.kind == "scrub")
             and (ptile.level or 0) >= config.MOUNTAINS.TREELINE_LEVEL then
             -- above the treeline: bare rock/snow, no forests or houses
         elseif p.kind == "forest" then
             self.objects:add({
                 tx = p.tx, ty = p.ty, z = pz, kind = "forest",
                 draw = function(_, g) Objects.drawForest(g, p.salt, p.biome) end,
+            })
+        elseif p.kind == "scrub" then          -- desert: cactus + low bushes
+            self.objects:add({
+                tx = p.tx, ty = p.ty, z = pz, kind = "scrub",
+                draw = function(_, g) Objects.drawScrub(g, p.salt) end,
             })
         elseif p.kind == "house" and self:solidLand(p.tx, p.ty) then
             self.objects:add({
@@ -124,6 +185,8 @@ function World:load(game)
         end
     end
     -- Cities: scatter buildings around each port to show how big the town is.
+    -- The downtown block set follows the map (see BLOCK_SETS).
+    self.blockSet = game.state.selectedMap or "norge"
     for _, port in ipairs(self.ports) do
         self:scatterCity(port)
     end
@@ -197,6 +260,7 @@ function World:load(game)
     self.dolphins = Dolphins.new()   -- a pod that joins when you sail fast
 
     self.splashes = {}       -- short-lived water bursts (e.g. a zapped pirate)
+    self.coinPops = {}       -- gold tumbling out of a pirate that's been driven off
     self.eaten = {}          -- falling-food "Nam nam nam" bites
     self.sailDist = 0        -- distance sailed toward the next bite
     self.puffs = {}          -- horn smoke puffs rising off the funnel
@@ -279,6 +343,30 @@ function World:scatterCity(port)
             })
         end
     end
+    -- Landmarks the town was given in its ports file. Candidates are sorted
+    -- nearest-first, so starting a little past `spec.houses` puts these just
+    -- OUTSIDE the built-up area -- which is where an airport belongs, and keeps
+    -- it from swallowing the downtown core.
+    if port.def.landmarks then
+        local slot = math.min(#cands, spec.houses + 4)
+        for _, id in ipairs(port.def.landmarks) do
+            for _, sprite in ipairs(LANDMARKS[id] or {}) do
+                while slot < #cands and taken[slot] do slot = slot + 1 end
+                if slot >= #cands then break end
+                taken[slot] = true
+                local c = cands[slot]
+                self.objects:add({
+                    tx = c.i, ty = c.j, z = self.terrain:tileZ(c.i, c.j), sprite = sprite,
+                    draw = function(_, g)      -- fallback if the PNG is missing
+                        Objects.building(g.cx, g.cy, 16, 16, g.z, 30, 16,
+                            config.colors.building_wall, config.colors.building_dk)
+                    end,
+                })
+                slot = slot + 1
+            end
+        end
+    end
+
     -- Big towns get a dense core of apartment blocks (cands are nearest-first, so
     -- the blocks cluster at the centre) ringed by cottages further out.
     -- metropolis: over half the town is downtown high-rise blocks
@@ -289,7 +377,8 @@ function World:scatterCity(port)
         if not taken[k] and placed < spec.houses then
             placed = placed + 1
             local c = cands[k]
-            local sprite = (placed <= blockCore) and blockSprite(c.i, c.j) or houseSprite(c.i, c.j)
+            local sprite = (placed <= blockCore)
+                and blockSprite(c.i, c.j, self.blockSet) or houseSprite(c.i, c.j)
             self.objects:add({
                 tx = c.i, ty = c.j, z = self.terrain:tileZ(c.i, c.j), sprite = sprite,
                 draw = function(_, g)
@@ -648,11 +737,7 @@ function World:update(dt)
         self.boat:updateCannon(dt, target, function() self:cannonHitPirate() end, self.game)
         -- Out of balls with a pirate attacking: say so once per encounter, so the
         -- quiet cannon reads as "buy kuler", not a bug. (You can still just dodge.)
-        if target and self.game:ammoCount() <= 0 and not self._ammoWarned then
-            self._ammoWarned = true
-            self:showToast("Tomt for kanonkuler! Kjøp flere i butikken.")
-            if not Assets.playNamedVoice("tomt_for_kuler") then Assets.playSfx("bump", 0.7) end
-        end
+        if target and self.game:ammoCount() <= 0 then self:warnNoAmmo() end
         if not self.pirate then self._ammoWarned = false end
     end
 
@@ -697,6 +782,9 @@ function World:update(dt)
         end
     end
     self.camera:update(dt)
+
+    self:updateCoinPops(dt)
+    self._ammoWarnT = math.max(0, (self._ammoWarnT or 0) - dt)   -- see warnNoAmmo
 
     if self.toast.timer > 0 then
         self.toast.timer = self.toast.timer - dt
@@ -891,7 +979,13 @@ function World:revealTreasureMap(port)
     -- The very first map (never had one) is guaranteed so the hunt is introduced;
     -- after that it's an occasional surprise on delivery, not every time.
     local everHad = #self.ms.treasuresMapped > 0 or #self.ms.treasuresFound > 0
-    if everHad and love.math.random() >= config.TREASURE.MAP_CHANCE then return false end
+    if everHad then
+        -- A guaranteed breather first: without it a fair coin will hand you a
+        -- second hunt immediately after the first often enough to feel like the
+        -- game is nothing but treasure hunts.
+        if (self._sinceMap or 99) < config.TREASURE.MAP_COOLDOWN then return false end
+        if love.math.random() >= config.TREASURE.MAP_CHANCE then return false end
+    end
     local best, bestD
     for _, t in ipairs(self.treasures) do
         if not t.found and not self.mapped[t.id] then
@@ -902,6 +996,7 @@ function World:revealTreasureMap(port)
     end
     if not best then return false end
     self.mapped[best.id] = true
+    self._sinceMap = 0                                      -- start the breather
     table.insert(self.ms.treasuresMapped, best.id)
     self.game:save()
     -- Defer the big "Finn skatten!" card until the dock screen closes, so it
@@ -937,7 +1032,23 @@ function World:activeTreasure()
     return best
 end
 
+-- Advance the hunt's animation phases. These MUST be integrated -- phase +=
+-- dt * speed -- and never written as sin(absoluteTime * speed): the speed rises
+-- with the heat, and love.timer.getTime() is a large number by the time anyone
+-- is playing, so multiplying it by a changing rate makes the phase leap
+-- hundreds of radians between frames. That is exactly what made the chest ring
+-- and the arrow jump and skip as you closed in on the chest.
+function World:updateHuntPhases(dt)
+    local heat = self:treasureHeat()
+    if not heat then return end
+    local M = config.TREASURE_MODE
+    self._ringPhase = (self._ringPhase or 0) + dt * (M.RING_COLD + (M.RING_HOT - M.RING_COLD) * heat)
+    self._bobPhase  = (self._bobPhase or 0) + dt * (M.BOB_COLD + (M.BOB_HOT - M.BOB_COLD) * heat)
+    self._beatPhase = (self._beatPhase or 0) + dt * (3 + 9 * heat)
+end
+
 function World:updateTreasure(dt)
+    self:updateHuntPhases(dt)
     -- advance chest-open coin bursts
     for i = #self.treasureFX, 1, -1 do
         local fx = self.treasureFX[i]
@@ -1162,6 +1273,21 @@ end
 -- Pirates appear rarely while sailing the open sea with gold to lose. Once one
 -- is hunting we run its AI; it despawns when it gives up or is shaken off.
 function World:updatePirate(dt)
+    -- Drain the queued arrival shouts (see spawnPirate). The gap only starts
+    -- counting once the previous shout has actually FINISHED -- a fixed delay
+    -- from the start of each clip cuts it off partway and sounds like a stutter
+    -- instead of a pirate crew calling out again and again.
+    if (self._cryLeft or 0) > 0 then
+        local src = self._crySrc
+        if not (src and src:isPlaying()) then
+            self._cryT = self._cryT - dt
+            if self._cryT <= 0 then
+                self._cryLeft = self._cryLeft - 1
+                self._cryT = config.PIRATE.CRY_GAP
+                self._crySrc = Assets.playSfx("pirate_warn", 0.85)
+            end
+        end
+    end
     if self.pirate then
         self.pirate:update(dt, self.boat, self.terrain, function() self:pirateHit() end)
         -- the moment it breaks off — however it was driven off — celebrate:
@@ -1209,7 +1335,12 @@ function World:spawnPirate()
     if not px then return end          -- nowhere clear to appear; try again next roll
     self.pirate = Pirate.new(px, py, self.boat.maxSpeed)
     self.pirate.angle = math.atan2(self.boat.y - py, self.boat.x - px)
+    -- The cry goes up more than once: one shout is easy to miss over the sea,
+    -- and a repeated chant is what makes a pirate arriving feel like an EVENT.
+    -- config.PIRATE.CRY_TIMES / CRY_GAP; the queue is drained in updatePirate.
     Assets.playSfx("pirate_warn", 0.85)
+    self._cryLeft = config.PIRATE.CRY_TIMES - 1
+    self._cryT    = config.PIRATE.CRY_GAP
     Assets.startChase()
     self:showToast("Sjørøvere!")
 end
@@ -1332,7 +1463,7 @@ function World:cannonHitPirate()
     self.camera:addShake(7)
     if self.pirate.hits >= config.CANNON.SCARE_HITS then
         self.pirate:flee()                            -- driven off; sails away
-        self:showToast("Sjørøveren rømmer!")          -- "The pirate flees!"
+        self:pirateDropsGold(self.pirate.x, self.pirate.y)
     else
         self:showToast("Treff!")                      -- "Hit!" -- keep at it
     end
@@ -1340,6 +1471,49 @@ end
 
 -- A cannonball struck the boat: lose a little gold (never below zero) and shake
 -- the screen. If you're now broke the pirate gives up and sails off.
+-- The pirate is beaten and spills its loot. This is what makes fighting worth
+-- doing: the kanonkuler you burned cost real gold, so without a prize the
+-- correct play was always to run. The coins burst out of the ship, tumble onto
+-- the water and settle -- the gold is credited immediately, the scatter is
+-- just the show.
+function World:pirateDropsGold(x, y)
+    self.game:addCoins(config.PIRATE.DROP_GOLD)
+    self:showToast("Sjørøveren rømmer! Gullet er ditt!")
+    Assets.playSfx("coin", 0.9)
+    for _ = 1, 8 do
+        local a  = love.math.random() * math.pi * 2
+        local sp = 40 + love.math.random() * 70
+        self.coinPops[#self.coinPops + 1] = {
+            x = x, y = y, t = 0,
+            vx = math.cos(a) * sp, vy = math.sin(a) * sp,
+            spin = love.math.random() * math.pi * 2,
+        }
+    end
+end
+
+local COIN_POP_LIFE = 1.6
+function World:updateCoinPops(dt)
+    for i = #self.coinPops, 1, -1 do
+        local c = self.coinPops[i]
+        c.t = c.t + dt
+        c.x, c.y = c.x + c.vx * dt, c.y + c.vy * dt
+        c.vx, c.vy = c.vx * 0.94, c.vy * 0.94    -- drag, so they settle quickly
+        c.spin = c.spin + dt * 6
+        if c.t > COIN_POP_LIFE then table.remove(self.coinPops, i) end
+    end
+end
+
+function World:drawCoinPops()
+    for _, c in ipairs(self.coinPops) do
+        local p = c.t / COIN_POP_LIFE
+        local hop = math.sin(math.min(p * 2, 1) * math.pi) * 30   -- up, then down
+        local sx, sy = Iso.project(c.x, c.y, 26 + hop)
+        love.graphics.setColor(1, 1, 1, 1 - math.max(0, (p - 0.7) / 0.3))
+        Icons.coin(sx, sy, Scale.overlay(11), c.spin)
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
 function World:pirateHit()
     local loss = math.min(config.PIRATE.HIT_GOLD, self.game.state.coins)
     if loss > 0 then self.game:addCoins(-loss) end
@@ -1392,6 +1566,9 @@ function World:openDock(port)
     -- only when no hunt is already on the go. Granted up front so the deliver
     -- screen can offer the choice (Finn skatten! vs Butikk); the big card pops
     -- once the dock closes.
+    -- Count this delivery before rolling, so the cooldown measures deliveries
+    -- made since the last map rather than docks visited.
+    if delivered > 0 then self._sinceMap = (self._sinceMap or 99) + 1 end
     local mapGiven = (mode == "deliver") and self:revealTreasureMap(port) or false
 
     self.dock = PortScreen.new(self, port, {
@@ -1415,16 +1592,43 @@ function World:showToast(text)
     self.toast.text, self.toast.timer, self.toast.rise = text, 2.0, 0
 end
 
+-- "The locker is empty", so a silent cannon reads as "buy more kuler" rather
+-- than as a bug. Two callers, two different manners:
+--   the automatic battery going quiet says its piece ONCE per encounter (reset
+--     when the pirate leaves) and then hushes, so it never nags;
+--   a TAP is a deliberate act by the child, and an action that produces total
+--     silence reads as a broken game -- so it always answers with a dry click,
+--     and repeats the spoken warning on a cooldown rather than only once.
+function World:warnNoAmmo(tapped)
+    if tapped then Assets.playSfx("bump", 0.45) end     -- always something back
+    if not tapped and self._ammoWarned then return end
+    if (self._ammoWarnT or 0) > 0 then return end       -- don't repeat the speech
+    self._ammoWarned, self._ammoWarnT = true, 2.5
+    self:showToast("Tomt for kanonkuler! Kjøp flere i butikken.")
+    if not Assets.playNamedVoice("tomt_for_kuler") then Assets.playSfx("bump", 0.7) end
+end
+
 function World:draw()
     love.graphics.clear(config.colors.water_deep)
 
     self.camera:attach()
+    local _z = Profiler.mark()
     self:drawWorldSorted()
+    Profiler.zone("world", _z)
     self:drawClouds()              -- soft clouds hanging over the mountain peaks
+    _z = Profiler.mark()
     self:drawFog()                 -- dark over everything not yet explored
+    Profiler.zone("fog", _z)
     self.camera:detach()
 
+    -- Treasure-seeking mode washes the finished world in old-map colours before
+    -- the HUD goes on top, so the SEA changes character but the panels stay
+    -- readable.
+    self:drawHuntOverlay()
+
+    _z = Profiler.mark()
     HUD.draw(self)
+    Profiler.zone("hud", _z)
 
     if not self.dock and not self.album and not self.mapReveal and not self.winScreen
         and not self.pause then
@@ -1434,7 +1638,9 @@ function World:draw()
         self:drawMissionPointer()    -- "go this way!" hint (cargo destination)
         self:drawTreasurePointer()   -- orange "to the treasure!" arrow + ring
         self:drawPirateIndicator()   -- red "danger this way!" arrow when off-screen
+        _z = Profiler.mark()
         self.minimap:draw()          -- world map + treasure X's
+        Profiler.zone("minimap", _z)
         self:drawShipPopup()         -- MarineTraffic-style card for a tapped ship
     end
     if self.dock then self.dock:draw() end            -- docking modal
@@ -1707,8 +1913,51 @@ end
 -- active chest, plus a pulsing ring on the chest when it's on screen -- so the
 -- youngest players can always find their way to the treasure.
 local TREASURE_ARROW = { 0.98, 0.46, 0.12 }   -- warm orange (not the gold mission arrow)
+-- How close the hunt is, 0..1 -- nil when there's no hunt on. THE single number
+-- treasure-seeking mode runs on: the banner, the arrow, the chest ring and the
+-- wash over the sea all read it, so they can never disagree with each other.
+-- Squared so the last stretch feels like it accelerates ("warmer... WARMER!").
+function World:treasureHeat(tr)
+    tr = tr or self:activeTreasure()
+    if not tr then return nil, nil end
+    local M = config.TREASURE_MODE
+    local dx, dy = tr.x - self.boat.x, tr.y - self.boat.y
+    local d = math.sqrt(dx * dx + dy * dy)
+    local h = (M.NEAR - d) / math.max(1, M.NEAR - M.HOT)
+    h = math.max(0, math.min(1, h))
+    return h * h, tr
+end
+
+-- The parchment wash + vignette that says "you are hunting" without a word.
+-- Drawn in SCREEN space over the finished world, under the HUD.
+function World:drawHuntOverlay()
+    local heat, tr = self:treasureHeat()
+    if not tr then return end
+    local M = config.TREASURE_MODE
+    local sw, sh = love.graphics.getDimensions()
+
+    love.graphics.setColor(M.TINT[1], M.TINT[2], M.TINT[3],
+        M.TINT_MIN + (M.TINT_MAX - M.TINT_MIN) * heat)
+    love.graphics.rectangle("fill", 0, 0, sw, sh)
+
+    -- corner darkening, strongest when you're nearly on the chest
+    local a = M.VIGNETTE * heat
+    if a > 0.002 then
+        local band = math.min(sw, sh) * 0.22
+        for i = 1, 6 do                                   -- cheap layered falloff
+            local f = (i / 6)
+            love.graphics.setColor(0.12, 0.07, 0.02, a * f * 0.22)
+            local inset = band * (1 - f)
+            love.graphics.rectangle("line", inset, inset, sw - inset * 2, sh - inset * 2,
+                band * 0.5, band * 0.5)
+        end
+        love.graphics.setLineWidth(1)
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
 function World:drawTreasurePointer()
-    local tr = self:activeTreasure()
+    local heat, tr = self:treasureHeat()
     if not tr then return end
 
     local bx, by = self.camera:worldToScreen(self.boat.x, self.boat.y)
@@ -1717,9 +1966,17 @@ function World:drawTreasurePointer()
     local t = love.timer.getTime()
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
 
+    -- Warmer / colder: the closer you are, the faster everything beats and the
+    -- bigger the arrow gets. No numbers, no words -- a five-year-old reads
+    -- "the arrow is getting excited" instantly.
+    -- Phases come from World:updateHuntPhases (integrated, see the note there).
+    local M = config.TREASURE_MODE
+    local ringPh = self._ringPhase or 0
+    local bobPh  = self._bobPhase or 0
+
     -- pulsing ring on the chest when it's on screen
     if tx > 0 and tx < sw and ty > 0 and ty < sh then
-        local pr = Scale.overlay(28 + math.sin(t * 4) * 7)
+        local pr = Scale.overlay(28 + math.sin(ringPh) * 7)
         love.graphics.setColor(0, 0, 0, 0.45)
         love.graphics.setLineWidth(6); love.graphics.circle("line", tx, ty, pr)
         love.graphics.setColor(TREASURE_ARROW)
@@ -1728,10 +1985,10 @@ function World:drawTreasurePointer()
     end
 
     -- the arrow, bobbing above the boat (same friendly size as the gold one)
-    local hop2 = math.max(0, math.sin(t * 2.6)) * Scale.overlay(8)
+    local hop2 = math.max(0, math.sin(bobPh)) * Scale.overlay(8)
     local hx = bx + math.cos(ang) * hop2
     local hy = by - Scale.overlay(62) + math.sin(t * 3) * 4 + math.sin(ang) * hop2
-    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(0.75)
+    local s = (1 + M.ARROW_GROW * heat + 0.05 * math.sin(t * 5)) * Scale.overlay(0.75)
     love.graphics.push(); love.graphics.translate(hx, hy); love.graphics.rotate(ang); love.graphics.scale(s, s)
     local arrow = { 32, 0, 13, -18, 13, -8, -26, -12, -15, 0, -26, 12, 13, 8, 13, 18 }
     love.graphics.setColor(0, 0, 0, 0.28)
@@ -1918,6 +2175,7 @@ function World:drawWorldSorted()
     self:drawPuffs()
     self:drawFireworks()
     self:drawEaten()
+    self:drawCoinPops()      -- a beaten pirate's loot tumbling onto the water
     self:drawTreasures()     -- chests on sandbanks + win bursts (camera-attached)
     love.graphics.setColor(1, 1, 1)
 end
@@ -2026,9 +2284,19 @@ function World:mousepressed(x, y, button)
         if self._pauseBtnRect and Retro.press("hud.pause", self._pauseBtnRect, x, y) then
             return
         end
-        local r = self._skatterRect       -- clicking the "Skatter" bar opens the album
-        if r and x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
-            self:openAlbum(); return
+        -- Tapping the shelf's treasure row opens the album. The rest of the
+        -- shelf swallows taps too (see below): it is the player's own stuff, so
+        -- poking it must never do something to the world behind it -- and it
+        -- must never pause, which is what the whole plaque used to do.
+        local sr = self._shelfRects
+        if sr then
+            local tr = sr.treasures
+            if tr and x >= tr.x and x <= tr.x + tr.w and y >= tr.y and y <= tr.y + tr.h then
+                self:openAlbum(); return
+            end
+            for _, r in pairs(sr) do
+                if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then return end
+            end
         end
         if self.latching then return end   -- being pulled into the berth; ignore clicks
         -- tap your OWN boat -> toot the horn. The box hugs just the hull +
@@ -2040,6 +2308,24 @@ function World:mousepressed(x, y, button)
             and y > by - bw * 0.52 and y < by + bw * 0.05 then
             self:soundHorn(); return
         end
+        -- Tap the pirate to FIRE at it -- the one trigger in the game. The
+        -- automatic battery is untouched, so a child who never taps plays
+        -- exactly the game he played before; this is for the ones who go
+        -- looking for a trigger. Only while it's actually attacking: a pirate
+        -- already fleeing is left alone (a ball spent on a ship that's running
+        -- away buys nothing), and the tap falls through to sailing instead.
+        if self.pirate and self.pirate.state == "chase" then
+            local px, py = self.camera:worldToScreen(self.pirate.x, self.pirate.y)
+            local hw = PIRATE_TAP_W * 0.5 * self.camera.zoom
+            local hh = PIRATE_TAP_H * self.camera.zoom
+            if x > px - hw and x < px + hw and y > py - hh and y < py + hh * 0.2 then
+                local shot = self.boat:tapFire(self.pirate, self.game)
+                if shot == "fired" or shot == "wait" then return end
+                if shot == "empty" then self:warnNoAmmo(true); return end
+                -- "far" or no cannon aboard: fall through and sail toward it
+            end
+        end
+
         local ship = self.fleet:shipAt(x, y, self.camera)   -- hit test on the sprite
         if ship then                        -- tap a ship -> its info card (don't sail)
             self.shipPopup = { ship = ship, t = 0 }

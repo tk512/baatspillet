@@ -16,4 +16,9 @@ All of the game's **source code and original assets are MIT-licensed**
   sprites). <!-- TODO: author/source link for the TreePack download -->
 - `assets/tiles/gress/` — isometric ground tile art (grass/dirt/stone), baked
   into the land-mesh texture atlas. <!-- TODO: author/source link -->
-
+- **OpenGFX** — **GPL v2**, not MIT (see `~/proj/OpenGFX/LICENSE` and README §5.0):
+  https://github.com/OpenTTD/OpenGFX. Extracted by `tools/extract_opengfx_*.py` into:
+  `assets/props/houses/` (town cottages), `assets/props/blocks/` (Norwegian blocks +
+  `us_*.png` American downtown high-rises), `assets/props/farm/` (farmhouse, barn, silo,
+  pig pen), `assets/props/airport/` (control tower, terminal, hangar), `assets/props/trees/`,
+  `assets/ships/` (8-view ambient ship sprites) and various props.

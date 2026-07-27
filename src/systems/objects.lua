@@ -234,6 +234,83 @@ local function trees3d()
     return treePack or nil
 end
 
+-- Desert vegetation: saguaro cactus and low scrub bushes, on tiles where the
+-- desert biome forbids woods (config.SCRUB). Soft rounded shapes rather than
+-- pixel sprites -- the pixelised trees were the one thing the actual player
+-- disliked, and OpenGFX has no cactus art to borrow anyway.
+--
+-- Positions are cached per tile in the same forestCache, keyed by a salt that
+-- can't collide with a forest's (a tile is one or the other, never both), so a
+-- scrub tile costs no per-frame allocation either.
+function Objects.drawScrub(g, salt)
+    local S = config.SCRUB
+    local z = g.z or 0
+    local plants = forestCache[salt]
+    if not plants then
+        local s = (salt or 1) % 100000
+        local function rnd()
+            s = (s * 1103515245 + 12345) % 2147483648
+            return s / 2147483648
+        end
+        plants = {}
+        for k = 1, S.DENSITY do
+            local gx = g.gx0 + rnd() * (g.gx1 - g.gx0)
+            local gy = g.gy0 + rnd() * (g.gy1 - g.gy0)
+            -- x, y, scale, kind-roll, arm-roll, arm-height-roll
+            plants[k] = { gx, gy, 0.8 + rnd() * 0.55, rnd(), rnd(), rnd() }
+        end
+        table.sort(plants, function(a, b) return (a[1] + a[2]) < (b[1] + b[2]) end)
+        forestCache[salt] = plants
+    end
+
+    for _, p in ipairs(plants) do
+        local sx, sy = Iso.project(p[1], p[2], z)
+        local sc = p[3]
+        love.graphics.setColor(0, 0, 0, 0.10)
+        love.graphics.ellipse("fill", sx, sy + 2, 7 * sc, 3 * sc)
+
+        if p[4] < S.CACTUS then
+            -- Saguaro: a tapered column with up to two raised arms, built from
+            -- QUADS. Drawn as thick lines with round caps this was ~11 draw
+            -- calls a plant -- 1.7x a whole forest tile, on ground that covers
+            -- three islands. Quads land the same silhouette in ~5.
+            local h  = 22 * sc
+            local w  = 3.4 * sc
+            local body, hi = { 0.32, 0.50, 0.30 }, { 0.44, 0.63, 0.38 }
+            love.graphics.setColor(body)
+            -- trunk (slightly narrower at the top so it reads as a cactus)
+            love.graphics.polygon("fill", sx - w, sy, sx + w, sy,
+                sx + w * 0.78, sy - h, sx - w * 0.78, sy - h)
+            -- one arm = an elbow: a quad out, then a quad up (both convex, so
+            -- they fill correctly -- an L-shaped polygon would be concave)
+            local function arm(dir, ay, reach, rise, t2)
+                love.graphics.polygon("fill",
+                    sx, ay + t2, sx + dir * reach, ay + t2,
+                    sx + dir * reach, ay - t2, sx, ay - t2)
+                love.graphics.polygon("fill",
+                    sx + dir * (reach - t2), ay + t2, sx + dir * (reach + t2), ay + t2,
+                    sx + dir * (reach + t2), ay - rise, sx + dir * (reach - t2), ay - rise)
+            end
+            if p[5] < S.ARM_ODDS then                       -- right arm
+                arm(1, sy - h * (0.42 + p[6] * 0.22), 6 * sc, 7 * sc, w * 0.65)
+            end
+            if p[5] > 1 - S.ARM_ODDS * 0.6 then             -- left arm (rarer)
+                arm(-1, sy - h * (0.55 + p[6] * 0.18), 5 * sc, 6 * sc, w * 0.6)
+            end
+            love.graphics.setColor(hi)                      -- sunlit edge
+            love.graphics.polygon("fill", sx - w * 0.8, sy - 2, sx - w * 0.4, sy - 2,
+                sx - w * 0.32, sy - h + 3, sx - w * 0.66, sy - h + 3)
+        else
+            -- low desert bush: a couple of dry olive tufts
+            love.graphics.setColor(0.42, 0.44, 0.26)
+            love.graphics.ellipse("fill", sx, sy - 3 * sc, 7 * sc, 4.5 * sc)
+            love.graphics.setColor(0.52, 0.53, 0.32)
+            love.graphics.ellipse("fill", sx - 2 * sc, sy - 5 * sc, 4 * sc, 3 * sc)
+        end
+    end
+    love.graphics.setColor(1, 1, 1)
+end
+
 function Objects.drawForest(g, salt, biome)
     local c = config.colors
     local z = g.z or 0

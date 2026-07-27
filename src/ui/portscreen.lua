@@ -52,6 +52,13 @@ local function vfont(px)
     return fontCache[px]
 end
 
+-- Norwegian name list: "Solveig og Frida", "A, B og C". For a harbour run by
+-- more than one havnesjef (ports.lua `master` given as a list).
+local function joinNames(t)
+    if #t <= 1 then return t[1] or "" end
+    return table.concat(t, ", ", 1, #t - 1) .. " og " .. t[#t]
+end
+
 function PortScreen.new(world, port, info)
     local self = setmetatable({}, PortScreen)
     self.world = world
@@ -476,10 +483,26 @@ function PortScreen:drawPortrait(L, t)
 
     -- name plate under the portrait — BIG and on a carved plank (user-group
     -- feedback: too small on iOS)
-    local f = vfont(R.h * 0.098)
-    love.graphics.setFont(f)
+    -- `master` is one name, or a LIST when a harbour is run by more than one
+    -- person (Skiparviken's Solveig og Frida) -- then the title goes plural.
     local master = self.port.def and self.port.def.master
-    local label = master and ("Havnesjef " .. master) or "Havnesjef"
+    local label = "Havnesjef"
+    if type(master) == "table" then
+        label = "Havnesjefer " .. joinNames(master)
+    elseif master then
+        label = "Havnesjef " .. master
+    end
+    -- Shrink the type until the plank fits inside the well: "Havnesjefer
+    -- Solveig og Frida" is nearly three times the width of "Havnesjef Arne",
+    -- and the well is narrow on a phone. Better small than off the frame.
+    local maxW = R.w - t * 6
+    local fs = R.h * 0.098
+    local f = vfont(fs)
+    while f:getWidth(label) > maxW and fs > R.h * 0.045 do
+        fs = fs * 0.92
+        f = vfont(fs)
+    end
+    love.graphics.setFont(f)
     local lw = f:getWidth(label)
     local plH = f:getHeight() + 8
     local plY = R.y + R.h - plH - 2

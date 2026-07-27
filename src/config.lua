@@ -52,12 +52,23 @@ config.FOREST_SCALE   = 360    -- bigger = larger forests
 config.FOREST_THRESH  = 0.54   -- lower = more / bigger forests
 config.FOREST_DENSITY = 6      -- trees drawn per forest tile
 
+-- Desert vegetation (biome `scrub`): saguaro cactus and low bushes, so the
+-- desert coasts read as arid rather than as bare ground with nothing on them.
+-- Drawn as SOFT code shapes, not pixel sprites -- Finn-Erik dislikes the
+-- pixelised trees, and OpenGFX has no cacti anyway. Placeholder-first as usual:
+-- drop assets/props/cactus.png and it takes over.
+config.SCRUB = {
+    DENSITY   = 3,     -- plants per scrub tile (a third of a forest: it's a desert)
+    CACTUS    = 0.45,  -- chance a plant is a saguaro rather than a bush
+    ARM_ODDS  = 0.62,  -- chance a saguaro grows arms (the iconic silhouette)
+}
+
 -- Where land sits and how big each island is. Each roughly hosts the matching
 -- port in src/data/ports.lua. Spread far apart for open ocean between them.
 config.ISLANDS = {
     { x = 2600, y = 2600, radius = 2520 },  -- Bergen   (huge, NW)
     { x = 6200, y = 2200, radius = 1540 },  -- Alversund (N-mid)
-    { x = 9600, y = 2600, radius = 1960 },  -- Florø    (NE)
+    { x = 9600, y = 2600, radius = 1960 },  -- Skiparviken (NE)
     { x = 7800, y = 4400, radius = 1260 },  -- Hjellestad (center-E)
     { x = 2600, y = 6000, radius = 1820 },  -- Lerøy    (SW)
     { x = 5200, y = 6200, radius = 1050 },  -- Klokkarvik (tiny, S-mid)
@@ -75,7 +86,10 @@ config.BIOMES = {
     desert = { grass = { 0.78, 0.63, 0.35 },                -- sun-baked ground
                rock  = { 0.66, 0.40, 0.24 },                -- red canyon stone
                sand  = { 0.85, 0.74, 0.52 },
-               forest = 999, snowless = true },             -- no woods, never snow
+               forest = 999, snowless = true,               -- no woods, never snow
+               -- ...but not bare: saguaro cactus + scrub instead (see SCRUB).
+               -- Offset on FOREST_THRESH, like `forest`: lower = more of it.
+               scrub = -0.02 },
     snow   = { grass = { 0.82, 0.86, 0.92 },                -- frozen ground
                rock  = { 0.52, 0.58, 0.68 },                -- icy blue stone
                sand  = { 0.88, 0.90, 0.94 },                -- frosted shores
@@ -105,9 +119,12 @@ config.CITY_SIZES = {
     tiny       = { houses = 4,  spread = 4  },
     small      = { houses = 9,  spread = 6  },
     medium     = { houses = 18, spread = 9  },
-    large      = { houses = 40, spread = 15 },
-    -- American downtowns: a dense high-rise core with sprawl around it
-    metropolis = { houses = 95, spread = 21 },
+    large      = { houses = 55, spread = 17 },
+    -- American downtowns: a dense high-rise core with sprawl around it. Packed
+    -- hard on purpose — the Amerika map is meant to swing between crowded cities
+    -- and empty wilderness (maps.lua `remote`), and a metropolis only reads as
+    -- huge next to an island where nobody lives.
+    metropolis = { houses = 140, spread = 24 },
 }
 
 -- The one zoom the world runs at. Wheel zoom was removed on purpose: the kid
@@ -160,6 +177,15 @@ config.PIRATE = {
     SPEED_FRAC    = 0.78,   -- top speed as a fraction of YOUR boat's
     LENGTH        = 2.6,    -- length vs a normal ship (a long galleon)
     WIDTH         = 1.45,   -- beam
+    -- The arrival cry ("hiv og hoi"): shouted several times, not once. A single
+    -- shout is easy to miss over the sea and the music; a chant announces an
+    -- event. Replace the sound itself by dropping assets/sfx/pirate_warn.ogg.
+    CRY_TIMES     = 3,      -- how many times the cry goes up on a spawn
+    CRY_GAP       = 2.2,    -- seconds of quiet AFTER a shout finishes before the
+                            -- next one. Measured from the END of the clip, not
+                            -- its start -- timing from the start cut each shout
+                            -- off partway through and it read as a stutter
+                            -- rather than a chant.
     SPAWN_GRACE   = 30,     -- seconds of sailing before the first can appear
     SPAWN_MEAN    = 70,     -- avg seconds between spawn rolls (higher = rarer)
     RESPAWN_GRACE = 25,     -- quiet time after one leaves
@@ -168,6 +194,12 @@ config.PIRATE = {
     BALL_SPEED    = 250,    -- cannonball speed (slow + telegraphed)
     BALL_RADIUS   = 15,     -- cannonball hit radius
     HIT_GOLD      = 5,      -- gold lost per hit
+    -- Driving the pirate off pays. Without this, fighting back is a pure LOSS:
+    -- three hits cost a good part of a kanonkuler crate (real gold) and used to
+    -- return nothing, so running away was always the better move -- the wrong
+    -- lesson for the one part of the game the older children asked for. Roughly
+    -- a delivery's pay, so a won battle buys the crate that fought it.
+    DROP_GOLD     = 25,     -- gold spilled when it's finally driven off
     GIVEUP_DIST   = 2100,   -- stay this far away...
     GIVEUP_TIME   = 9,      -- ...for this long and the pirate gives up
     DESPAWN_DIST  = 1800,   -- vanishes once this far away while retreating
@@ -216,10 +248,27 @@ config.CANNON = {
     BALL_SPEED    = 300,   -- ball speed
     BALL_RADIUS   = 16,    -- ball size for hit-testing the pirate
     SPREAD        = 0.24,  -- random aim error in radians (bigger = wilder, more misses)
+    -- TAPPING the pirate fires a shot you aimed yourself (World:mousepressed ->
+    -- Boat:tapFire). The automatic battery above is unchanged, so a small child
+    -- who never taps plays exactly the game he played before; this is the
+    -- trigger for anyone who wants one. Because you pointed at it, the aim is
+    -- far tighter than the wild auto shot -- that accuracy IS the reward. It
+    -- still costs a cannonball, which is what keeps tapping from being free.
+    -- Tapping is meant to be MAYHEM: a fast trigger you can hammer, fed by a
+    -- deep locker, rather than a slow trigger rationed by a shallow one. So
+    -- TAP_INTERVAL stays short and START_AMMO/the Kanonkuler crate carry the
+    -- balance instead. Like the automatic battery, extra cannons make the
+    -- tapped shot faster too (game:cannonRate) -- buying a second Kanon has to
+    -- mean something to the child doing the shooting, not just to the autopilot.
+    TAP_SPREAD    = 0.07,  -- aim error of a player-aimed shot (vs SPREAD's 0.24)
+    TAP_INTERVAL  = 0.45,  -- min seconds between tapped shots, before cannonRate
     SCARE_HITS    = 3,     -- hits needed to drive the pirate off (so it really chases
                            -- + shoots you first; 1 would scare it away too quickly)
-    START_AMMO    = 15,    -- balls included with each cannon; more via the Butikk's
-                           -- Kanonkuler pack (shop.lua `ammo = N`)
+    START_AMMO    = 40,    -- balls included with each cannon; more via the Butikk's
+                           -- Kanonkuler pack (shop.lua `ammo = N`). Deep on purpose:
+                           -- a hammered trigger drains ~2 balls a second, and 15
+                           -- balls (the old figure, sized for the automatic battery
+                           -- alone) emptied in under seven seconds of tapping.
     EXTRA_RATE    = 0.2,   -- each cannon beyond the first fires 20% faster...
     MAX_RATE      = 1.8,   -- ...capped here, so a pile of cannons stays gentle
 }
@@ -230,13 +279,48 @@ config.CANNON = {
 -- it's yours; dawdle and the (slightly slower) pirate grabs it and you try again.
 config.TREASURE = {
     COUNT        = 4,    -- how many chests (placed off the 4 biggest islands)
-    MAP_CHANCE   = 0.5,  -- chance a delivery hands you a map (first one guaranteed)
+    -- How often a delivery hands over a map. Two levers, because the average
+    -- alone doesn't describe the feel: at 0.5 with no floor there was a 50%
+    -- chance the very NEXT delivery after finishing a hunt started another one,
+    -- and back-to-back hunts read as relentless -- a hunt also blocks new
+    -- oppdrag, so the delivery loop never gets going in between.
+    -- Measured over 500 simulated runs: 0.50 with no floor gave a hunt every
+    -- 2.0 deliveries and half of them landed on the very NEXT delivery; 0.45
+    -- with a floor of 2 gives one every ~3.2 and never on the next one.
+    MAP_CHANCE   = 0.45, -- chance per eligible delivery (the first is guaranteed)
+    MAP_COOLDOWN = 2,    -- deliveries that must pass after a map before another
+                         -- can be granted (1 is NOT enough: it still allows the
+                         -- very next delivery to start a second hunt)
     REACH        = 140,  -- sail this close to the X to grab the chest
     GOLD         = 40,   -- gold reward for a chest
     RACE_TRIGGER = 1600, -- a pirate joins the race once you're this close to the chest
 }
 -- One collectible per chest, in placement order (sticker for the album).
 config.TREASURE_GOODS = { "shell", "starfish", "gem", "pearl" }
+
+-- TREASURE-SEEKING MODE. While a map is live the whole game changes character,
+-- because the child cannot read "you are now on a treasure hunt" -- he has to
+-- FEEL it. Everything below is driven by one number, World:treasureHeat(): 0
+-- when the chest is far, 1 when you're nearly on top of it. The banner, the
+-- arrow and the wash over the sea all read from it, so they can never disagree.
+-- "Warmer / colder" is the oldest children's game there is, and it needs no
+-- words at all.
+config.TREASURE_MODE = {
+    NEAR       = 1800,  -- heat starts climbing inside this distance...
+    HOT        = 320,   -- ...and is full from here in (about the REACH ring)
+    ARROW_GROW = 0.55,  -- arrow is this much bigger at full heat
+    BOB_COLD   = 2.6,   -- arrow bob speed when far off...
+    BOB_HOT    = 9.0,   -- ...and when you're right on it (excited)
+    RING_COLD  = 4.0,   -- chest ring pulse speed, cold -> hot
+    RING_HOT   = 11.0,
+    -- A parchment wash + vignette over the sea: the world goes slightly
+    -- old-map-coloured while hunting. Kept LOW -- it must read as a mood, never
+    -- as "something is wrong with the screen".
+    TINT       = { 0.92, 0.74, 0.40 },
+    TINT_MIN   = 0.045, -- wash strength when the hunt starts...
+    TINT_MAX   = 0.13,  -- ...and when you're on top of the chest
+    VIGNETTE   = 0.30,  -- corner darkening at full heat
+}
 
 -- Crew + passengers eat the food you've stocked as you sail: every EAT_DISTANCE
 -- ground-units travelled, one food unit aboard is eaten (longer voyage = more
@@ -372,9 +456,12 @@ config.WAKE = {
 config.DOLPHINS = {
     TRIGGER_FRAC = 0.75, -- they come when you sail faster than this × top speed
     PLAY_TIME    = 14,   -- how long they frolic alongside (s)
-    COOLDOWN_MIN = 240,  -- RARE on purpose: minutes of quiet sea between visits,
-    COOLDOWN_MAX = 540,  -- so a pod showing up stays a real event
-    FIRST_WAIT   = 90,   -- ...including a good wait before the first one
+    -- Still rare enough to be an event, but the old 240-540s meant a 15-minute
+    -- session might see one pod -- and the dolphins were singled out by the
+    -- playtesters as a favourite. Roughly doubled the frequency.
+    COOLDOWN_MIN = 120,  -- minutes of quiet sea between visits...
+    COOLDOWN_MAX = 300,  -- ...so a pod showing up still feels special
+    FIRST_WAIT   = 60,   -- ...including a wait before the first one
     JUMP_H       = 34,   -- leap height (world units)
     PERIOD       = 1.5,  -- one porpoise cycle (leap + glide) per dolphin
     SIDE         = 70,   -- how far off the boat's side the pod swims
@@ -387,8 +474,12 @@ config.DOLPHINS = {
 -- In between it sails the same gentle ambient AI as every other ship, so each
 -- surfacing happens somewhere new.
 config.SUBMARINE = {
-    SUBMERGED_MIN = 45,   -- stays under this long (s)... (rare = special)
-    SUBMERGED_MAX = 100,
+    -- There is exactly ONE submarine in each map's fleet, and it only counts as
+    -- "seen" if it happens to surface near the player -- so the real sighting
+    -- rate is a good deal lower than these numbers suggest. Trimmed the dive
+    -- modestly (it should still feel like a lucky catch, not a scheduled event).
+    SUBMERGED_MIN = 35,   -- stays under this long (s)... (rare = special)
+    SUBMERGED_MAX = 75,
     SURFACE_MIN   = 10,   -- ...then cruises surfaced this long, then dives away
     SURFACE_MAX   = 18,
     TRANSITION    = 2.2,  -- seconds to rise / sink through the waterline
@@ -414,11 +505,15 @@ config.PREMIUM = {
     -- price is the App Store Connect price point (aim: kr 19), fetched
     -- localized at runtime via IAP.price().
     price = "kr 19,-",
-    -- The extra maths-question gate before buying. Off: the card itself says
-    -- "ask mamma/pappa" and iOS's own purchase sheet (Face ID / Ask to Buy)
-    -- guards the payment. If Kids-category review insists on an app-side gate,
-    -- flip this to true — the gate screen is still wired.
-    PARENTAL_GATE = false,
+    -- The maths-question gate in front of the purchase (BoatSelect:openGate).
+    -- iOS's own sheet (Face ID / Ask to Buy) already guards the actual payment,
+    -- so this isn't about money — it's about a five-year-old not being able to
+    -- summon a purchase sheet over and over on his own. Six answers to a
+    -- 6x6..9x9 multiplication: trivial for the grown-up he fetches, and ~17%
+    -- to a guesser, who then gets a fresh question rather than another go at
+    -- the same one.
+    PARENTAL_GATE = true,
+    GATE_TRIES    = 3,     -- wrong answers before the gate gives up and closes
     -- Must match the non-consumable product id in App Store Connect (and the
     -- .storekit test file) exactly. Product ids are only scoped to the app,
     -- so short is fine.
