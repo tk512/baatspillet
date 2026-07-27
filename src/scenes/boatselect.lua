@@ -859,7 +859,7 @@ function BoatSelect:drawOffer()
     end
 
     love.graphics.setFont(fonts.small); love.graphics.setColor(W.text)
-    local sub = "Alle de fine båtene – og hele Amerika-kartet! Betal én gang."
+    local sub = "Flere fine båter og hele Amerika-kartet! Betal én gang"
     love.graphics.print(sub, O.x + O.w / 2 - fonts.small:getWidth(sub) / 2, O.subY)
 
     -- the adult note as a playful STICKER slapped on the card's corner
