@@ -11,6 +11,30 @@ local config = require("src.config")
 
 local Treasure = {}
 
+-- Is a map due on this delivery? PURE, and it lives here rather than inside
+-- World because this cadence is the whole rhythm of the game -- the delivery
+-- loop is the spine and hunts are the punctuation -- and it is the one part of
+-- the hunt that can be wrong for weeks without anything looking broken. It just
+-- quietly feels relentless. That has happened twice now (see config.TREASURE),
+-- so it sits somewhere a headless test can reach it (tests/treasure.lua).
+--
+--   everHad   has the player ever had a map? The FIRST one is guaranteed, so
+--             the hunt always gets introduced -- a pre-reader can't be told the
+--             mechanic exists, he has to be handed it.
+--   sinceMap  deliveries of NORMAL trading since the last map. Deliveries made
+--             during a hunt deliberately don't count: the breather is a break
+--             FROM ordinary trading, so it has to be measured in it
+--             (World:openDock).
+--   roll      a 0..1 random number, passed in rather than drawn here.
+function Treasure.mapDue(everHad, sinceMap, cooldown, roll, chance)
+    if not everHad then return true end
+    -- A guaranteed breather first: without it a fair coin will hand you a
+    -- second hunt immediately after the first often enough to feel like the
+    -- game is nothing but treasure hunts.
+    if sinceMap < cooldown then return false end
+    return roll < chance
+end
+
 -- The COUNT biggest islands, in island order (stable -> stable collectible map).
 local function pickIslands(n)
     local idx = {}

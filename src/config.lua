@@ -294,13 +294,28 @@ config.TREASURE = {
     -- chance the very NEXT delivery after finishing a hunt started another one,
     -- and back-to-back hunts read as relentless -- a hunt also blocks new
     -- oppdrag, so the delivery loop never gets going in between.
-    -- Measured over 500 simulated runs: 0.50 with no floor gave a hunt every
-    -- 2.0 deliveries and half of them landed on the very NEXT delivery; 0.45
-    -- with a floor of 2 gives one every ~3.2 and never on the next one.
+    --
+    -- The gap between hunts is `MAP_COOLDOWN - 1 + 1/MAP_CHANCE` deliveries:
+    --   0.50, floor 0  ->  2.0, and half landed on the very next delivery
+    --   0.45, floor 2  ->  3.2  (but see below -- it was really running at 2.2)
+    --   0.45, floor 3  ->  4.2  <- here
+    -- Four chests exist in the whole game, so this also sets how long the arc to
+    -- the finale is: ~17 deliveries at the current numbers.
+    --
+    -- SPEND CHANGES ON THE FLOOR, NOT THE CHANCE. A bigger floor buys a
+    -- guaranteed stretch of ordinary trading; a smaller chance buys the same
+    -- average with more variance, and a drought reads to a five-year-old as
+    -- "the treasure game stopped happening".
+    --
+    -- The floor only started working properly in 2026-07: deliveries made DURING
+    -- a hunt (cargo you already carry still gets delivered) were ticking it down,
+    -- so one mid-hunt delivery ate the whole breather and maps came ~45% more
+    -- often than these numbers said. See World:openDock.
     MAP_CHANCE   = 0.45, -- chance per eligible delivery (the first is guaranteed)
-    MAP_COOLDOWN = 2,    -- deliveries that must pass after a map before another
-                         -- can be granted (1 is NOT enough: it still allows the
-                         -- very next delivery to start a second hunt)
+    MAP_COOLDOWN = 3,    -- deliveries of NORMAL trading that must pass after a
+                         -- map before another can be granted (1 is NOT enough:
+                         -- it still allows the very next delivery to start a
+                         -- second hunt)
     REACH        = 140,  -- sail this close to the X to grab the chest
     GOLD         = 40,   -- gold reward for a chest
     RACE_TRIGGER = 1600, -- a pirate joins the race once you're this close to the chest

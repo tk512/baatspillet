@@ -985,15 +985,11 @@ end
 -- the "Finn skatten!" choice).
 function World:revealTreasureMap(port)
     if self:activeTreasure() then return false end          -- one treasure at a time
-    -- The very first map (never had one) is guaranteed so the hunt is introduced;
-    -- after that it's an occasional surprise on delivery, not every time.
+    -- The cadence rule lives in Treasure.mapDue (pure, and tested there).
     local everHad = #self.ms.treasuresMapped > 0 or #self.ms.treasuresFound > 0
-    if everHad then
-        -- A guaranteed breather first: without it a fair coin will hand you a
-        -- second hunt immediately after the first often enough to feel like the
-        -- game is nothing but treasure hunts.
-        if (self._sinceMap or 99) < config.TREASURE.MAP_COOLDOWN then return false end
-        if love.math.random() >= config.TREASURE.MAP_CHANCE then return false end
+    if not Treasure.mapDue(everHad, self._sinceMap or 99, config.TREASURE.MAP_COOLDOWN,
+        love.math.random(), config.TREASURE.MAP_CHANCE) then
+        return false
     end
     local best, bestD
     for _, t in ipairs(self.treasures) do
@@ -1578,7 +1574,17 @@ function World:openDock(port)
     -- once the dock closes.
     -- Count this delivery before rolling, so the cooldown measures deliveries
     -- made since the last map rather than docks visited.
-    if delivered > 0 then self._sinceMap = (self._sinceMap or 99) + 1 end
+    --
+    -- NOT during a hunt, though. Cargo you already carry still gets delivered
+    -- while a map is live (see "findfirst" above), and those deliveries used to
+    -- tick the breather down -- so a single delivery mid-hunt consumed the whole
+    -- two-delivery floor and the very NEXT dock after the hunt could hand out
+    -- another map. That silently cut the gap between hunts from 3.2 deliveries
+    -- to 2.2, i.e. maps arrived ~45% more often than config.TREASURE claimed.
+    -- The breather has to be normal trading, which is the thing it's a break FROM.
+    if delivered > 0 and not self:activeTreasure() then
+        self._sinceMap = (self._sinceMap or 99) + 1
+    end
     local mapGiven = (mode == "deliver") and self:revealTreasureMap(port) or false
 
     self.dock = PortScreen.new(self, port, {
