@@ -5,8 +5,10 @@
 --   HAVE -- what the player owns: gold, cargo aboard, gear, treasures.
 --           ALL of it lives in the shelf on the left (src/ui/shelf.lua), in one
 --           slot grammar, so a child who cannot read learns it once.
---   DO   -- what the player is meant to do next: the mission banner up top, and
---           (in world.lua) the gold mission arrow and orange treasure arrow.
+--   DO   -- what the player is meant to do next: the mission banner up top when
+--           there's a delivery on, and (in world.lua, via src/ui/pointer.lua)
+--           the gold mission arrow or the treasure-chest marker. Never both:
+--           there is only ever ONE thing to follow.
 --
 -- Nothing belonging to the player is ever drawn on the boat itself: the boat is
 -- the thing the child is steering and it stays clean.
@@ -51,12 +53,18 @@ function HUD.draw(world)
         HUD.drawPauseKey(world, k.x, k.y, nmH)
     end
 
-    -- Top-centre: what to do next. A live treasure map REPLACES the delivery
-    -- banner -- while hunting there is only one job, and the harbours refuse to
-    -- give you another (World:openDock "findfirst").
-    if world.treasureHeat and world:activeTreasure() then
-        HUD.drawHunt(world, sw, fonts, smH, nmH, t)
-    elseif world.boat.cargo[1] then
+    -- Top-centre: what to do next -- and DURING A HUNT, nothing at all.
+    --
+    -- There used to be a "Finn skatten!" parchment banner here. It's gone: the
+    -- chest-with-an-arrow that hovers over the boat (World:drawTreasurePointer)
+    -- says the same thing in the place the child is already looking, and the
+    -- top-centre band is the most expensive strip of screen on a phone. The
+    -- delivery banner stays suppressed while hunting, exactly as it was when the
+    -- hunt banner replaced it: there is only one job at a time, the harbours
+    -- refuse to give another (World:openDock "findfirst"), and the gold mission
+    -- arrow already bows out (World:drawMissionPointer). Showing a destination
+    -- town with no arrow pointing at it would be the one confusing combination.
+    if world.boat.cargo[1] and not (world.activeTreasure and world:activeTreasure()) then
         HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     end
 
@@ -72,7 +80,7 @@ end
 -- tapped, and is free to be smaller -- that split is what lets the shelf stay
 -- compact on a phone without making anything unhittable.
 function HUD.keySize(nmH)
-    return math.max(44, math.floor(nmH * 1.2))
+    return math.max(config.TOUCH_MIN, math.floor(nmH * 1.2))
 end
 
 -- The one way to pause / exit: a wooden key with the universal red ⏸ bars.
@@ -93,49 +101,6 @@ function HUD.drawPauseKey(world, x, y, nmH)
     local r = world._pauseBtnRect
     if not r then r = {}; world._pauseBtnRect = r end
     r.x, r.y, r.w, r.h = x, y, key, key
-    love.graphics.setColor(1, 1, 1)
-end
-
--- The treasure-hunt banner, in place of the delivery one. Parchment instead of
--- wood, and NO destination name: there is no town to read, only a direction to
--- follow. The chest icon beats faster and the parchment glows as you close in
--- (World:treasureHeat), so the banner is a second "warmer / colder" channel for
--- a child whose eyes are on the boat rather than the arrow.
-function HUD.drawHunt(world, sw, fonts, smH, nmH, t)
-    local heat = world:treasureHeat() or 0
-    local pad  = math.max(8, math.floor(smH * 0.7))
-    local gap  = math.floor(nmH * 0.55)
-    local s    = nmH * (1.0 + 0.28 * heat)                  -- the chest swells
-    local label = "Finn skatten!"
-
-    local wLabel = fonts.normal:getWidth(label)
-    local content = s + gap + wLabel
-    local ph = nmH * 1.25 + (pad + t * 2)
-    local pw = content + (pad + t * 2) * 2
-    local px = math.floor(sw / 2 - pw / 2)
-
-    -- parchment plaque: same bevel language as the wooden one, aged-paper colours
-    local face = { 0.80, 0.68, 0.44 }
-    local hi   = { 0.93, 0.84, 0.62 }
-    local lo   = { 0.44, 0.33, 0.18 }
-    Retro.bevel(px, 14, pw, ph, face, hi, lo, t, true)
-    Retro.bevel(px + t, 14 + t, pw - 2 * t, ph - 2 * t, { 0.87, 0.76, 0.53 }, hi, lo,
-        math.max(1, math.floor(t * 0.6)), false)
-    -- a warm glow that grows with the heat, so the card itself "gets excited"
-    if heat > 0.01 then
-        love.graphics.setColor(1.0, 0.82, 0.35, 0.30 * heat)
-        love.graphics.rectangle("fill", px + t, 14 + t, pw - 2 * t, ph - 2 * t, 3, 3)
-    end
-
-    local ix, iy = px + t * 2, 14 + t * 2
-    local cy = iy + (ph - t * 4) / 2
-    -- Integrated phase, not absoluteTime * rate -- see World:updateHuntPhases.
-    local beat = 1 + 0.10 * heat * math.sin(world._beatPhase or 0)
-    Icons.draw("chest", ix + pad + s * 0.5, cy, s * beat)
-
-    love.graphics.setFont(fonts.normal)
-    love.graphics.setColor(0.28, 0.18, 0.07)
-    love.graphics.print(label, ix + pad + s + gap, cy - nmH / 2)
     love.graphics.setColor(1, 1, 1)
 end
 

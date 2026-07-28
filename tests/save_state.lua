@@ -140,6 +140,18 @@ eq(Game:mapState("norge").treasuresFound[1], "chest3", "migration: old treasures
 eq(Game:mapState("norge").discoveredIslands[1], "bergen", "migration: old islands land under norge")
 
 
+-- A map bucket that exists but is missing its lists. loadSave takes `data.maps`
+-- wholesale, so an older build's save (or a hand-edited one) can hand us a
+-- bucket with only some keys -- and World:load walks treasuresMapped with
+-- ipairs() on the very first frame, which would crash on a nil rather than
+-- degrade. Backfilled in Game:mapState.
+reset(json.encode({ coins = 5, maps = { norge = { fog = "PARTIALFOG" } } }))
+local partial = Game:mapState("norge")
+eq(partial.fog, "PARTIALFOG", "partial bucket: what WAS saved survives")
+eq(#partial.treasuresMapped, 0, "partial bucket: treasuresMapped backfilled, not nil")
+eq(#partial.treasuresFound, 0, "partial bucket: treasuresFound backfilled, not nil")
+eq(#partial.discoveredIslands, 0, "partial bucket: discoveredIslands backfilled, not nil")
+
 -- partial save (old version / hand-edited): missing fields fall to defaults ----
 reset('{"coins":42}')
 eq(Game.state.coins, 42, "partial: kept coins")

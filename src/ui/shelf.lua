@@ -20,6 +20,7 @@
 -- Nothing is ever drawn on top of the boat: the boat is the thing the child is
 -- steering and it must stay clean and legible.
 
+local config = require("src.config")
 local Retro = require("src.ui.retro")
 local Icons = require("src.ui.icons")
 local Scale = require("src.ui.scale")
@@ -29,41 +30,121 @@ local WOOD = Retro.WOOD
 
 Shelf.PER_ROW = 4        -- slots before wrapping (keeps the plaque narrow)
 
--- One slot: sunken well, optional icon, optional "xN" badge. An empty well is
--- how the treasure tally shows a chest you haven't found yet.
-function Shelf.slot(x, y, s, icon, count, font, t)
+-- The two pieces every slot shares, so the plain slot and the progress slot
+-- can't drift apart in look.
+local function well(x, y, s, t)
     local st = math.max(1, math.floor(t * 0.5))
     Retro.bevel(x, y, s, s, WOOD.deep, WOOD.hi, WOOD.lo, st, false)
+    return st
+end
+
+local function badge(x, y, s, st, lbl, font)
+    love.graphics.setFont(font)
+    local lw = font:getWidth(lbl)
+    local bx, by = x + s - lw - st, y + s - font:getHeight() - st * 0.5
+    love.graphics.setColor(0, 0, 0, 0.6)
+    love.graphics.print(lbl, bx + 1, by + 1)
+    love.graphics.setColor(WOOD.text)
+    love.graphics.print(lbl, bx, by)
+end
+
+-- One slot: sunken well, optional icon, optional "xN" badge.
+function Shelf.slot(x, y, s, icon, count, font, t)
+    local st = well(x, y, s, t)
     if icon then Icons.draw(icon, x + s * 0.5, y + s * 0.5, s * 0.84) end
-    if count and count > 1 then
-        local lbl = "x" .. count
-        love.graphics.setFont(font)
-        local lw = font:getWidth(lbl)
-        local bx, by = x + s - lw - st, y + s - font:getHeight() - st * 0.5
-        love.graphics.setColor(0, 0, 0, 0.6)
-        love.graphics.print(lbl, bx + 1, by + 1)
-        love.graphics.setColor(WOOD.text)
-        love.graphics.print(lbl, bx, by)
+    if count and count > 1 then badge(x, y, s, st, "x" .. count, font) end
+end
+
+-- THE TREASURE TALLY: ONE well that fills with gold from the bottom as chests
+-- are dug up, in place of one well per chest.
+--
+-- Why one well and not four: four wells cost four slots of the panel that is
+-- already the largest object on an iPhone, and they say the same thing a rising
+-- gold line says in one.
+--
+-- Why a FILL and not just the "2/4": Finn-Erik cannot read, least of all a
+-- fraction. The gold height IS the message -- more gold, more treasure, no
+-- literacy required. The numerals ride along for the grown-up looking over his
+-- shoulder, and must never be the only signal.
+--
+-- Static on purpose (no tween): the moment a chest is found is already
+-- celebrated loudly -- coin burst, sticker, album -- and an animation here would
+-- need update-loop state inside a panel whose contents are signature-cached.
+-- `frac` and `label` are computed once in Shelf.build, not per frame.
+function Shelf.progressSlot(x, y, s, icon, frac, label, font, t)
+    local st = well(x, y, s, t)
+    -- The fill is a PLAIN RECTANGLE anchored to the bottom of the well. The well
+    -- is a rectangle, so there is nothing to clip: no stencil (which would cost
+    -- an extra pass and break batching on a panel drawn every frame), no scissor.
+    local inner = s - st * 2
+    local fh = math.floor(inner * math.max(0, math.min(1, frac)))
+    if fh > 0 then
+        love.graphics.setColor(0.85, 0.68, 0.28, 0.55)
+        love.graphics.rectangle("fill", x + st, y + st + inner - fh, inner, fh)
     end
+    -- icon sits high in the well so the fill has room to read underneath it
+    if icon then Icons.draw(icon, x + s * 0.5, y + s * 0.44, s * 0.66) end
+    if label then badge(x, y, s, st, label, font) end
+end
+
+-- The ONE place that decides which kind of slot a section draws, so the two
+-- layouts below can't disagree about it.
+function Shelf.drawEntry(sec, e, x, y, s, font, t)
+    if sec.progress then
+        Shelf.progressSlot(x, y, s, e.icon, e.frac, e.label, font, t)
+    else
+        Shelf.slot(x, y, s, e.icon, e.count, font, t)
+    end
+end
+
+-- How much room a section needs, IN ITS OWN SLOT SIZE. One definition, read by
+-- both layouts below. The phone flow and the desktop column each used to
+-- re-derive this, and had to agree numerically or the plaque drew at the wrong
+-- size on one device class. Multiple returns, not a table: this runs per
+-- section per frame.
+local function sectionExtent(sec, gapi, perRow)
+    local n = #sec
+    if n == 0 then return 0, 0 end
+    local s = sec.slot
+    local cols = perRow and math.min(n, perRow) or n
+    local rows = perRow and math.ceil(n / perRow) or 1
+    return cols * s + (cols - 1) * gapi, rows * s + (rows - 1) * gapi
 end
 
 -- Rebuild the section list only when something behind it actually changed.
 -- Building tables every frame is steady garbage for the GC (micro-stutter while
 -- sailing), so the slot entries are pooled and reused in place.
+-- Mixed with a modulo, NOT a bare running product. A plain `sig = sig * k + v`
+-- chain overflows the 53 bits a double holds exactly once there are a dozen-odd
+-- inputs (shop items alone contribute k^7), and past that the EARLIEST inputs
+-- are the ones that fall off the end -- so a change in gold, which is mixed
+-- first, could stop invalidating the cache at all. Staying under 2^31 keeps
+-- every mix exact.
+local function mix(h, v)
+    return (h * 31 + v) % 2147483647
+end
+
+-- EVERY input the build below reads must be mixed in here. A field that build
+-- branches on but signature ignores means the shelf silently keeps drawing a
+-- stale layout until some unrelated change happens to bump the number --
+-- intermittent, and impossible to reproduce on purpose. See tests/shelf.lua.
 local function signature(world)
     local game = world.game
-    local sig = game.state.coins
+    local sig = mix(0, game.state.coins)
     for _, job in ipairs(world.boat.cargo) do
-        sig = sig * 31 + (job.count or 1)
+        sig = mix(sig, job.count or 1)
     end
-    sig = sig * 17 + #world.boat.cargo
+    sig = mix(sig, #world.boat.cargo)
     for _, it in ipairs(game.data.shop) do
         local n = (it.food and game:foodCount(it.id)) or (it.ammo and game:ammoCount())
             or (it.stack and game:cannonCount()) or (game:owns(it.id) and 1) or 0
-        sig = sig * 61 + n
+        sig = mix(sig, n)
     end
+    -- the treasure tally's two inputs: whether the hunt has been introduced at
+    -- all, and how many chests are dug up
+    sig = mix(sig, world.huntSeen and 1 or 0)
     if world.treasures then
-        for _, tr in ipairs(world.treasures) do sig = sig * 3 + (tr.found and 1 or 0) end
+        for _, tr in ipairs(world.treasures) do sig = mix(sig, tr.found and 1 or 0) end
     end
     return sig
 end
@@ -82,6 +163,11 @@ function Shelf.build(world)
     local sh = world._shelf
     if not sh then
         sh = { cargo = {}, gear = {}, treas = {}, pools = { {}, {}, {} } }
+        -- `progress` marks the section that draws with Shelf.progressSlot and
+        -- `slot` its own slot size -- per-section rather than one size for the
+        -- whole shelf, because the treasure tally is the only TAPPABLE slot and
+        -- has to meet the touch minimum (see Shelf.draw).
+        sh.treas.progress = true
         world._shelf = sh
     end
     local sig = signature(world)
@@ -90,9 +176,10 @@ function Shelf.build(world)
 
     local game = world.game
 
-    -- NOTE: there is deliberately no treasure-map slot here. The big "Finn
-    -- skatten!" banner is on screen for exactly as long as a hunt is active, so
-    -- a map icon in the shelf would say the same thing twice and cost a row.
+    -- NOTE: there is deliberately no treasure-MAP slot here. While a hunt is on,
+    -- the chest marker hovers over the boat for exactly as long as it lasts
+    -- (World:drawTreasurePointer), so a map icon in the shelf would say the same
+    -- thing twice and cost a slot on the panel we're trying to keep small.
 
     -- Ombord: one slot per job aboard, its own count. This is what replaces
     -- drawing cargo on the boat -- and it's the only place that shows ALL of it
@@ -115,19 +202,27 @@ function Shelf.build(world)
         end
     end
 
-    -- Skatter: one slot per chest in the world, filled once dug up. Shown only
-    -- once the hunt is actually in play, so it isn't a row of mystery holes.
+    -- Skatter: ONE slot for the whole hunt, filled with gold in proportion to
+    -- how many chests are dug up (Shelf.progressSlot).
+    --
+    -- It appears once the hunt has been INTRODUCED -- world.huntSeen, which
+    -- latches on the first map -- and not before, so a player who has never seen
+    -- a treasure map doesn't carry an empty well around. The old gate was
+    -- `owns("cannon") or anyFound`, which was a leftover from when this row was
+    -- four mystery holes; a cannon has nothing to do with treasure (you never
+    -- needed one to grab a chest).
     for k = #sh.treas, 1, -1 do sh.treas[k] = nil end
-    if world.treasures and #world.treasures > 0 then
-        local anyFound = false
+    local total = (world.treasures and #world.treasures) or 0
+    if total > 0 and world.huntSeen then
+        local done = 0
         for _, tr in ipairs(world.treasures) do
-            if tr.found then anyFound = true; break end
+            if tr.found then done = done + 1 end
         end
-        if game:owns("cannon") or anyFound then
-            for _, tr in ipairs(world.treasures) do
-                push(sh.treas, sh.pools[3], tr.found and "chest" or nil, nil)
-            end
-        end
+        local e = push(sh.treas, sh.pools[3], "chest", nil)
+        e.frac  = done / total
+        -- built HERE, not in the draw call: a "2/4" concatenated every frame is
+        -- steady garbage, and this only changes when the signature does
+        e.label = done .. "/" .. total
     end
     return sh
 end
@@ -144,7 +239,8 @@ local NAMES = { "cargo", "gear", "treasures" }
 --
 -- Whole sections are packed per row rather than split mid-group, because a
 -- section broken across two lines stops reading as one group.
-local function drawFlow(world, x, y, t, sh, fonts, smH, nmH, pad, slot, gapi, coinR, key)
+-- (No `slot` parameter: every section carries its own size now, sh.<sec>.slot.)
+local function drawFlow(world, x, y, t, sh, fonts, nmH, pad, gapi, coinR, key)
     local sections = { sh.cargo, sh.gear, sh.treas }
     local goldStr  = tostring(world.game.state.coins)
     -- the pause key rides at the end of the gold block, on the same line
@@ -159,18 +255,28 @@ local function drawFlow(world, x, y, t, sh, fonts, smH, nmH, pad, slot, gapi, co
     end
     maxW = math.max(goldW, maxW - (pad + t * 2) * 2)
 
-    -- pack: gold, then each non-empty section, wrapping whole sections
+    -- Pack: gold, then each non-empty section, wrapping whole sections.
+    -- Row heights are measured PER ROW rather than assumed uniform: sections no
+    -- longer share one slot size, because the treasure tally is bigger (it's the
+    -- one slot the player taps). Pooled tables -- no per-frame allocation.
     local rows = sh.rows
     if not rows then rows = {}; sh.rows = rows end
+    local rowH = sh.rowH
+    if not rowH then rowH = {}; sh.rowH = rowH end
+    for i = 1, #rowH do rowH[i] = nil end
+
     local row, used, widest, nrows = 1, goldW, goldW, 1
+    rowH[1] = math.max(nmH, key)               -- row 1 carries the gold line + pause key
     for si, sec in ipairs(sections) do
-        if #sec > 0 then
-            local w = #sec * slot + (#sec - 1) * gapi + gapi * 3   -- + divider space
+        local w, h = sectionExtent(sec, gapi)
+        if w > 0 then
+            w = w + gapi * 3                                    -- + divider space
             if used + w > maxW and used > 0 then
                 row, used = row + 1, 0
-                nrows = row
+                nrows, rowH[row] = row, 0
             end
             rows[si] = row
+            rowH[row] = math.max(rowH[row] or 0, h)
             used = used + w
             widest = math.max(widest, used)
         else
@@ -178,16 +284,24 @@ local function drawFlow(world, x, y, t, sh, fonts, smH, nmH, pad, slot, gapi, co
         end
     end
 
-    local rowH  = math.max(slot, nmH)
-    local row1H = math.max(rowH, key)          -- row 1 also carries the pause key
+    -- where each row starts, accumulated from the measured heights
+    local tops = sh.tops
+    if not tops then tops = {}; sh.tops = tops end
+    local acc = 0
+    for r = 1, nrows do
+        tops[r] = acc
+        acc = acc + rowH[r] + gapi
+    end
+
     local pw = widest + (pad + t * 2) * 2
-    local ph = row1H + (nrows - 1) * (rowH + gapi) + (pad + t * 2) * 2
+    local ph = acc - gapi + (pad + t * 2) * 2
     local ix, iy = Retro.plaque(x, y, pw, ph, t)
 
     local rects = world._shelfRects
     if not rects then rects = {}; world._shelfRects = rects end
 
     -- gold first, on row 1
+    local row1H = rowH[1]
     love.graphics.setFont(fonts.normal)
     Icons.coin(ix + pad + coinR, iy + pad + row1H * 0.5, coinR)
     love.graphics.setColor(WOOD.accent)
@@ -208,19 +322,17 @@ local function drawFlow(world, x, y, t, sh, fonts, smH, nmH, pad, slot, gapi, co
                 cr = rows[si]
                 cx = ix + pad
             end
-            -- row 1 is taller (it carries the pause key); later rows are plain
-            local rh = (cr == 1) and row1H or rowH
-            local cy = iy + pad + (cr > 1 and (row1H + gapi + (cr - 2) * (rowH + gapi)) or 0)
+            local rh = rowH[cr]
+            local cy = iy + pad + tops[cr]
             -- vertical rule between groups: grouping without a word to read
             love.graphics.setColor(WOOD.lo[1], WOOD.lo[2], WOOD.lo[3], 0.7)
             love.graphics.rectangle("fill", cx + gapi, cy + 2, 1, rh - 4)
             cx = cx + gapi * 3
 
-            local left = cx
+            local left, ss = cx, sec.slot
             for _, e in ipairs(sec) do
-                Shelf.slot(cx, cy + (rh - slot) * 0.5, slot, e.icon, e.count,
-                    fonts.small, t)
-                cx = cx + slot + gapi
+                Shelf.drawEntry(sec, e, cx, cy + (rh - ss) * 0.5, ss, fonts.small, t)
+                cx = cx + ss + gapi
             end
             local r = rects[NAMES[si]]
             if not r then r = {}; rects[NAMES[si]] = r end
@@ -254,8 +366,21 @@ function Shelf.draw(world, x, y, t, key)
     local gapi = math.max(2, math.floor(slot * 0.16))
     local coinR = nmH * 0.46
 
+    -- PER-SECTION slot sizes. Everything is one size except the treasure tally,
+    -- which is held to the touch minimum because it is the one slot in the whole
+    -- shelf you can TAP (it opens the album -- see World:mousepressed).
+    --
+    -- The rest of the shelf is status: read, never touched, so it's free to be
+    -- smaller (HUD.keySize's note). That split is what keeps the panel compact.
+    -- Being the biggest slot also does a second job for a child who can't read:
+    -- it is visibly not like the others, which is the wordless way of saying
+    -- "this one does something when you poke it".
+    sh.cargo.slot = slot
+    sh.gear.slot  = slot
+    sh.treas.slot = math.max(slot, key > 0 and key or config.TOUCH_MIN)
+
     if Scale.phone then
-        return drawFlow(world, x, y, t, sh, fonts, smH, nmH, pad, slot, gapi, coinR, key)
+        return drawFlow(world, x, y, t, sh, fonts, nmH, pad, gapi, coinR, key)
     end
 
     local sections = { sh.cargo, sh.gear, sh.treas }
@@ -266,21 +391,16 @@ function Shelf.draw(world, x, y, t, key)
     local goldW = coinR * 2 + gapi + fonts.normal:getWidth(goldStr)
                   + (key > 0 and (gapi * 2 + key) or 0)
     local goldH = math.max(nmH, key)
-    local cols = 0
-    for _, sec in ipairs(sections) do
-        cols = math.max(cols, math.min(#sec, Shelf.PER_ROW))
-    end
-    local rowW = (cols > 0) and (cols * slot + (cols - 1) * gapi) or 0
-    local contentW = math.max(goldW, rowW)
 
-    -- height: gold row + a divider and rows for each non-empty section
+    -- width and height both come from sectionExtent -- the same measurement the
+    -- phone flow uses, so the two layouts can't drift apart numerically.
+    local contentW = goldW
     local h = goldH
-    local shown = 0
     for _, sec in ipairs(sections) do
-        if #sec > 0 then
-            shown = shown + 1
-            local rows = math.ceil(#sec / Shelf.PER_ROW)
-            h = h + gapi * 2 + rows * slot + (rows - 1) * gapi
+        local w, secH = sectionExtent(sec, gapi, Shelf.PER_ROW)
+        if w > 0 then
+            contentW = math.max(contentW, w)
+            h = h + gapi * 2 + secH       -- a divider's worth of space, then the rows
         end
     end
 
@@ -317,15 +437,14 @@ function Shelf.draw(world, x, y, t, key)
             love.graphics.rectangle("fill", ix + pad, cy, contentW, 1)
             cy = cy + gapi
 
-            local rows = math.ceil(#sec / Shelf.PER_ROW)
-            local top = cy
+            local top, ss = cy, sec.slot
+            local _, secH = sectionExtent(sec, gapi, Shelf.PER_ROW)
             for k, e in ipairs(sec) do
                 local col = (k - 1) % Shelf.PER_ROW
                 local row = math.floor((k - 1) / Shelf.PER_ROW)
-                Shelf.slot(ix + pad + col * (slot + gapi), cy + row * (slot + gapi),
-                    slot, e.icon, e.count, fonts.small, t)
+                Shelf.drawEntry(sec, e, ix + pad + col * (ss + gapi),
+                    cy + row * (ss + gapi), ss, fonts.small, t)
             end
-            local secH = rows * slot + (rows - 1) * gapi
             local r = rects[names[si]]
             if not r then r = {}; rects[names[si]] = r end
             r.x, r.y, r.w, r.h = ix + pad, top, contentW, secH

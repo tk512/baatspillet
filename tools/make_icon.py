@@ -1,87 +1,91 @@
 #!/usr/bin/env python3
-# Build the app icons from the hand-made master (assets/icon/batlogo-master.png,
-# the low-poly ferry). The master has rounded corners with BLACK behind them, so
-# it becomes two derivatives:
+# Build every app icon from ONE master: assets/icon/icon-1024.png — a
+# 1024×1024 FULL-BLEED square of finished art (Apple applies its own rounded
+# mask on iOS, so the master must not have rounded corners of its own).
+# Drop a new master in and re-run; nothing else in the repo needs touching.
 #
-#   assets/icon/icon-1024.png          FULL-BLEED square for iOS (corners
-#                                      inpainted with the neighbouring art —
-#                                      Apple applies its own rounded mask)
-#   assets/icon/batlogo-rounded.png    the master with TRANSPARENT corners,
-#                                      for macOS icns + marketing use
+#   python3 tools/make_icon.py [path/to/new-master.png]
 #
-# The iOS one is installed into the vendored engine's appiconset (single-size;
-# Xcode derives every size from the 1024).
+# It writes:
+#   engine/…/iOS AppIcon.appiconset    the 1024, RGB — Xcode derives every
+#                                      iOS size from it at build time
+#   engine/…/OS X AppIcon.appiconset   the 16…1024 ladder, in the macOS shape
+#                                      (squircle inset in a transparent canvas)
+#                                      — this is what ./bygg.sh setup bakes
+#                                      into love.app, which `./bygg.sh dmg`
+#                                      copies into Båtspillet.app and the .dmg
+#   assets/icon/batlogo-rounded.png    the same macOS-shaped 1024, for marketing
 #
-#   python3 tools/make_icon.py
+# NO ALPHA on the iOS side: App Store Connect rejects an app icon that carries
+# an alpha channel (ITMS-90717), even one that is fully opaque.
+#
+# The art is used as-is — no pixelating, no palette work. The master IS the
+# icon. (assets/icon/batlogo-master.png + batlogo-ferry-1024.png are the older
+# hand-made pixel ferry, kept in case it comes back; `git log` has the
+# pixelate-from-master script that produced it.)
 import os
-from PIL import Image
+import sys
+from PIL import Image, ImageDraw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "assets/icon/batlogo-master.png")
+MASTER = os.path.join(ROOT, "assets/icon/icon-1024.png")
+SRC = sys.argv[1] if len(sys.argv) > 1 else MASTER
 
-im = Image.open(SRC).convert("RGB")
-W, H = im.size
-px = im.load()
+# Apple's macOS icon grid: on a 1024 canvas the icon body is 824×824 centred,
+# with a 185.4px corner radius. That margin is why a Dock full of icons lines
+# up; a full-bleed square would sit oversized among its neighbours.
+MAC_CANVAS, MAC_BODY, MAC_RADIUS = 1024, 824, 185.4
+MAC_SIZES = (16, 32, 64, 128, 256, 512, 1024)
 
-# The black outside the rounded corners: near-black pixels inside the four
-# corner boxes (radius measured ~230px at 1254; use a generous box).
-R = 260
-def outside(x, y):
-    r, g, b = px[x, y]
-    return r + g + b <= 60
+im = Image.open(SRC)
+if im.size != (1024, 1024):
+    raise SystemExit("master must be 1024×1024, got %dx%d — %s" % (*im.size, SRC))
+rgba = im.convert("RGBA")
+alpha = rgba.split()[3]
+if alpha.getextrema()[0] < 255:
+    print("!! master has transparent pixels — flattening over black "
+          "(iOS icons must be fully opaque)")
+flat = Image.new("RGB", im.size, (0, 0, 0))
+flat.paste(rgba, mask=alpha)
 
-corners = [(0, 0, 1, 1), (W - 1, 0, -1, 1), (0, H - 1, 1, -1), (W - 1, H - 1, -1, -1)]
+if SRC != MASTER:                       # adopt a new master into the repo
+    flat.save(MASTER)
+    print("wrote", MASTER)
 
-# 1) FULL-BLEED: crop past the rounded corners AND the dark anti-aliased rim
-#    around the master's border — the art has margin to spare, so a ~4.5%
-#    inset yields a clean edge-to-edge square (Apple rounds it itself).
-inset = int(W * 0.045)
-bleed = im.crop((inset, inset, W - inset, H - inset))
-
-# THE HOUSE STYLE: pixelated on a 128-cell grid, 32 colours with
-# Floyd-Steinberg dithering — the old Sierra VGA look (the sky and sea carry
-# a soft dither weave; railings and the flag stay crisp). Restrained on
-# purpose: grid/colours are the two taste knobs.
-def pixelate(img, grid=128, colors=32):
-    small = img.resize((grid, grid), Image.LANCZOS)
-    small = small.quantize(colors=colors, dither=Image.Dither.FLOYDSTEINBERG).convert("RGB")
-    return small.resize((1024, 1024), Image.NEAREST)
-
-bleed = pixelate(bleed)
-out1 = os.path.join(ROOT, "assets/icon/icon-1024.png")
-bleed.save(out1)
-print("wrote", out1)
-
-# 2) TRANSPARENT-CORNER version (macOS / marketing)
-rounded = im.convert("RGBA")
-rpx = rounded.load()
-for cx, cy, dx, dy in corners:
-    for j in range(R):
-        y = cy + dy * j
-        for i in range(R):
-            x = cx + dx * i
-            if outside(x, y):
-                r, g, b, _ = rpx[x, y]
-                rpx[x, y] = (r, g, b, 0)
-            else:
-                break
-# same pixel treatment, alpha preserved
-rgb = pixelate(rounded.convert("RGB"))
-alpha = rounded.split()[3].resize((128, 128), Image.LANCZOS).resize((1024, 1024), Image.NEAREST)
-rounded = rgb.convert("RGBA")
-rounded.putalpha(alpha)
-out2 = os.path.join(ROOT, "assets/icon/batlogo-rounded.png")
-rounded.save(out2)
-print("wrote", out2)
-
-# 3) install the full-bleed icon into the vendored engine's iOS appiconset
-iconset = os.path.join(ROOT, "engine/platform/xcode/Images.xcassets/iOS AppIcon.appiconset")
-for f in os.listdir(iconset):
-    os.remove(os.path.join(iconset, f))
-bleed.save(os.path.join(iconset, "icon-1024.png"))
-with open(os.path.join(iconset, "Contents.json"), "w") as f:
+# ── iOS: the full-bleed square, RGB, single size ────────────────────────────
+ios = os.path.join(ROOT, "engine/platform/xcode/Images.xcassets/iOS AppIcon.appiconset")
+for f in os.listdir(ios):
+    os.remove(os.path.join(ios, f))
+flat.save(os.path.join(ios, "icon-1024.png"))
+with open(os.path.join(ios, "Contents.json"), "w") as f:
     f.write('{\n  "images" : [\n    {\n      "filename" : "icon-1024.png",\n'
             '      "idiom" : "universal",\n      "platform" : "ios",\n'
             '      "size" : "1024x1024"\n    }\n  ],\n'
             '  "info" : {\n    "author" : "xcode",\n    "version" : 1\n  }\n}\n')
-print("installed into", iconset)
+print("installed into", ios)
+
+
+def squircle(size, radius, ss=4):
+    """A rounded-rect alpha mask, drawn 4× and shrunk so the corners are smooth."""
+    m = Image.new("L", (size * ss, size * ss), 0)
+    ImageDraw.Draw(m).rounded_rectangle(
+        (0, 0, size * ss - 1, size * ss - 1), radius=radius * ss, fill=255)
+    return m.resize((size, size), Image.LANCZOS)
+
+
+# ── macOS: the body inset in a transparent canvas, whole size ladder ────────
+body = flat.resize((MAC_BODY, MAC_BODY), Image.LANCZOS).convert("RGBA")
+body.putalpha(squircle(MAC_BODY, MAC_RADIUS))
+mac = Image.new("RGBA", (MAC_CANVAS, MAC_CANVAS), (0, 0, 0, 0))
+mac.paste(body, ((MAC_CANVAS - MAC_BODY) // 2,) * 2)
+
+osx = os.path.join(ROOT, "engine/platform/xcode/Images.xcassets/OS X AppIcon.appiconset")
+for s in MAC_SIZES:
+    mac.resize((s, s), Image.LANCZOS).save(os.path.join(osx, "%d.png" % s))
+print("installed into", osx, "(%s)" % ", ".join("%dpx" % s for s in MAC_SIZES))
+# Contents.json there is the engine's own and already maps these filenames —
+# leave it alone so the vendored diff stays to the seven PNGs.
+
+out = os.path.join(ROOT, "assets/icon/batlogo-rounded.png")
+mac.save(out)
+print("wrote", out)

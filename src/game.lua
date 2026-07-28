@@ -218,6 +218,14 @@ function Game:mapState(id)
         ms = { fog = nil, discoveredIslands = {}, treasuresFound = {}, treasuresMapped = {} }
         self.state.maps[id] = ms
     end
+    -- A bucket that came off disk can be missing its lists entirely: loadSave
+    -- takes `data.maps` wholesale, so a save written by an older build (or one
+    -- hand-edited, or truncated) hands us a table with only some keys. Backfill
+    -- here, in the one place every caller goes through, rather than let the
+    -- first `ipairs(ms.treasuresMapped)` in World:load crash on a nil.
+    ms.discoveredIslands = ms.discoveredIslands or {}
+    ms.treasuresFound    = ms.treasuresFound    or {}
+    ms.treasuresMapped   = ms.treasuresMapped   or {}
     return ms
 end
 

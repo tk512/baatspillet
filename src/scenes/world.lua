@@ -32,6 +32,7 @@ local MapReveal    = require("src.ui.mapreveal")
 local WinScreen    = require("src.ui.winscreen")
 local PortScreen   = require("src.ui.portscreen")
 local Icons        = require("src.ui.icons")
+local Pointer      = require("src.ui.pointer")
 local ShipInfo     = require("src.ui.shipinfo")
 local PauseMenu    = require("src.ui.pausemenu")
 
@@ -232,6 +233,14 @@ function World:load(game)
     self.treasures = Treasure.build(self.terrain, foundSet)
     self.mapped = {}
     for _, id in ipairs(self.ms.treasuresMapped) do self.mapped[id] = true end
+    -- Has the treasure hunt been INTRODUCED? Gates the shelf's treasure tally,
+    -- so it isn't an empty well on a save that has never seen a map.
+    --
+    -- It LATCHES: once true it never goes false again for this session. That
+    -- matters because a pirate stealing your chest un-maps it
+    -- (pirateStealsTreasure), and a tally that vanished at that moment would
+    -- read to a child as "my treasures were taken away too".
+    self.huntSeen = #self.ms.treasuresMapped > 0 or #self.ms.treasuresFound > 0
     self.album       = nil    -- the album overlay, when open
     self.mapReveal   = nil    -- the "Finn skatten!" reveal card, when up
     self.winScreen   = nil    -- the grand all-found finale, when up
@@ -996,6 +1005,7 @@ function World:revealTreasureMap(port)
     end
     if not best then return false end
     self.mapped[best.id] = true
+    self.huntSeen = true                                    -- latches the shelf tally on
     self._sinceMap = 0                                      -- start the breather
     table.insert(self.ms.treasuresMapped, best.id)
     self.game:save()
@@ -1798,6 +1808,28 @@ function World:drawMooring()
     love.graphics.setColor(1, 1, 1)
 end
 
+-- The gold "sail to this town" costume. A swashbuckling pennant-arrow:
+-- swallowtail cut at the back, like a pirate flag streaming toward the goal
+-- (user-group: "more pirate!"). No badge -- an arrow alone says "that way", and
+-- the town it points at already has its own colour and ring.
+-- File scope, NOT rebuilt per frame: these tables are read, never written.
+local MISSION_STYLE = {
+    shape = {
+         36,   0,   -- tip
+         15, -20,   -- head top corner
+         15,  -9,   -- step in to shaft
+        -30, -14,   -- tail top
+        -18,   0,   -- the swallowtail notch
+        -30,  14,   -- tail bottom
+         15,   9,   -- step out
+         15,  20,   -- head bottom corner
+    },
+    fill  = { 0.99, 0.83, 0.22 },   -- bright gold
+    line  = { 0.10, 0.08, 0.05 },   -- dark outline
+    orbit = 0,                      -- the arrow IS the marker; nothing to orbit
+    ringThick = 4, ringShadow = 7, ringShadowA = 0.5, ringAlpha = 0.95,
+}
+
 function World:drawMissionPointer()
     if self:activeTreasure() then return end   -- on a hunt: the treasure is the goal, not a harbour
     local m = self.boat.cargo[1]
@@ -1807,53 +1839,22 @@ function World:drawMissionPointer()
 
     local bx, by = self.camera:worldToScreen(self.boat.x, self.boat.y)
     local tx, ty = self.camera:worldToScreen(port.x, port.y)
-    local ang = math.atan2(ty - by, tx - bx)
     local t = love.timer.getTime()
 
     -- pulsing ring on the target town (if it's on screen)
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
     if tx > 0 and tx < sw and ty > 0 and ty < sh then
-        local pr = Scale.overlay(30 + math.sin(t * 4) * 7)
-        love.graphics.setColor(0, 0, 0, 0.5)
-        love.graphics.setLineWidth(7); love.graphics.circle("line", tx, ty, pr)
-        love.graphics.setColor(m.color[1], m.color[2], m.color[3], 0.95)
-        love.graphics.setLineWidth(4); love.graphics.circle("line", tx, ty, pr)
-        love.graphics.setLineWidth(1)
+        Pointer.ring(MISSION_STYLE, tx, ty,
+            Scale.overlay(30 + math.sin(t * 4) * 7), m.color)
     end
 
-    -- A clear-but-friendly arrow above the boat: smaller than it used to be,
-    -- and it HOPS forward toward the target ("this way! this way!") instead of
-    -- just hovering — playful, and the motion itself points.
-    local hop = math.max(0, math.sin(t * 2.6)) * Scale.overlay(8)
-    local hx = bx + math.cos(ang) * hop
-    local hy = by - Scale.overlay(64) + math.sin(t * 3) * 4 + math.sin(ang) * hop
-    local s = (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(0.7)
-    love.graphics.push()
-    love.graphics.translate(hx, hy)
-    love.graphics.rotate(ang)
-    love.graphics.scale(s, s)
-    -- a swashbuckling pennant-arrow: swallowtail cut at the back, like a
-    -- pirate flag streaming toward the goal (user-group: "more pirate!")
-    local arrow = {
-         36,   0,   -- tip
-         15, -20,   -- head top corner
-         15,  -9,   -- step in to shaft
-        -30, -14,   -- tail top
-        -18,   0,   -- the swallowtail notch
-        -30,  14,   -- tail bottom
-         15,   9,   -- step out
-         15,  20,   -- head bottom corner
-    }
-    love.graphics.setColor(0, 0, 0, 0.28)                -- soft drop shadow
-    love.graphics.push(); love.graphics.translate(2, 3)
-    love.graphics.polygon("fill", arrow); love.graphics.pop()
-    love.graphics.setColor(0.99, 0.83, 0.22)             -- bright gold fill
-    love.graphics.polygon("fill", arrow)
-    love.graphics.setColor(0.10, 0.08, 0.05)             -- dark outline
-    love.graphics.setLineWidth(4); love.graphics.polygon("line", arrow)
-    love.graphics.setLineWidth(1)
-    love.graphics.pop()
-    love.graphics.setColor(1, 1, 1)
+    -- A clear-but-friendly arrow above the boat that HOPS toward the target.
+    -- Constant rates here, so absolute time is safe (unlike the hunt marker).
+    Pointer.draw(MISSION_STYLE, bx, by, tx, ty,
+        Scale.overlay(64),                                    -- lift above the boat
+        math.max(0, math.sin(t * 2.6)) * Scale.overlay(8),    -- hop toward target
+        math.sin(t * 3) * 4,                                  -- gentle vertical wobble
+        (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(0.7))
 end
 
 -- In-world treasure markers (camera-attached): each mapped, un-found chest rests
@@ -1909,13 +1910,9 @@ function World:drawTreasures()
     love.graphics.setColor(1, 1, 1)
 end
 
--- An always-on, distinctly-coloured "treasure" arrow above the boat toward the
--- active chest, plus a pulsing ring on the chest when it's on screen -- so the
--- youngest players can always find their way to the treasure.
-local TREASURE_ARROW = { 0.98, 0.46, 0.12 }   -- warm orange (not the gold mission arrow)
 -- How close the hunt is, 0..1 -- nil when there's no hunt on. THE single number
--- treasure-seeking mode runs on: the banner, the arrow, the chest ring and the
--- wash over the sea all read it, so they can never disagree with each other.
+-- treasure-seeking mode runs on: the chest marker, its beat, the ring on the
+-- chest and the wash over the sea all read it, so they can never disagree.
 -- Squared so the last stretch feels like it accelerates ("warmer... WARMER!").
 function World:treasureHeat(tr)
     tr = tr or self:activeTreasure()
@@ -1956,48 +1953,62 @@ function World:drawHuntOverlay()
     love.graphics.setColor(1, 1, 1)
 end
 
+-- The hunt costume: an upright TREASURE CHEST with a small orange arrow riding
+-- on its leading edge.
+--
+-- This is the whole hunt indicator. There used to be a "Finn skatten!"
+-- parchment banner across the top as well, saying the same thing in a second
+-- place -- but the top-centre band is the most expensive strip of screen there
+-- is on an iPhone (874x402), and the chest above the boat says "treasure!" to a
+-- five-year-old more loudly than a word he can't read. One object, one place.
+--
+-- The arrow is deliberately SMALLER than the gold mission one: here the chest
+-- carries the message and the arrow only carries the direction.
+local TREASURE_ARROW = { 0.98, 0.46, 0.12 }   -- warm orange (not the gold mission arrow)
+local TREASURE_STYLE = {
+    shape = { 26, 0, 9, -15, 9, -6, -20, -9, -11, 0, -20, 9, 9, 6, 9, 15 },
+    fill  = TREASURE_ARROW,
+    line  = { 0.10, 0.06, 0.03 },
+    badge = "chest",                -- drawn UPRIGHT -- see src/ui/pointer.lua
+    badgeSize = 54,
+    orbit = 30,                     -- ...so the arrow sits on the chest's edge
+    ringThick = 3, ringShadow = 6, ringShadowA = 0.45, ringAlpha = 1,
+}
+
 function World:drawTreasurePointer()
     local heat, tr = self:treasureHeat()
     if not tr then return end
 
     local bx, by = self.camera:worldToScreen(self.boat.x, self.boat.y)
     local tx, ty = self.camera:worldToScreen(tr.x, tr.y)
-    local ang = math.atan2(ty - by, tx - bx)
     local t = love.timer.getTime()
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
 
     -- Warmer / colder: the closer you are, the faster everything beats and the
-    -- bigger the arrow gets. No numbers, no words -- a five-year-old reads
-    -- "the arrow is getting excited" instantly.
+    -- bigger the marker gets. No numbers, no words -- a five-year-old reads
+    -- "the chest is getting excited" instantly.
     -- Phases come from World:updateHuntPhases (integrated, see the note there).
     local M = config.TREASURE_MODE
-    local ringPh = self._ringPhase or 0
-    local bobPh  = self._bobPhase or 0
 
     -- pulsing ring on the chest when it's on screen
     if tx > 0 and tx < sw and ty > 0 and ty < sh then
-        local pr = Scale.overlay(28 + math.sin(ringPh) * 7)
-        love.graphics.setColor(0, 0, 0, 0.45)
-        love.graphics.setLineWidth(6); love.graphics.circle("line", tx, ty, pr)
-        love.graphics.setColor(TREASURE_ARROW)
-        love.graphics.setLineWidth(3); love.graphics.circle("line", tx, ty, pr)
-        love.graphics.setLineWidth(1)
+        Pointer.ring(TREASURE_STYLE, tx, ty,
+            Scale.overlay(28 + math.sin(self._ringPhase or 0) * 7), TREASURE_ARROW)
     end
 
-    -- the arrow, bobbing above the boat (same friendly size as the gold one)
-    local hop2 = math.max(0, math.sin(bobPh)) * Scale.overlay(8)
-    local hx = bx + math.cos(ang) * hop2
-    local hy = by - Scale.overlay(62) + math.sin(t * 3) * 4 + math.sin(ang) * hop2
-    local s = (1 + M.ARROW_GROW * heat + 0.05 * math.sin(t * 5)) * Scale.overlay(0.75)
-    love.graphics.push(); love.graphics.translate(hx, hy); love.graphics.rotate(ang); love.graphics.scale(s, s)
-    local arrow = { 32, 0, 13, -18, 13, -8, -26, -12, -15, 0, -26, 12, 13, 8, 13, 18 }
-    love.graphics.setColor(0, 0, 0, 0.28)
-    love.graphics.push(); love.graphics.translate(3, 4); love.graphics.polygon("fill", arrow); love.graphics.pop()
-    love.graphics.setColor(TREASURE_ARROW); love.graphics.polygon("fill", arrow)
-    love.graphics.setColor(0.10, 0.06, 0.03); love.graphics.setLineWidth(4); love.graphics.polygon("line", arrow)
-    love.graphics.setLineWidth(1)
-    love.graphics.pop()
-    love.graphics.setColor(1, 1, 1)
+    -- The chest BEATS as you close in. That heartbeat is _beatPhase -- it used
+    -- to drive the banner's little chest icon, and it moved here with it rather
+    -- than being orphaned, so the marker keeps every channel the banner had.
+    local beat  = 1 + 0.10 * heat * math.sin(self._beatPhase or 0)
+    local scale = (M.MARKER_BASE + M.MARKER_GROW * heat) * beat * Scale.marker(1)
+
+    -- Scale.marker, not Scale.overlay: the chest has to be RECOGNISED as a
+    -- chest, and pure proportional shrink makes it a brown blob on a phone.
+    Pointer.draw(TREASURE_STYLE, bx, by, tx, ty,
+        Scale.marker(62),                                          -- lift above the boat
+        math.max(0, math.sin(self._bobPhase or 0)) * Scale.marker(8),
+        math.sin(t * 3) * 4,
+        scale)
 end
 
 -- Deterministic noise in [0,1) per world sub-cell. Keyed on world indices (not
@@ -2243,6 +2254,7 @@ function World:keypressed(key)
             if not t.found and not self.mapped[t.id] then
                 self.mapped[t.id] = true
                 table.insert(self.ms.treasuresMapped, t.id)
+                self.huntSeen = true
             end
         end
         self.game:save()

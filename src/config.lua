@@ -157,9 +157,19 @@ config.TOUCH_FOLLOW_LEAD  = 0.45  -- aim this many seconds ahead of the boat's
 -- desktop are untouched (Game.phone is false there).
 config.PHONE = {
     UI_BOOST    = 1.6,   -- multiplies Scale.ui sizes (text/buttons/icons)
+    -- Scale.marker sizes (world-anchored things whose job is RECOGNITION, e.g.
+    -- the treasure chest above the boat). Deliberately between 1.0 and UI_BOOST:
+    -- pure proportionality shrinks a chest to a brown blob on a 402pt-high
+    -- screen, and the full UI boost makes a thing that hovers over the boat
+    -- swallow the sea. See src/ui/scale.lua for the admission rule.
+    MARKER_BOOST = 1.3,
     CAMERA_ZOOM = 1.1,   -- world zoom on phones: a touch wider than the desktop
                          -- 1.4, enough to see neighbouring ports, not map-like
 }
+-- Apple's minimum touch target, in points. CONTROLS are held to this and status
+-- is not (HUD.keySize); it lives here because two files need the same number --
+-- the HUD's keys and the shelf's one tappable slot (the treasure tally).
+config.TOUCH_MIN = 44
 -- Touch tap-to-sail momentum: the boat sails to EXACTLY the tapped point, but
 -- doesn't brake there — it glides through at speed and coasts onward, tapering
 -- off over COAST_TIME. Taps chain into continuous sailing instead of
@@ -308,7 +318,13 @@ config.TREASURE_GOODS = { "shell", "starfish", "gem", "pearl" }
 config.TREASURE_MODE = {
     NEAR       = 1800,  -- heat starts climbing inside this distance...
     HOT        = 320,   -- ...and is full from here in (about the REACH ring)
-    ARROW_GROW = 0.55,  -- arrow is this much bigger at full heat
+    -- The MARKER is the chest-with-an-arrow that hovers over the boat. It is
+    -- the whole hunt indicator now (there is no "Finn skatten!" banner any
+    -- more -- the top of the screen is the most expensive band on a phone), so
+    -- it is bigger than the bare arrow it replaced. Tune these two together:
+    -- GROW is on top of MARKER_BASE, and the chest also beats with the heat.
+    MARKER_BASE = 0.68, -- marker scale when the chest is far away
+    MARKER_GROW = 0.55, -- ...and this much bigger again at full heat
     BOB_COLD   = 2.6,   -- arrow bob speed when far off...
     BOB_HOT    = 9.0,   -- ...and when you're right on it (excited)
     RING_COLD  = 4.0,   -- chest ring pulse speed, cold -> hot

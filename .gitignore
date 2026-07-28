@@ -2,7 +2,7 @@
 .claude
 CLAUDE.md
 
-# Build artifacts (rebuilt by build.sh / ios.sh)
+# Build artifacts (rebuilt by bygg.sh)
 *.love
 *.dmg
 *.app
