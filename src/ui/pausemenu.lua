@@ -91,7 +91,7 @@ function PauseMenu:mousereleased(x, y, button)
     local _, rects = self:layout()
     for i, r in ipairs(rects) do
         if Retro.released("pause" .. i, x, y) then
-            Assets.playSfx("leave", 0.5)
+            Assets.playSfx("leave", 0.30)
             r.btn.action()
             return
         end

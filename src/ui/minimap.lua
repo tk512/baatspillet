@@ -17,8 +17,13 @@ local Retro  = require("src.ui.retro")
 local Minimap = {}
 Minimap.__index = Minimap
 
--- unexplored cells: a touch lighter than the in-world fog, so the map reads
--- parchment-dark rather than dead black
+-- Unexplored cells: a touch lighter than the in-world fog, so the map reads
+-- parchment-dark rather than dead black -- and SEMI-TRANSPARENT, so the sea and
+-- the islands keep moving underneath the part of the map that has nothing to
+-- say yet. Only the unknown is see-through: revealed terrain is painted at full
+-- alpha in refresh(), and every pip, X, boat and viewport line draws over the
+-- top at its own colour. The dark is the only thing carrying no information, so
+-- it is the only thing that gives way.
 local UNK = { 0.07, 0.09, 0.13 }
 
 function Minimap.new(world)
@@ -32,7 +37,8 @@ function Minimap.new(world)
     self.worldH = self.h * self.fog.cell
 
     self.img = love.image.newImageData(self.w, self.h)
-    self.img:mapPixel(function() return UNK[1], UNK[2], UNK[3], 1 end)  -- start all unknown
+    local ua = config.MINIMAP.FOG_ALPHA
+    self.img:mapPixel(function() return UNK[1], UNK[2], UNK[3], ua end)  -- start all unknown
     self.painted = {}                          -- painted[cx][cy] = already drawn
     for cx = 0, self.w - 1 do self.painted[cx] = {} end
 
@@ -83,6 +89,10 @@ function Minimap:refresh()
     if changed then self.tex:replacePixels(self.img) end
     return changed
 end
+
+-- One trapezoid of the wooden frame, refilled per edge per frame. File scope, so
+-- drawing the surround costs no allocation.
+local frameQuad = {}
 
 -- Push a closed polygon out by `m` like a mitred picture frame: every EDGE
 -- moves along its own normal and neighbours are re-intersected, so a sharp
@@ -214,9 +224,29 @@ function Minimap:draw()
     love.graphics.setLineWidth(2)
     love.graphics.polygon("line", outer)               -- silhouette
     love.graphics.setLineWidth(1)
+
+    -- The plank is drawn as a genuine RING -- four trapezoids between matching
+    -- outer and inner vertices -- and not as a filled `outer` with the well laid
+    -- over it. That is what it used to be, and `outer` CONTAINS `inner`, so the
+    -- frame was quietly painting an opaque plank across the whole map. Every bit
+    -- of alpha below it (the well, the unexplored cells) was see-through onto
+    -- wood, which looks exactly like being see-through onto nothing.
     love.graphics.setColor(W.face)
-    love.graphics.polygon("fill", outer)               -- the plank
-    love.graphics.setColor(W.deep)                     -- the well behind the map
+    for k = 1, 8, 2 do
+        local j = (k == 7) and 1 or (k + 2)             -- next vertex, wrapping
+        frameQuad[1], frameQuad[2] = outer[k], outer[k + 1]
+        frameQuad[3], frameQuad[4] = outer[j], outer[j + 1]
+        frameQuad[5], frameQuad[6] = inner[j], inner[j + 1]
+        frameQuad[7], frameQuad[8] = inner[k], inner[k + 1]
+        love.graphics.polygon("fill", frameQuad)
+    end
+
+    -- The well behind the map, translucent for the same reason the fog is: an
+    -- opaque well would sit behind the see-through cells and there would be
+    -- nothing to see through TO. Kept as a faint wash rather than dropped, so the
+    -- frame still has a visible seat and any sub-pixel gap between the diamond
+    -- and the texture reads as a dark rim instead of a bright crack.
+    love.graphics.setColor(W.deep[1], W.deep[2], W.deep[3], config.MINIMAP.WELL_ALPHA)
     love.graphics.polygon("fill", inner)
 
     -- The explored map itself, rotated into the diamond. LÖVE composes
@@ -267,11 +297,26 @@ function Minimap:draw()
 
     -- Mission target: a pulsing ring on the destination town, echoing the big
     -- in-world arrow so a non-reader can see "go there" on the map too.
+    --
+    -- Drawn even while the town is still under fog, unlike the pips above. The
+    -- harbourmaster NAMED the place, and a pip on your chart is what being told
+    -- a name means -- terrain fog is untouched, it's one town, the one you were
+    -- just sent to. Without it the first delivery of a new world shows an arrow
+    -- pointing at nothing visible anywhere on screen, and you cannot learn what a
+    -- pointer means when the pointed-at thing isn't there. Two signals agreeing
+    -- (arrow bearing, map position) is how a child decodes an abstract one.
     local m = world.boat.cargo[1]
     if m then
         local port = world:portById(m.toId)
-        if port and self.fog:pointRevealed(port.x, port.y) then
+        if port then
             local mx, my = toScreen(port.x, port.y)
+            if not self.fog:pointRevealed(port.x, port.y) then
+                local pc = port.color                 -- the pip loop above skipped it
+                love.graphics.setColor(0, 0, 0, 0.7)
+                love.graphics.rectangle("fill", mx - 3, my - 3, 6, 6)
+                love.graphics.setColor(pc[1], pc[2], pc[3])
+                love.graphics.rectangle("fill", mx - 2, my - 2, 4, 4)
+            end
             local pr = 6 + math.sin(love.timer.getTime() * 4) * 2
             love.graphics.setColor(m.color[1], m.color[2], m.color[3], 0.95)
             love.graphics.setLineWidth(2)

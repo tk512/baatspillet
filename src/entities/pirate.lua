@@ -35,12 +35,31 @@ function Pirate.new(x, y, playerMaxSpeed)
     self.retreatT = 0                       -- time retreating (gone at RETREAT_MAX)
     self.muzzle   = 0                       -- muzzle-flash timer
     self.dead     = false
+    -- which way it circles you, fixed for its whole life: re-rolling it per frame
+    -- makes it wobble on the spot instead of orbiting
+    self.orbitDir = (love.math.random() < 0.5) and -1 or 1
     return self
 end
 
 -- break off and sail away; update() removes it once far enough
 function Pirate:flee()
     self.state = "retreat"
+end
+
+-- How far off "straight at you" an attacking pirate steers, given how far out it
+-- is. ONE continuous rule rather than a close-in / hold / back-off state machine,
+-- which judders along its own boundaries: well outside its station it aims AT you
+-- (offset 0), on station it aims across you and circles (a quarter turn), inside
+-- it aims away (a half turn) and peels off. `dir` is which way it orbits, fixed
+-- per pirate so it doesn't dither.
+--
+-- Pure, and tested, because "the pirate rams you and clips through the hull" is a
+-- feel bug that reads as broken art and gets blamed on the sprite.
+function Pirate.stationOffset(dist, standoff, dir)
+    if not standoff or standoff <= 0 then return 0 end
+    local err = (dist - standoff) / standoff        -- >0 too far, <0 too close
+    err = math.max(-1, math.min(1, err))
+    return dir * (1 - err) * math.pi * 0.5
 end
 
 -- steering whisker: is the water clear for `look` units along `ang`?
@@ -72,8 +91,17 @@ function Pirate:update(dt, boat, terrain, onHit)
     local sdx, sdy = aimX - self.x, aimY - self.y
     local dist = math.sqrt((boat.x - self.x) ^ 2 + (boat.y - self.y) ^ 2)   -- to the boat
 
-    -- steer toward the aim point (chase/race) or away (retreat), around islands
-    local baseAng   = (self.state == "retreat") and math.atan2(-sdy, -sdx) or math.atan2(sdy, sdx)
+    -- steer toward the aim point (chase/race) or away (retreat), around islands.
+    -- An ATTACKING pirate holds a firing station instead: see Pirate.stationOffset.
+    local baseAng
+    if self.state == "retreat" then
+        baseAng = math.atan2(-sdy, -sdx)
+    elseif racing then
+        baseAng = math.atan2(sdy, sdx)
+    else
+        baseAng = math.atan2(sdy, sdx)
+                  + Pirate.stationOffset(dist, P.STANDOFF, self.orbitDir)
+    end
     local targetAng = self:steerAround(terrain, baseAng)
     local diff = angleDiff(self.angle, targetAng)
     self.angle = self.angle + math.max(-1, math.min(1, diff * 2)) * self.turnRate * dt
@@ -141,10 +169,14 @@ function Pirate:fire(boat)
     local bvx, bvy = math.cos(boat.angle) * boat.speed, math.sin(boat.angle) * boat.speed
     local tx = boat.x + bvx * plan * 0.8        -- partial lead: still dodge-able
     local ty = boat.y + bvy * plan * 0.8
-    local ang = math.atan2(ty - self.y, tx - self.x)
     local bowOff = 32 * (P.LENGTH or 2.6)           -- fire from the (long) bow
     local mx = self.x + math.cos(self.angle) * bowOff
     local my = self.y + math.sin(self.angle) * bowOff
+    -- Aimed FROM THE MUZZLE, not the hull centre. The ball leaves ~83 units up a
+    -- long bow, so a heading taken from the centre is off by that whole offset:
+    -- negligible at range, the entire shot at close quarters. It is why a pirate
+    -- sitting on top of you used to land nothing at all.
+    local ang = math.atan2(ty - my, tx - mx)
     self.balls[#self.balls + 1] = {
         x = mx, y = my,
         vx = math.cos(ang) * P.BALL_SPEED, vy = math.sin(ang) * P.BALL_SPEED,

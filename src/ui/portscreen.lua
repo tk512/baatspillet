@@ -39,6 +39,13 @@ local THEMES = {
     },
 }
 
+-- The harbour's own toot, below the default sfx level. It fires on arrival AND
+-- on casting off, right next to a spoken line, so at full strength it stepped on
+-- the harbourmaster. The player's own horn (World:soundHorn) stays at 1.0 -- that
+-- one is the child pressing a button, and it should be the loudest thing he can
+-- make happen.
+local HORN_VOL = 0.55
+
 local fontCache = {}
 local function vfont(px)
     px = math.max(6, math.floor(px))
@@ -108,7 +115,7 @@ function PortScreen:playVoice()
     if self.mode == "offer" and Assets.playNamedVoice("oppdrag") then return end
     if self.mode == "busy" and Assets.playNamedVoice("feil_havn") then return end
     if Assets.playNamedVoice("dock_" .. self.port.id) then return end
-    Assets.playSfx("horn")
+    Assets.playSfx("horn", HORN_VOL)
 end
 
 local function inRect(r, mx, my)
@@ -301,9 +308,13 @@ end
 function PortScreen:confirm()
     local wasDeliver = (self.mode == "deliver")
     if self.mode == "offer" and self.offer then
-        self.world.cargoSystem:tryPickup(self.world.boat, self.port)
-        Assets.playSfx("horn")
+        -- guarded on the real pickup, not the mode: nothing goes aboard if the
+        -- hold filled up, and the "follow the arrow" beat is one-time -- it must
+        -- not be spent on a voyage that never gets an arrow
+        local took = self.world.cargoSystem:tryPickup(self.world.boat, self.port)
+        Assets.playSfx("horn", HORN_VOL)
         self.world:showToast("Ombord!")
+        if took then self.world:onCargoTaken() end
     end
     if wasDeliver then
         -- fireworks once you're back on the water, deferred like the map card
@@ -1057,15 +1068,12 @@ function PortScreen:storeButton(b, label, t, primary, mx, my)
     love.graphics.setColor(1, 1, 1);      love.graphics.print(label, lx, ly)
 end
 
--- A row of icons. With `figures` (a per-item list, e.g. passenger figures) each
--- slot can differ; otherwise it's `count` copies of `kind`.
+-- The job's goods as a HUDDLE, not a spaced-out row. With `figures` (a per-item
+-- list, e.g. passenger figures) each one differs; otherwise it's `count` copies
+-- of `kind`. They used to sit at 1.5x spacing, which read as N separate errands
+-- rather than one group going one place -- see Icons.cluster.
 function PortScreen:drawIconRow(kind, count, cx, y, s, figures)
-    local n = figures and math.min(#figures, 6) or math.min(count, 6)
-    local gap = s * 1.5
-    local total = (n - 1) * gap
-    for i = 1, n do
-        self:drawIcon(figures and figures[i] or kind, cx - total / 2 + (i - 1) * gap, y, s)
-    end
+    Icons.cluster(figures or kind, figures and #figures or count, cx, y, s)
 end
 
 -- Delegate to the shared icon module (which prefers assets/icons/<kind>.png).

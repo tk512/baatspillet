@@ -28,6 +28,7 @@ local function defaultState()
         ammo             = 0,    -- cannonballs left (the cannon comes with some)
         cannons          = 0,    -- cannons bought; extras fire a bit faster
         hintFindPort     = false,           -- one-time "Finn en havn!" shown?
+        hintFollowArrow  = false,           -- one-time "Pilen viser vei" shown?
         -- Per-WORLD progress lives under maps[mapId]: switching maps must never
         -- leak exploration between worlds. See Game:mapState().
         maps             = {},
@@ -376,6 +377,7 @@ function Game:loadSave()
             end
             if data.premium ~= nil then self.state.premium = data.premium end
             if data.hintFindPort ~= nil then self.state.hintFindPort = data.hintFindPort end
+            if data.hintFollowArrow ~= nil then self.state.hintFollowArrow = data.hintFollowArrow end
         end
     end
 end

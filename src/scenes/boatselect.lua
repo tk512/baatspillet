@@ -175,9 +175,9 @@ end
 -- the real UI and the rope/padlock carry it until that's recorded.
 function BoatSelect:announce()
     if not self.game:ownsBoat(self:def().id) then
-        if not Assets.playNamedVoice("laast") then Assets.playSfx("leave", 0.35) end
+        if not Assets.playNamedVoice("laast") then Assets.playSfx("leave", 0.22) end
     else
-        Assets.playSfx("leave", 0.5)
+        Assets.playSfx("leave", 0.30)
     end
 end
 

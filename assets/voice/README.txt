@@ -11,6 +11,14 @@ at that town, and again when the 🔊 button is tapped:
     dock_alversund.ogg
     dock_hjellestad.ogg
 
+Named clips the game asks for by name (all optional -- it falls back to a sound
+effect if the file isn't here). STILL TO RECORD:
+
+    pilen_viser_vei.ogg  -- plays every time cargo goes aboard, a moment after
+                            you leave the harbour, while the words "Pilen viser
+                            vei" spring up over the gold arrow. Say just that:
+                            "Pilen viser vei!"
+
 Example to say into your mic and convert:
     "Velkommen til Bergen! Ta passasjerene til en annen by."
 

@@ -111,15 +111,47 @@ w = fakeWorld{
     cannons = 2,
 }
 sh = Shelf.build(w)
-eq(#sh.cargo, 2, "cargo: one slot per job aboard")
-eq(sh.cargo[1].count, 3, "cargo: keeps each job's own count")
+-- Cargo is the mission banner's job now: it draws the goods themselves, and a
+-- harbour won't hand out a second one while a job is aboard, so a cargo slot here
+-- said the same thing again in the weaker grammar. Pinned, because "the shelf
+-- shows what you have" is the obvious thing to re-add without noticing why not.
+check(sh.cargo == nil, "cargo has no section: the mission banner shows the goods")
 -- cannon x2, brod x2, kuler x7, kikkert -- four owned things
 eq(#sh.gear, 4, "gear: one slot per owned thing")
 
 w = fakeWorld{}
 sh = Shelf.build(w)
-eq(#sh.cargo, 0, "empty hold: no cargo slots")
 eq(#sh.gear, 0, "bought nothing: no gear slots")
+
+-- ── Sections and their hit-box names must stay in step ──────────────────────
+-- These were two separate lists once. Cargo left the shelf, the section list
+-- lost an entry, the name list kept three, and every rect shifted by one -- so
+-- the treasure tally's hit box was filed under "gear" and the ONE tappable slot
+-- in the shelf silently stopped opening the album. Nothing crashed, nothing
+-- looked wrong, and it reads as "can't tap the chest on iPhone" when in fact it
+-- was broken everywhere. Both halves now come from Shelf.SECTIONS.
+w = fakeWorld{ owned = { kikkert = true }, treasures = chests(4, 1), huntSeen = true }
+sh = Shelf.build(w)
+check(#Shelf.SECTIONS > 0, "there are sections to draw")
+local rectNames = {}
+for _, d in ipairs(Shelf.SECTIONS) do
+    check(sh[d.field] ~= nil,
+        "section '" .. d.field .. "' is a real table on the built shelf")
+    check(type(d.rect) == "string" and #d.rect > 0,
+        "section '" .. d.field .. "' names the hit box it fills")
+    check(not rectNames[d.rect], "hit-box name '" .. d.rect .. "' is used once")
+    rectNames[d.rect] = true
+end
+-- World:mousepressed looks up exactly this key to open the album; if the tally
+-- is ever renamed or dropped, the album becomes unreachable by touch entirely
+check(rectNames.treasures,
+    "a 'treasures' hit box exists -- it is what opens the album (World:mousepressed)")
+-- and the tally must be the section that's actually tappable
+for _, d in ipairs(Shelf.SECTIONS) do
+    if d.rect == "treasures" then
+        check(sh[d.field].progress, "the 'treasures' section is the progress tally")
+    end
+end
 
 -- ── THE CACHE. Every input the build reads must move the signature ───────────
 local function sigAfter(world, mutate)
@@ -149,15 +181,19 @@ w = fakeWorld{ coins = 10, treasures = chests(4, 2), huntSeen = true,
 a, b = sigAfter(w, function(x) x.game.state.coins = 11 end)
 check(a ~= b, "signature: a single coin still invalidates the cache")
 
--- cargo, food, ammo, cannons
+-- ...and the rule runs the OTHER way too: an input the build no longer reads
+-- must be OUT of the signature, or every pickup rebuilds the whole shelf to
+-- produce byte-identical output. Cargo is the case -- it left the build, so it
+-- has to leave the hash with it.
 w = fakeWorld{ cargo = { { icon = "fish", count = 1 } } }
 a, b = sigAfter(w, function(x) x.boat.cargo[1].count = 2 end)
-check(a ~= b, "signature: cargo count invalidates the cache")
+eq(a, b, "signature: cargo no longer touches the shelf, so it must not rebuild it")
 
 w = fakeWorld{ cargo = { { icon = "fish", count = 1 } } }
 a, b = sigAfter(w, function(x) x.boat.cargo[2] = { icon = "smile", count = 1 } end)
-check(a ~= b, "signature: taking on another job invalidates the cache")
+eq(a, b, "signature: taking on another job doesn't rebuild the shelf either")
 
+-- food, ammo, cannons
 w = fakeWorld{ food = { brod = 1 } }
 a, b = sigAfter(w, function(x) x.game.foodCount = function() return 0 end end)
 check(a ~= b, "signature: eating the last bread invalidates the cache")

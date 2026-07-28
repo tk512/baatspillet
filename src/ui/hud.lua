@@ -70,22 +70,22 @@ function HUD.drawPauseKey(world, x, y, nmH)
     love.graphics.setColor(1, 1, 1)
 end
 
--- "Oppdrag <icon>xN <badge> <BY>". Only the FIRST job -- this is the "do" side;
--- what's aboard is on the shelf.
+-- "Oppdrag <huddle of goods> <badge> <BY>". Only the FIRST job -- this is the
+-- "do" side; what's aboard is on the shelf. The count is SHOWN, not written:
+-- four passengers standing together say "four" to someone who can't read "x4"
+-- (see Icons.cluster).
 function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     local m = world.boat.cargo[1]
     local pad  = math.max(8, math.floor(smH * 0.7))
     local gap  = math.floor(nmH * 0.55)
-    local s    = nmH * 0.9                                 -- icon size
+    local s    = nmH * 0.9                                 -- one item's size
     local markW, markH = nmH * 1.05, nmH * 0.95            -- harbour badge
     local dest = m.toName
-    m._countStr = m._countStr or ("×" .. m.count)   -- count is fixed per mission
-    local countStr = m._countStr
+    local wGoods = Icons.clusterWidth(m.count, s)
 
     local wLabel = fonts.normal:getWidth("Oppdrag")
-    local wCount = fonts.normal:getWidth(countStr)
     local wDest  = fonts.normal:getWidth(dest)
-    local content = wLabel + gap + s + gap * 0.4 + wCount + gap
+    local content = wLabel + gap + wGoods + gap
                     + markW + gap * 0.5 + wDest
 
     local ph = nmH + (pad + t * 2)
@@ -101,9 +101,8 @@ function HUD.drawMission(world, sw, c, fonts, smH, nmH, t)
     love.graphics.setColor(WOOD.accent)
     love.graphics.print("Oppdrag", cx, ty(nmH)); cx = cx + wLabel + gap
 
-    Icons.draw(m.icon, cx + s / 2, cy, s); cx = cx + s + gap * 0.4
-    love.graphics.setColor(WOOD.text)
-    love.graphics.print(countStr, cx, ty(nmH)); cx = cx + wCount + gap
+    Icons.cluster(m.figures or m.icon, m.count, cx + wGoods / 2, cy, s)
+    cx = cx + wGoods + gap
 
     -- the town badge IS the "to" marker: an arrow glyph rendered as tofu
     HarborMark.draw(cx, cy - markH / 2, markW, markH, m.color or WOOD.text)

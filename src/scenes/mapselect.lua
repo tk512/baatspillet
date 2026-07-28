@@ -241,7 +241,7 @@ function MapSelect:draw()
 end
 
 function MapSelect:pick(def)
-    if def.comingSoon then Assets.playSfx("leave", 0.3); return end
+    if def.comingSoon then Assets.playSfx("leave", 0.20); return end
     if def.premium and not self.game:isPremium() then
         Assets.playNamedVoice("spor_en_voksen")
         self.game._openPackOffer = true

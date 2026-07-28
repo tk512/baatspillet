@@ -176,6 +176,13 @@ config.PIRATE = {
     SPAWN_GRACE   = 30,     -- seconds of sailing before the first can appear
     SPAWN_MEAN    = 70,     -- avg seconds between spawn rolls (higher = rarer)
     RESPAWN_GRACE = 25,     -- quiet time after one leaves
+    -- STANDOFF: the range the pirate tries to hold while attacking, rather than
+    -- sailing right up your side. Two things were wrong with closing to zero: a
+    -- galleon parked inside your hull clips straight through the sprite, and a
+    -- duel where the enemy is ON you is not a duel a child can read at all -- you
+    -- can't see who is where. Well inside FIRE_RANGE, so it can shoot from
+    -- station, and well outside both hulls (26 + 20) so nothing ever overlaps.
+    STANDOFF      = 430,
     FIRE_RANGE    = 720,    -- only fires within this distance (ground units)
     FIRE_INTERVAL = 2.8,    -- seconds between shots
     BALL_SPEED    = 250,    -- cannonball speed (slow + telegraphed)
@@ -326,6 +333,70 @@ config.TREASURE_MODE = {
     TINT_MIN   = 0.045, -- wash strength when the hunt starts...
     TINT_MAX   = 0.13,  -- ...and when you're on top of the chest
     VIGNETTE   = 0.30,  -- corner darkening at full heat
+    -- The hunt takes the same announce as the mission marker (MARKER_ANNOUNCE),
+    -- plus an edge hint: while the words are up, a big bobbing chest is pinned to
+    -- the screen edge in the treasure's direction. The chest is far off and off
+    -- screen at the start of EVERY hunt, which is exactly when "which way?" is
+    -- hardest and the little arrow over the boat easiest to miss. It leaves with
+    -- the words; from then on the arrow is enough.
+    TEXT        = "Pilen viser vei til skatten!",
+    HINT_SIZE   = 84,   -- edge chest, design px
+    HINT_MARGIN = 78,   -- ...and how far its centre stays off the screen edge
+    -- Held back like the mission line, and for the same reason: fired as the card
+    -- closed it landed before the player had started sailing.
+    ANNOUNCE_DELAY = 3.5,
+    -- How far the orange arrow rides out from the chest. At 30 the chest -- which
+    -- Icons.draw paints at 1.5x its badgeSize, so ~81px across -- buried all but
+    -- the last 15px of the arrow, and the one part carrying the DIRECTION was the
+    -- part you couldn't see. The tail still tucks under the chest's edge, so the
+    -- two read as one marker rather than two things that happen to be near.
+    ARROW_ORBIT = 52,
+}
+
+-- THE MARKER ANNOUNCE -- the flourish that introduces a new goal, shared by the
+-- mission arrow and the treasure marker (`src/ui/announce.lua`) so that both say
+-- "here is the new thing to follow" with the SAME gesture: the badge arrives
+-- huge with a caption over it, breathes, then settles onto the marker.
+--
+-- It exists because the mission arrow shipped bare, and a playtester took his
+-- first cargo, got the arrow and had no idea what it meant. An arrow alone says
+-- "that way" and never "that way to WHAT" -- so the WHAT is now said loudly at
+-- the moment it changes, and then gets out of the way. ANNOUNCING rather than
+-- permanently badging is what keeps the sea clear: the strip just above the boat
+-- is where the child is already looking, which makes it worth a great deal for
+-- three seconds and very little for the rest of the voyage.
+config.MARKER_ANNOUNCE = {
+    TIME  = 2.8,    -- how long the line is up, entrance and fade included
+    POP   = 0.22,   -- it springs to full size over this much of the phase...
+    OVER  = 1.0,    -- ...overshooting by this much on the way, so it lands with a bump
+    FADE  = 0.34,   -- ...and fades over the last this much
+    PULSE = 0.05,   -- breathing while it's up -- movement is what makes a kid look
+    LIFT  = 26,     -- gap between the top of the marker and the line, design px
+}
+
+-- THE MISSION MARKER -- the gold arrow that hovers over the boat while cargo is
+-- aboard. Counterpart to the treasure marker above; the two are sized to read as
+-- one family. The arrow is alone up there on purpose: what it means is said in
+-- words and voice when the destination changes (MARKER_ANNOUNCE), not carried
+-- around all voyage as a second symbol.
+config.MISSION_MARKER = {
+    SCALE = 0.7,    -- marker scale (the treasure chest lives at 0.68..1.23)
+    LIFT  = 64,     -- how far above the boat it floats
+    -- Long enough to be out of the harbour and actually sailing. Fired the
+    -- instant the dock closed, it landed while the player was still finding the
+    -- boat, which is the one moment he is not looking for advice.
+    ANNOUNCE_DELAY = 3.5,
+    TEXT           = "Pilen viser vei",
+}
+
+-- THE MINIMAP's see-through dark. The map covers a corner of the sea, and the
+-- part of it covering the most screen is the part with the least to say: the
+-- unexplored dark. So that -- and only that -- gives way. Revealed terrain stays
+-- solid, and the pips, X's, boat and viewport all draw over the top at full
+-- strength, because they are the whole reason the map is there.
+config.MINIMAP = {
+    FOG_ALPHA  = 0.28,  -- unexplored cells; lower = more sea showing through
+    WELL_ALPHA = 0.10,  -- the well behind the map (see the note in Minimap:draw)
 }
 
 -- Crew + passengers eat the food you've stocked as you sail: every EAT_DISTANCE
@@ -486,9 +557,13 @@ config.SUBMARINE = {
     -- modestly (it should still feel like a lucky catch, not a scheduled event).
     SUBMERGED_MIN = 35,   -- stays under this long (s)... (rare = special)
     SUBMERGED_MAX = 75,
-    SURFACE_MIN   = 10,   -- ...then cruises surfaced this long, then dives away
-    SURFACE_MAX   = 18,
-    TRANSITION    = 2.2,  -- seconds to rise / sink through the waterline
+    -- Long enough to be a SIGHTING. The surfacing is the whole point of the
+    -- submarine, and it was over before you could steer across to look at it:
+    -- you get one glance, and then you want to sail over, and that has to fit in
+    -- the window or the rarest thing in the sea reads as a glitch.
+    SURFACE_MIN   = 26,   -- ...then cruises surfaced this long, then dives away
+    SURFACE_MAX   = 42,
+    TRANSITION    = 3.0,  -- seconds to rise / sink through the waterline
     FX_DIST       = 2400, -- bubbles + blubb only when this close to the player
 }
 

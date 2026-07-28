@@ -28,6 +28,43 @@ function Icons.coin(x, y, r, rot)
     love.graphics.ellipse("fill", x - w * 0.3, y - r * 0.3, w * 0.25, r * 0.25)
 end
 
+-- ── Huddles ──────────────────────────────────────────────────────────────────
+-- N of the same thing standing together, instead of writing "x4" next to one of
+-- them. A five-year-old cannot read "x4"; he can count heads. Same reasoning as
+-- the treasure tally's rising gold (CLAUDE.md, "HAVE vs DO"): the picture is the
+-- signal, and a numeral is at best a note for the grown-up.
+--
+-- They OVERLAP rather than sit in a row: three passengers spread evenly read as
+-- three separate errands, while three shoulder to shoulder read as one group
+-- going one place, which is what the job actually is. The first is whole and the
+-- rest peek out from behind it, each a step to the side and a touch higher, so
+-- the huddle has a front and a back.
+Icons.CLUSTER_STEP = 0.44       -- how far each one steps out from the one in front
+Icons.CLUSTER_MAX  = 6          -- beyond this it's a crowd, not a countable group
+
+function Icons.clusterCount(n)
+    return math.max(1, math.min(Icons.CLUSTER_MAX, math.floor(n or 1)))
+end
+
+-- What the huddle occupies, so callers can lay out around it rather than guess.
+function Icons.clusterWidth(n, s, step)
+    return s + (Icons.clusterCount(n) - 1) * s * (step or Icons.CLUSTER_STEP)
+end
+
+-- `list` is either one kind repeated, or a per-item table (the passenger
+-- figures, so a group is four different people rather than one person four
+-- times). Drawn BACK to front, so the front one is whole.
+function Icons.cluster(list, n, cx, cy, s, step)
+    n = Icons.clusterCount(n)
+    step = step or Icons.CLUSTER_STEP
+    local dx = s * step
+    local front = cx - Icons.clusterWidth(n, s, step) / 2 + s / 2
+    for i = n, 1, -1 do
+        local kind = (type(list) == "table") and (list[i] or list[1]) or list
+        Icons.draw(kind, front + (i - 1) * dx, cy - (i - 1) * s * 0.07, s)
+    end
+end
+
 -- Contained in a size x size box -- longest side scaled to `size`, so the whole
 -- product shows. Used by the Butikk's square windows.
 function Icons.drawBox(kind, x, y, size, alpha)

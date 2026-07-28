@@ -32,6 +32,7 @@ local Icons        = require("src.ui.icons")
 local Pointer      = require("src.ui.pointer")
 local ShipInfo     = require("src.ui.shipinfo")
 local PauseMenu    = require("src.ui.pausemenu")
+local Announce     = require("src.ui.announce")
 
 local World = {}
 
@@ -676,7 +677,11 @@ function World:update(dt)
     else
         -- clear of the harbour we left: cast off and allow docking again
         if self.dockSuppress then
-            Assets.playSfx("leave", 0.8)
+            -- Looks tiny, isn't: leave.ogg is ~14 dB hotter than the synth effects
+            -- (see the CLAUDE.md audio note), so 0.42 lands well ABOVE the 0.6
+            -- baseline in the ear. The loudest of the file's five uses on purpose
+            -- -- casting off is the only announcement the departure gets.
+            Assets.playSfx("leave", 0.42)
             self.dockSuppress = nil
         end
     end
@@ -716,6 +721,31 @@ function World:update(dt)
             self.findPortHintDelay = nil
             self.findPortHint = 8
             Assets.playNamedVoice("finn_en_havn")
+        end
+    end
+
+    -- the two marker flourishes (src/ui/announce.lua); everything they drive is a
+    -- pure function of these countdowns, so nothing can drift out of step
+    if (self.missionAnnounce or 0) > 0 then
+        self.missionAnnounce = self.missionAnnounce - dt
+    end
+    if (self.treasureAnnounce or 0) > 0 then
+        self.treasureAnnounce = self.treasureAnnounce - dt
+    end
+    if self.missionAnnounceDelay then       -- held back until the dock is behind you
+        self.missionAnnounceDelay = self.missionAnnounceDelay - dt
+        if self.missionAnnounceDelay <= 0 then
+            self.missionAnnounceDelay = nil
+            self.missionAnnounce = config.MARKER_ANNOUNCE.TIME
+            -- TODO(voice): record pilen_viser_vei.ogg -- see assets/voice/README.txt
+            if not Assets.playNamedVoice("pilen_viser_vei") then Assets.playSfx("deliver") end
+        end
+    end
+    if self.treasureAnnounceDelay then      -- ...and the hunt's, once you're moving
+        self.treasureAnnounceDelay = self.treasureAnnounceDelay - dt
+        if self.treasureAnnounceDelay <= 0 then
+            self.treasureAnnounceDelay = nil
+            self.treasureAnnounce = config.MARKER_ANNOUNCE.TIME
         end
     end
 
@@ -864,10 +894,13 @@ function World:checkIslandDiscovery()
         local dx, dy = self.boat.x - isl.x, self.boat.y - isl.y
         local reach = (isl.radius or 520) + 200   -- "discovered" on reaching its coast
         if (dx * dx + dy * dy) < (reach * reach) and not self:isDiscovered(isl.id) then
+            -- Recorded, but NOT announced. A 19-island map meant 19 toasts and 19
+            -- chimes for something the player did not choose to do and cannot act
+            -- on -- and the fog opening up already says "new place" better than a
+            -- word he can't read. Discovery is still saved: isDiscovered and the
+            -- minimap both read it.
             table.insert(self.ms.discoveredIslands, isl.id)
             self.game:save()
-            self:showToast("Ny øy oppdaget!")
-            Assets.playSfx("deliver")
         end
     end
 end
@@ -951,8 +984,13 @@ function World:openMapReveal(t)
     Assets.playSfx("horn", 0.5)
 end
 
+-- The card hands off to the marker: a few seconds after it clears -- once you're
+-- actually sailing, like the mission line -- the chest announces itself and the
+-- edge hint points the way. Only here, never on load: a saved hunt is already
+-- under way, and an announce is an introduction.
 function World:closeMapReveal()
     self.mapReveal = nil
+    self.treasureAnnounceDelay = config.TREASURE_MODE.ANNOUNCE_DELAY
 end
 
 -- the nearest mapped, un-found chest: what the marker points at
@@ -1238,14 +1276,37 @@ function World:updatePirate(dt)
     end
 end
 
+-- How far the corner of the screen reaches, in ground units. Unprojects the four
+-- screen corners rather than assuming, so it's right at any zoom, on any device
+-- and in either camera mode.
+function World:viewRadius()
+    local sw, sh = love.graphics.getDimensions()
+    local best = 0
+    for _, c in ipairs({ { 0, 0 }, { sw, 0 }, { sw, sh }, { 0, sh } }) do
+        local gx, gy = self.camera:screenToWorld(c[1], c[2])
+        local dx, dy = gx - self.boat.x, gy - self.boat.y
+        best = math.max(best, math.sqrt(dx * dx + dy * dy))
+    end
+    return best
+end
+
+-- The pirate appears just past the edge of what you can SEE, in front of you,
+-- and sails in. It used to pick any of twelve angles at up to 1350 units, which
+-- on a wide screen is often behind you and well out of sight: the chant went up,
+-- the music changed, and there was nothing there. A threat you can hear and not
+-- find is not exciting, it's confusing -- and to a five-year-old it reads as the
+-- game being broken. So the angles are tried in order of how close they are to
+-- straight ahead, and the distance starts just beyond the corner of the screen.
+local PIRATE_ARC = { 0, 0.30, -0.30, 0.62, -0.62, 0.95, -0.95, 1.3, -1.3 }
 function World:spawnPirate()
-    -- sweep several distance rings over many angles, so it still finds sea when
-    -- the boat is in a pocket between islands
     local b = self.boat
+    local view = self:viewRadius()
     local px, py
-    for _, r in ipairs({ 1200, 1000, 850, 700, 1350, 560 }) do
-        for k = 0, 11 do
-            local ang = (k / 12) * math.pi * 2 + love.math.random() * 0.52
+    -- rings just outside the view, then progressively wider as a fallback: in a
+    -- pocket between islands there may be no open water dead ahead at all
+    for _, r in ipairs({ view * 1.12, view * 1.3, view * 1.55, view * 0.92 }) do
+        for _, off in ipairs(PIRATE_ARC) do
+            local ang = b.angle + off + (love.math.random() - 0.5) * 0.12
             local x = b.x + math.cos(ang) * r
             local y = b.y + math.sin(ang) * r
             if x > 40 and y > 40 and x < config.WORLD_WIDTH - 40 and y < config.WORLD_HEIGHT - 40
@@ -1254,6 +1315,23 @@ function World:spawnPirate()
             end
         end
         if px then break end
+    end
+    -- Last resort: the old all-round sweep. Better a pirate somewhere than the
+    -- chant with no pirate at all -- which is the very bug this ordering fixes,
+    -- so it stays a fallback and never the first choice.
+    if not px then
+        for _, r in ipairs({ 1200, 1000, 850, 700, 1350, 560 }) do
+            for k = 0, 11 do
+                local ang = (k / 12) * math.pi * 2 + love.math.random() * 0.52
+                local x = b.x + math.cos(ang) * r
+                local y = b.y + math.sin(ang) * r
+                if x > 40 and y > 40 and x < config.WORLD_WIDTH - 40 and y < config.WORLD_HEIGHT - 40
+                    and self.terrain:isWater(x, y) then
+                    px, py = x, y; break
+                end
+            end
+            if px then break end
+        end
     end
     if not px then return end          -- nowhere clear to appear; try again next roll
     self.pirate = Pirate.new(px, py, self.boat.maxSpeed)
@@ -1440,6 +1518,22 @@ function World:pirateHit()
     end
 end
 
+-- Called by the dock screen the moment cargo actually goes aboard: a few seconds
+-- later, out on the water, the arrow says what it's for.
+--
+-- ONCE, ever. "Pilen viser vei" teaches the ARROW -- it never names the town --
+-- so it is a tutorial line, and a tutorial line repeated every single voyage is
+-- a nag. (It ran every pickup at first, on the reasoning that the destination
+-- changes each time; that reasoning belongs to a line that says which town, and
+-- this one doesn't.) Save-backed like hintFindPort, and Game:newGame clears it,
+-- so a fresh start teaches it again.
+function World:onCargoTaken()
+    if self.game.state.hintFollowArrow then return end
+    self.game.state.hintFollowArrow = true
+    self.game:save()
+    self.missionAnnounceDelay = config.MISSION_MARKER.ANNOUNCE_DELAY
+end
+
 -- Docks and picks what the screen shows:
 --   deliver  carrying goods bound here
 --   busy     already carrying a mission for another town
@@ -1572,13 +1666,8 @@ function World:drawPirateIndicator()
     if not self.pirate then return end
     local sw, sh = love.graphics.getDimensions()
     local px, py = self.camera:worldToScreen(self.pirate.x, self.pirate.y)
-    local margin = 48
-    if px >= 0 and px <= sw and py >= 0 and py <= sh then return end  -- visible: no arrow
-
-    local cx, cy = sw / 2, sh / 2
-    local ang = math.atan2(py - cy, px - cx)
-    local ex = math.max(margin, math.min(sw - margin, px))
-    local ey = math.max(margin, math.min(sh - margin, py))
+    local ex, ey, ang, off = Pointer.edge(px, py, sw, sh, 48)
+    if not off then return end                                       -- visible: no arrow
     local pulse = 0.65 + 0.35 * math.sin(love.timer.getTime() * 8)
 
     love.graphics.push()
@@ -1701,8 +1790,13 @@ function World:drawMooring()
     love.graphics.setColor(1, 1, 1)
 end
 
--- The gold "sail to this town" costume: a swallowtail pennant-arrow, no badge --
--- an arrow alone says "that way", and the town has its own colour and ring.
+-- The gold "sail to this town" costume: a swallowtail pennant-arrow, alone.
+-- A town badge was tried on it (a harbour mark on a disc in the town's colour)
+-- and taken off again: it answered "that way to WHAT" with a second symbol the
+-- child then has to learn, and it sat over the boat for the whole voyage to keep
+-- answering a question asked once. What the arrow means is said in words and
+-- voice at the moment the destination changes -- see src/ui/announce.lua -- and
+-- then the sea is left clear.
 -- File scope, NOT per frame: these tables are read, never written.
 local MISSION_STYLE = {
     shape = {
@@ -1718,6 +1812,7 @@ local MISSION_STYLE = {
     fill  = { 0.99, 0.83, 0.22 },   -- bright gold
     line  = { 0.10, 0.08, 0.05 },   -- dark outline
     orbit = 0,                      -- the arrow IS the marker; nothing to orbit
+    reach = 22,                     -- arrow half-height: what a caption clears
     ringThick = 4, ringShadow = 7, ringShadowA = 0.5, ringAlpha = 0.95,
 }
 
@@ -1728,23 +1823,49 @@ function World:drawMissionPointer()
     local port = self:portById(m.toId)
     if not port then return end
 
+    local M, A = config.MISSION_MARKER, config.MARKER_ANNOUNCE
     local bx, by = self.camera:worldToScreen(self.boat.x, self.boat.y)
     local tx, ty = self.camera:worldToScreen(port.x, port.y)
     local t = love.timer.getTime()
 
-    -- ring on the target town, when it's on screen
+    -- ring on the target town, when it's on screen. Scale.overlay, not marker:
+    -- a ring is abstract decor, and only the badge has to be recognised.
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
     if tx > 0 and tx < sw and ty > 0 and ty < sh then
         Pointer.ring(MISSION_STYLE, tx, ty,
             Scale.overlay(30 + math.sin(t * 4) * 7), m.color)
     end
 
+    -- Scale.overlay: an abstract arrow is not recognition-dependent, so it stays
+    -- proportional -- see CLAUDE.md, "Cross-platform UI sizing".
     -- constant rates here, so absolute time is safe, unlike the hunt marker
-    Pointer.draw(MISSION_STYLE, bx, by, tx, ty,
-        Scale.overlay(64),                                    -- lift above the boat
+    local scale = (1 + 0.05 * math.sin(t * 5)) * M.SCALE * Scale.overlay(1)
+    local ax, ay = Pointer.draw(MISSION_STYLE, bx, by, tx, ty,
+        Scale.overlay(M.LIFT),                                -- lift above the boat
         math.max(0, math.sin(t * 2.6)) * Scale.overlay(8),    -- hop toward target
         math.sin(t * 3) * 4,                                  -- gentle vertical wobble
-        (1 + 0.05 * math.sin(t * 5)) * Scale.overlay(0.7))
+        scale)
+
+    -- The announce (World:onCargoTaken -> missionAnnounce): one line of text over
+    -- the arrow, saying what the arrow is for, then gone.
+    self:drawAnnounce(self.missionAnnounce, M.TEXT, ax,
+        ay - MISSION_STYLE.reach * scale)
+end
+
+-- The words half of a marker's announce -- shared, so the mission arrow and the
+-- treasure marker say their piece the same way and a child learns the gesture
+-- once. `topY` is the top of the marker: the line sits above it.
+function World:drawAnnounce(timer, text, cx, topY)
+    local A = config.MARKER_ANNOUNCE
+    local p = Announce.phase(timer, A.TIME)
+    if p <= 0 then return end
+    local t = love.timer.getTime()
+    -- fonts.big, not fonts.title: the line rides over the boat, where the child
+    -- is already looking, so it has to be readable from the corner of the eye
+    -- without becoming the screen
+    Announce.caption(text, cx, topY - Scale.overlay(A.LIFT),
+        self.game.fonts.big, Announce.alpha(p, A.FADE),
+        Announce.pop(p, A.POP, A.OVER) * Announce.pulse(t, A.PULSE))
 end
 
 -- Each mapped, un-found chest sits on a sandbank with a bobbing chest and ring,
@@ -1853,7 +1974,8 @@ local TREASURE_STYLE = {
     line  = { 0.10, 0.06, 0.03 },
     badge = "chest",                -- drawn UPRIGHT -- see src/ui/pointer.lua
     badgeSize = 54,
-    orbit = 30,                     -- ...so the arrow sits on the chest's edge
+    reach = 41,                     -- 54 * 1.5 / 2: Icons.draw paints ART at 1.5x
+    orbit = config.TREASURE_MODE.ARROW_ORBIT,   -- clear of the chest, tail tucked under
     ringThick = 3, ringShadow = 6, ringShadowA = 0.45, ringAlpha = 1,
 }
 
@@ -1882,11 +2004,58 @@ function World:drawTreasurePointer()
 
     -- Scale.marker, not overlay: the chest must be RECOGNISED, and proportional
     -- shrink makes it a brown blob on a phone
-    Pointer.draw(TREASURE_STYLE, bx, by, tx, ty,
+    local ax, ay = Pointer.draw(TREASURE_STYLE, bx, by, tx, ty,
         Scale.marker(62),                                          -- lift above the boat
         math.max(0, math.sin(self._bobPhase or 0)) * Scale.marker(8),
         math.sin(t * 3) * 4,
         scale)
+
+    -- Same announce as the mission arrow, fired when the "Finn skatten!" card
+    -- closes: the card hands off to the marker, so the thing the card was about
+    -- and the thing to follow are visibly the same object.
+    self:drawAnnounce(self.treasureAnnounce, M.TEXT, ax, ay - TREASURE_STYLE.reach * scale)
+    self:drawTreasureHint()
+end
+
+-- While the announce is up, a big bobbing chest is pinned to the screen edge in
+-- the treasure's direction -- the chest is far away and off screen at the start of
+-- every hunt, which is exactly when "which way?" is hardest and the little arrow
+-- over the boat is easiest to miss. Same gesture as the pirate's edge arrow
+-- (World:drawPirateIndicator), pointed at the opposite feeling. It leaves with
+-- the words, and from then on the arrow is enough.
+function World:drawTreasureHint()
+    local A = config.MARKER_ANNOUNCE
+    local p = Announce.phase(self.treasureAnnounce, A.TIME)
+    if p <= 0 then return end
+    local tr = self:activeTreasure()
+    if not tr then return end
+
+    local sw, sh = love.graphics.getDimensions()
+    local tx, ty = self.camera:worldToScreen(tr.x, tr.y)
+    local m = Scale.overlay(config.TREASURE_MODE.HINT_MARGIN)
+    local ex, ey, ang, off = Pointer.edge(tx, ty, sw, sh, m)
+    if not off then return end          -- already on screen: the marker has it
+
+    local t = love.timer.getTime()
+    local a = Announce.alpha(p, A.FADE)
+    local s = Scale.overlay(config.TREASURE_MODE.HINT_SIZE)
+              * Announce.pop(p, A.POP, A.OVER)
+    local bob = math.sin(t * 3.4) * s * 0.09
+
+    -- a soft disc behind it, so a brown chest never lands on brown land
+    love.graphics.setColor(0.12, 0.08, 0.03, 0.42 * a)
+    love.graphics.circle("fill", ex, ey + bob, s * 0.62)
+    -- a small arrow on the outward side, so the edge itself says "further that way"
+    love.graphics.push()
+    love.graphics.translate(ex, ey + bob)
+    love.graphics.rotate(ang)
+    love.graphics.setColor(TREASURE_ARROW[1], TREASURE_ARROW[2], TREASURE_ARROW[3], a)
+    love.graphics.polygon("fill", s * 0.84, 0, s * 0.50, -s * 0.24, s * 0.50, s * 0.24)
+    love.graphics.pop()
+    -- drawBox, not draw: it is the icon path that honours alpha, so the chest
+    -- fades out with the rest instead of popping when the announce ends
+    Icons.drawBox("chest", ex, ey + bob, s, a)
+    love.graphics.setColor(1, 1, 1)
 end
 
 -- keyed on world indices, not screen, so the frayed fog edge stays put

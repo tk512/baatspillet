@@ -19,11 +19,19 @@ end
 -- `style` is persistent, built once at file scope:
 --   shape, fill, line  arrow polygon (points +x, design px) and its colours
 --   orbit              arrow distance from the anchor (0 = on it)
---   badge, badgeSize   optional icon, drawn upright at the anchor
+--   badge, badgeSize   optional icon, drawn upright and CENTRED on the anchor
+--   reach              how far the marker extends ABOVE the anchor, design px:
+--                      what a caption hung over it has to clear. For a badged
+--                      marker that is the badge's radius -- remembering that
+--                      Icons.draw paints ART at 1.5x the size it is handed, so a
+--                      reach taken from badgeSize alone puts the caption inside
+--                      the badge. For a bare arrow it is the arrow's half-height.
 --   ring*              see Pointer.ring
 -- `scale` multiplies the design-px geometry; the caller picks Scale.overlay or
 -- Scale.marker. Motion (hop/wobble) arrives already integrated -- pass phases,
 -- never rates, or a changing rate jumps.
+-- Returns the anchor, so a caller can hang a caption off the marker without
+-- recomputing the layout.
 function Pointer.draw(style, bx, by, tx, ty, lift, hop, wobble, scale)
     local ax, ay, ang, qx, qy =
         Pointer.layout(bx, by, tx, ty, lift, hop, wobble, (style.orbit or 0) * scale)
@@ -48,6 +56,18 @@ function Pointer.draw(style, bx, by, tx, ty, lift, hop, wobble, scale)
         Icons.draw(style.badge, ax, ay, style.badgeSize * scale)
     end
     love.graphics.setColor(1, 1, 1)
+    return ax, ay
+end
+
+-- Pins something to the screen edge in the direction of an off-screen target:
+-- returns the clamped position, the bearing from screen centre, and whether the
+-- target was off screen at all. Shared by the pirate indicator and the treasure
+-- hint, which are the same idea pointed at opposite feelings.
+function Pointer.edge(tx, ty, sw, sh, margin)
+    local off = (tx < 0 or tx > sw or ty < 0 or ty > sh)
+    local ang = math.atan2(ty - sh / 2, tx - sw / 2)
+    return math.max(margin, math.min(sw - margin, tx)),
+           math.max(margin, math.min(sh - margin, ty)), ang, off
 end
 
 -- Drawn on the target (callers check it's on screen). Colour is an argument,
