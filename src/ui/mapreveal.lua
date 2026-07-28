@@ -1,13 +1,7 @@
--- src/ui/mapreveal.lua
--- The "you got a treasure map!" moment: a big celebratory full-screen card that
--- pops right after a harbourmaster hands you a map, so a young player clearly
--- gets it -- WOHO! -- "Finn skatten!" ("Find the treasure!"). A modal owned by
--- the world scene (freezes the world, like the docking screen); a click or a key
--- dismisses it and the hunt is on.
---
--- Placeholder-first: it draws a hand-drawn parchment map in code; drop a picture
--- at assets/ui/treasuremap.png and that's shown instead, zero code changes. Voice
--- is added later (Finn-Erik's recording); for now a synth jingle plays on open.
+-- The "you got a treasure map!" card, popped after a harbourmaster hands one
+-- over. A modal owned by the world scene; any click or key dismisses it and the
+-- hunt is on. Placeholder-first: assets/ui/treasuremap.png replaces the drawn
+-- parchment.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -24,7 +18,7 @@ end
 
 function MapReveal:update(dt) self.t = self.t + dt end
 
--- A tiny delay before it accepts input, so an in-flight click doesn't skip it.
+-- brief delay before it accepts input, so an in-flight click can't skip it
 function MapReveal:mousepressed(_, _, button)
     if button == 1 and self.t > 0.35 then self.world:closeMapReveal() end
 end
@@ -35,8 +29,7 @@ function MapReveal:keypressed(key)
     end
 end
 
--- Hand-drawn parchment: tan sheet, an island blob, a dashed route to a big red
--- pulsing X, and a little compass rose. Stands in until a picture is supplied.
+-- tan sheet, island blob, dashed route to a pulsing red X, compass rose
 local function drawParchment(x, y, w, h, t)
     love.graphics.setColor(0.87, 0.79, 0.58)                      -- sheet
     love.graphics.rectangle("fill", x, y, w, h, 6, 6)
@@ -48,7 +41,7 @@ local function drawParchment(x, y, w, h, t)
     love.graphics.setColor(0.56, 0.62, 0.40)
     love.graphics.ellipse("fill", x0, y0, w * 0.15, h * 0.17)
     love.graphics.setColor(0.70, 0.62, 0.40)
-    love.graphics.ellipse("fill", x0, y0, w * 0.15, h * 0.17, 5)  -- (rough outline)
+    love.graphics.ellipse("fill", x0, y0, w * 0.15, h * 0.17, 5)
 
     local x1, y1 = x + w * 0.70, y + h * 0.66                      -- dashed route to X
     love.graphics.setColor(0.45, 0.30, 0.18)
@@ -99,7 +92,7 @@ function MapReveal:draw()
     love.graphics.setColor(0, 0, 0, 0.4); love.graphics.print(title, ix + (iw - tw) / 2 + 2, iy + 8 - hop + 2)
     love.graphics.setColor(WOOD.accent);  love.graphics.print(title, ix + (iw - tw) / 2, iy + 8 - hop)
 
-    -- the map (PNG if present, else the drawn parchment), centred in the middle band
+    -- the map, centred in the middle band
     local mapTop = iy + 12 + titleH
     local mapH   = (iy + ih) - mapTop - (subH + 10 + hintH + 14)
     local mapW   = math.min(iw * 0.82, mapH * 1.4)
@@ -113,14 +106,14 @@ function MapReveal:draw()
         drawParchment(mapX, mapTop, mapW, mapH, t)
     end
 
-    -- subtitle: the call to action
+    -- the call to action
     love.graphics.setFont(fonts.big)
     local sub = "Finn skatten!"
     local pulse = 0.8 + 0.2 * math.sin(t * 6)
     love.graphics.setColor(config.colors.gold[1], config.colors.gold[2], config.colors.gold[3], pulse)
     love.graphics.print(sub, ix + (iw - fonts.big:getWidth(sub)) / 2, iy + ih - subH - hintH - 16)
 
-    -- tap-to-continue hint (after a short beat)
+    -- tap-to-continue hint
     if t > 0.6 then
         love.graphics.setFont(fonts.small)
         local hint = "Klikk for å seile"
@@ -128,7 +121,7 @@ function MapReveal:draw()
         love.graphics.print(hint, ix + (iw - fonts.small:getWidth(hint)) / 2, iy + ih - hintH - 8)
     end
 
-    -- a few sparkles popping around the card for the WOHO factor (deterministic)
+    -- deterministic sparkles
     for k = 1, 7 do
         local sp = (t * 1.3 + k * 0.5) % 1
         local rr = 1 - sp

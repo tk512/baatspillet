@@ -1,7 +1,6 @@
--- src/scenes/boatselect.lua
--- "Velg båten din": pick a boat (with a Kjøp/lock state for premium boats) and
--- name it on a chunky, child-friendly on-screen keyboard (with ÆØÅ) -- no reliance
--- on the OS keyboard, so it works the same on an iPad. Reached from "set sail".
+-- "Velg båten din": pick a boat, with a Kjøp/lock state for premium ones, and
+-- name it on a chunky on-screen keyboard with ÆØÅ -- never the OS keyboard, so
+-- it behaves the same on an iPad.
 
 local config  = require("src.config")
 local Assets  = require("src.assets")
@@ -16,14 +15,14 @@ local utf8    = require("utf8")
 local W = Retro.WOOD
 local BoatSelect = {}
 
--- Silly boat names for the "Nytt navn" shuffle. Add or edit freely.
+-- silly names for the "Nytt navn" shuffle; add freely
 local NAMES = {
     "Tøffe", "Balder", "Dieseldyret", "Uflax", "Sjømannens Trøst", "Simsalabim",
     "Måsen", "Skvulpen", "Sjøsprøyt", "Dønningen",
 }
 local MAXLEN = 14
 
--- On-screen keyboard, alphabetical so little ones can find letters, ÆØÅ included.
+-- alphabetical, so little ones can find letters
 local KB_ROWS = {
     { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J" },
     { "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T" },
@@ -33,7 +32,7 @@ local LOWER = { ["Æ"] = "æ", ["Ø"] = "ø", ["Å"] = "å" }
 local UPPER = { ["æ"] = "Æ", ["ø"] = "Ø", ["å"] = "Å" }
 local function lower(ch) return LOWER[ch] or ch:lower() end
 
--- Capitalise the first letter (ÆØÅ-aware) so names read "Sjøormen", not "sjøormen".
+-- ÆØÅ-aware, so names read "Sjøormen"
 local function upperFirst(s)
     if s == "" then return s end
     local off = utf8.offset(s, 2)
@@ -51,8 +50,7 @@ function BoatSelect:load(game)
     for i, b in ipairs(boats) do
         if b.id == game.state.selectedBoat then self.index = i end
     end
-    -- Names are PER BOAT: switching boats shows that boat's own (or its saved
-    -- custom) name. `edited` = this boat has a custom name already.
+    -- names are PER BOAT; `edited` = this one already has a custom name
     self.name = game:boatDisplayName(boats[self.index].id)
     self.edited = (game.state.boatNames[boats[self.index].id] ~= nil)
     self.bought = 0                              -- "Kjøpt!" flash timer
@@ -92,12 +90,9 @@ function BoatSelect:update(dt)
     end
 end
 
--- The chooser's backdrop: the title screen's pixel language (dithered sky +
--- sea, sun, clouds, horizon islands) baked ONCE onto a virtual-res canvas and
--- upscaled with a nearest filter; rebaked only when the window size changes.
--- The only per-frame extras (drawBackground) are three tiny sailboats and a
--- handful of wave-glint rectangles -- positions are pure functions of time, so
--- nothing is stored or allocated per frame.
+-- The title screen's pixel language, baked once onto a virtual-res canvas and
+-- rebaked only on resize. The per-frame extras are three sailboats and some
+-- wave glints, all pure functions of time -- nothing allocated.
 function BoatSelect:buildBackground(sw, sh)
     local VH = Scene.VRES_H
     local scale = sh / VH
@@ -130,7 +125,7 @@ function BoatSelect:buildBackground(sw, sh)
     self.bg, self.bgW, self.bgH = cv, sw, sh
     self.bgScale, self.bgHorizon = scale, horizon * scale
 
-    -- the shared live layer (sun rays, glitter, drifting clouds, gulls)
+    -- the shared live layer
     self.liveScene = {
         x = 0, y = 0, w = sw, h = sh,
         horizon = horizon * scale, blk = math.max(2, scale), scale = scale,
@@ -176,9 +171,8 @@ function BoatSelect:drawBackground(sw, sh)
     love.graphics.setColor(1, 1, 1)
 end
 
--- Selecting a boat. A LOCKED boat explains itself out loud — the player can't
--- read, so assets/voice/laast.ogg ("Den er låst! Spør en voksen!") is the real
--- UI here; until it's recorded the visual rope/padlock carry it alone.
+-- A locked boat explains itself out loud: he can't read, so voice/laast.ogg is
+-- the real UI and the rope/padlock carry it until that's recorded.
 function BoatSelect:announce()
     if not self.game:ownsBoat(self:def().id) then
         if not Assets.playNamedVoice("laast") then Assets.playSfx("leave", 0.35) end
@@ -187,9 +181,8 @@ function BoatSelect:announce()
     end
 end
 
--- Persist the current boat's custom name THE MOMENT it exists: a rename must
--- survive switching boats (or leaving the screen) without sailing first —
--- especially for a boat someone paid for.
+-- Persisted the moment it exists: a rename has to survive switching boats or
+-- leaving the screen without sailing first.
 function BoatSelect:commitName()
     if not self.edited then return end
     local nm = upperFirst((self.name or ""):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -227,8 +220,7 @@ function BoatSelect:randomName()
     Assets.playSfx("coin", 0.5)
 end
 
--- Append a letter from the keyboard. First keystroke on an un-personalised name
--- clears the default so the child types a fresh name.
+-- the first keystroke on an un-personalised name clears the default
 function BoatSelect:insert(ch)
     if not self.edited then self.name = ""; self.edited = true end
     if utf8.len(self.name) < MAXLEN then self.name = self.name .. lower(ch) end
@@ -240,9 +232,8 @@ function BoatSelect:backspace()
     if off then self.name = self.name:sub(1, off - 1) end
 end
 
--- The big bottom button: sail if we own this boat; otherwise show the pack offer.
--- self.offer states: false | "card" (the pitch) | "gate" (parental gate)
--- | "busy" (store transaction in flight).
+-- Sail if we own this boat, else show the pack offer.
+-- self.offer: false | "card" | "gate" | "busy"
 function BoatSelect:primary()
     if self:owned() then self:setSail()
     else
@@ -251,15 +242,12 @@ function BoatSelect:primary()
     end
 end
 
--- Parental gate (Kids-category rule: a child must not be able to reach the
--- purchase alone). A multiplication question stops a 5-year-old cold but is
--- trivial for the grown-up he fetches. Fresh numbers every time.
--- Roll a fresh question. SIX answers, not three: a child who simply taps gets
--- through a three-way choice one time in three, which is no gate at all. The
--- wrong answers are deliberately PLAUSIBLE -- the classic near-misses you get
--- from miscounting (off by one row, off by one column, off by one) -- so none
--- of them can be dismissed at a glance without actually doing the sum.
--- `tries` survives a re-roll, so guessing can't be ground out indefinitely.
+-- The parental gate: a Kids-category rule, and a multiplication question stops
+-- a 5-year-old cold while being trivial for the grown-up he fetches.
+-- SIX answers, not three -- a tapping child gets through a three-way choice one
+-- time in three, which is no gate. The wrong ones are plausible near-misses
+-- (off by a row, a column, one), so none can be dismissed without doing the
+-- sum, and `tries` survives a re-roll so guessing can't be ground out.
 function BoatSelect:openGate(keepTries)
     local a, b = love.math.random(6, 9), love.math.random(6, 9)
     local right = a * b
@@ -291,7 +279,7 @@ function BoatSelect:openGate(keepTries)
     self.offer = "gate"
 end
 
--- Kick off the real purchase (or the dev-stub pretend one; src/systems/iap.lua).
+-- the real purchase, or the dev stub (src/systems/iap.lua)
 function BoatSelect:startBuy()
     self.offer = "busy"
     IAP.buy(function(ok, err)
@@ -303,8 +291,7 @@ function BoatSelect:startBuy()
     end)
 end
 
--- The moment the pack lands: back to the chooser, big cheer, and gold bursts
--- raining over the newly-unlocked (now gold-framed) boats for a few seconds.
+-- pack landed: back to the chooser, cheer, gold bursts over the new boats
 function BoatSelect:purchaseSucceeded()
     self.game:unlockPremium()
     self.offer = false
@@ -315,7 +302,7 @@ function BoatSelect:purchaseSucceeded()
 end
 
 -- "Gjenopprett kjøp": Apple requires a visible way to re-grant a non-consumable
--- bought earlier (new device, reinstall). Success unlocks exactly like a buy.
+-- on a new device. Success unlocks exactly like a buy.
 function BoatSelect:startRestore()
     self.offer = "busy"
     IAP.restore(function(ok, err)
@@ -354,8 +341,7 @@ function BoatSelect:layout()
     local groupW = nameW + gap + nyttW
     local gx = cx - groupW / 2
 
-    -- filmstrip of ALL boats (free + locked premium), so the fancy paid ones are
-    -- on show and entice a purchase.
+    -- ALL boats, so the paid ones are on show
     local boats = self.game.data.boats
     local nb = #boats
     local thumbW = math.min((sw * 0.86) / nb, 150 * k)
@@ -368,8 +354,8 @@ function BoatSelect:layout()
         strip[i] = { x = sx0 + (i - 1) * (thumbW + sgap), y = stripY, w = thumbW, h = thumbH }
     end
 
-    -- Rows FLOW from the strip downward (strip → Fart → name row) instead of
-    -- sitting at fixed screen fractions — phone-boosted sizes can't overlap.
+    -- rows FLOW from the strip down rather than sitting at fixed fractions, so
+    -- phone-boosted sizes can't overlap
     local statsY = math.floor(stripY + thumbH + 14 * k)
     local nameY  = math.floor(statsY + 26 * k + 12 * k)
 
@@ -387,7 +373,7 @@ function BoatSelect:layout()
     }
 end
 
--- Keyboard key rects (recomputed each call -- cheap, a few dozen rects).
+-- recomputed each call: a few dozen rects, cheap
 function BoatSelect:keyLayout()
     local sw, sh = love.graphics.getDimensions()
     local k = Scale.ui(1)
@@ -422,8 +408,7 @@ end
 
 local function ropeAcross(...) Retro.ropeAcross(...) end
 
--- Shimmer for something BOUGHT: a glint travelling around the frame plus
--- twinkling corner stars — the unmistakable "this one is yours now".
+-- the "this one is yours now" shimmer: a glint round the frame, corner stars
 local function sparkleFrame(r, t, phase)
     local per = 2 * (r.w + r.h)
     local p = ((t * 0.30 + (phase or 0)) % 1) * per
@@ -452,9 +437,8 @@ end
 
 local function padlock(...) Retro.padlock(...) end
 
--- The big action button, readable without reading: GREEN with a little sail
--- when the boat is yours ("Sett seil!"), GOLD with a padlock when it's locked
--- ("L\195\165s opp" -- the text is for the grown-up being fetched).
+-- Readable without reading: GREEN with a sail when the boat is yours, GOLD with
+-- a padlock when locked -- the text is for the grown-up being fetched.
 local function actionButton(id, r, owned, label, font)
     local t = math.max(2, math.floor(r.h * 0.12))
     local down = Retro.isDown(id)

@@ -1,7 +1,6 @@
--- src/systems/camera.lua
--- Isometric camera that does not chase the boat: you scroll the map yourself by
--- pushing the mouse to the screen edges (or right-drag), and press C to recenter
--- on your boat.
+-- The isometric camera. On desktop it doesn't chase: you edge-scroll or
+-- right-drag, and C recentres. On touch it glides after the boat
+-- (followAnchor).
 
 local config = require("src.config")
 local Iso    = require("src.systems.iso")
@@ -20,7 +19,7 @@ function Camera.new()
     return self
 end
 
--- Kick a brief screen shake; takes the strongest of any overlapping kicks.
+-- brief shake; the strongest of any overlapping kicks wins
 function Camera:addShake(mag)
     self.shakeMag = math.max(self.shakeMag, mag)
 end
@@ -42,14 +41,13 @@ function Camera:update(dt)
     end
 end
 
--- Keep the camera's center inside the world.
 function Camera:clamp()
     self.gx = math.max(0, math.min(config.WORLD_WIDTH,  self.gx))
     self.gy = math.max(0, math.min(config.WORLD_HEIGHT, self.gy))
 end
 
--- Move the view by a screen-space delta (px). Converting through the iso
--- inverse keeps panning aligned with what you see.
+-- Move by a screen-space delta; the iso inverse keeps panning aligned with
+-- what you see.
 function Camera:panScreen(sx, sy)
     local gdx, gdy = Iso.unproject(sx / self.zoom, sy / self.zoom)
     self.gx = self.gx + gdx
@@ -57,8 +55,8 @@ function Camera:panScreen(sx, sy)
     self:clamp()
 end
 
--- Scroll when the cursor is within EDGE pixels of a screen border. With an
--- anchor (the boat), the drift is capped so it can't scroll off-screen.
+-- Scrolls within EDGE px of a border. With an anchor the drift is capped so
+-- the boat can't scroll off-screen.
 function Camera:edgeScroll(dt, anchorX, anchorY)
     if not love.window.hasFocus() then return end
     local mx, my = love.mouse.getPosition()
@@ -74,9 +72,8 @@ function Camera:edgeScroll(dt, anchorX, anchorY)
     end
 end
 
--- Pull the camera back so the anchor stays within the central band of the
--- screen. In iso "u = gx-gy, v = gx+gy" space the boat's screen offset from
--- centre is linear in each, so we clamp u and v independently.
+-- Holds the anchor in the screen's central band. In iso u = gx-gy, v = gx+gy
+-- space the screen offset is linear in each, so u and v clamp independently.
 function Camera:keepAnchorInView(bx, by)
     local w, h = love.graphics.getDimensions()
     local keep = config.EDGE_SCROLL_KEEP or 0.34
@@ -90,9 +87,8 @@ function Camera:keepAnchorInView(bx, by)
     self:clamp()
 end
 
--- Touch-device follow: same central-band idea as keepAnchorInView, but the
--- correction is eased over time instead of applied instantly, so the map glides
--- after the boat rather than lurching. Frame-rate independent via exp decay.
+-- Touch follow: keepAnchorInView's band, but eased over time so the map glides
+-- after the boat instead of lurching. Frame-rate independent via exp decay.
 function Camera:followAnchor(dt, bx, by)
     local w, h = love.graphics.getDimensions()
     local keep = config.TOUCH_FOLLOW_KEEP
@@ -101,25 +97,21 @@ function Camera:followAnchor(dt, bx, by)
     local bu, bv = bx - by, bx + by
     local u = math.max(bu - maxU, math.min(bu + maxU, self.gx - self.gy))
     local v = math.max(bv - maxV, math.min(bv + maxV, self.gx + self.gy))
-    local tx, ty = (u + v) / 2, (v - u) / 2      -- nearest camera pos that holds the band
+    local tx, ty = (u + v) / 2, (v - u) / 2      -- nearest pos that holds the band
     local k = 1 - math.exp(-config.TOUCH_FOLLOW_LERP * dt)
     self.gx = self.gx + (tx - self.gx) * k
     self.gy = self.gy + (ty - self.gy) * k
     self:clamp()
 end
 
--- Right-drag panning: move the map under the cursor.
 function Camera:drag(dx, dy)
     self:panScreen(-dx, -dy)
 end
 
 function Camera:attach()
     local cx, cy = Iso.project(self.gx, self.gy)
-    -- Snap to whole DEVICE pixels so tile edges stay crisp. Snapping to whole
-    -- units (the old floor) stepped in 2-3 device-pixel jumps on retina while
-    -- the glide-follow camera moved fractionally every frame -- the boat
-    -- visibly juddered up/down against the water. Device-pixel snapping keeps
-    -- the crispness with steps too small to see (and is identical on dpi 1).
+    -- Snap to whole DEVICE pixels, not whole units: unit snapping steps 2-3
+    -- device pixels on retina and the boat judders against the glide camera.
     local dpi = love.graphics.getDPIScale()
     local ox = math.floor((love.graphics.getWidth()  / 2 - cx * self.zoom + self.shakeX) * dpi + 0.5) / dpi
     local oy = math.floor((love.graphics.getHeight() / 2 - cy * self.zoom + self.shakeY) * dpi + 0.5) / dpi
@@ -132,8 +124,7 @@ function Camera:detach()
     love.graphics.pop()
 end
 
--- Ground coordinate -> screen pixel (matches attach()'s transform). Used for
--- on-screen UI hints like the mission pointer.
+-- ground -> screen px, matching attach()'s transform
 function Camera:worldToScreen(gx, gy)
     local cx, cy = Iso.project(self.gx, self.gy)
     local dpi = love.graphics.getDPIScale()
@@ -143,7 +134,7 @@ function Camera:worldToScreen(gx, gy)
     return ix * self.zoom + ox, iy * self.zoom + oy
 end
 
--- Screen pixel -> ground coordinate (assumes the click is on the water).
+-- screen px -> ground, assuming the click is on the water
 function Camera:screenToWorld(sx, sy)
     local cx, cy = Iso.project(self.gx, self.gy)
     local isoX = (sx - love.graphics.getWidth()  / 2) / self.zoom + cx
@@ -151,7 +142,7 @@ function Camera:screenToWorld(sx, sy)
     return Iso.unproject(isoX, isoY)
 end
 
--- Ground-space bounding box of what's on screen, for tile culling.
+-- ground-space bounds of what's on screen, for tile culling
 function Camera:groundBounds()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     local minGx, minGy = math.huge, math.huge

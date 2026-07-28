@@ -1,24 +1,18 @@
--- src/systems/model3d.lua
--- Live 3D boats: a low-poly OBJ (flat colours, no textures — the kind asset
--- sites hand out) rendered in real 3D every frame, so it rotates smoothly as
--- you steer instead of snapping between baked frames.
+-- Live 3D boats: a low-poly OBJ rendered in real 3D every frame, so it rotates
+-- smoothly as you steer instead of snapping between baked frames.
 --
--- How: the OBJ is parsed once into a static Mesh (position + material colour +
--- flat face normal per corner). Each draw, a vertex shader yaw-rotates the
--- model, projects it through the same iso camera the baked-frames pipeline
--- uses (orthographic, Blender rot X=60 Z=45 — see tools/render_boat_frames.md),
--- lights it with a fixed sun, and depth-tests it into a shared offscreen MSAA
--- canvas. The canvas is then blitted exactly like a boat sprite, so the world's
--- 2D painter ordering never knows a 3D model was involved.
+-- The OBJ is parsed once into a static Mesh (position, material colour, flat
+-- face normal per corner). Each draw a vertex shader yaw-rotates it, projects
+-- it through the same iso camera the baked-frame pipeline used (orthographic,
+-- Blender rot X=60 Z=45), lights it, and depth-tests into a shared offscreen
+-- MSAA canvas. That canvas is blitted like any boat sprite, so the world's 2D
+-- painter ordering never learns a 3D model was involved.
 --
--- Placeholder-first: has()/draw() return false when assets/models/<name>.obj
--- is absent (or the GPU refuses the shader), and the caller falls back to its
--- code-drawn boat. The game must always run with no art.
+-- Placeholder-first: has()/draw() return false with no .obj or no shader, and
+-- the caller falls back to its code-drawn boat.
 --
--- Yaw mapping: for this camera, the model yaw matching a game heading `a` is
--- exactly -a (the projected bow then moves along the same screen direction the
--- boat travels). A model whose bow isn't along +X gets a data-side correction:
--- `modelYaw` in boats.lua, degrees, no re-export needed.
+-- Yaw: for this camera the model yaw matching heading `a` is exactly -a. A
+-- model whose bow isn't along +X is corrected by `modelYaw` in boats.lua.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -26,11 +20,9 @@ local Iso    = require("src.systems.iso")
 
 local Model3D = {}
 
--- Per-material base colours (0-1 RGB), keyed by the OBJ's `usemtl` names.
--- Highest priority — use it to art-direct or when a model ships without its
--- .mtl. Materials not named here take their Kd from assets/models/<name>.mtl
--- if present (looked up by the model's name, whatever `mtllib` says), and a
--- neutral grey failing both.
+-- Base colours keyed by the OBJ's `usemtl` names, for art direction or a model
+-- shipped without its .mtl. Anything not named here takes its Kd from
+-- assets/models/<name>.mtl, then a neutral grey.
 local PALETTE = {
     Wood      = { 0.52, 0.36, 0.21 },
     DarkWood  = { 0.34, 0.22, 0.13 },
@@ -40,25 +32,21 @@ local PALETTE = {
 }
 local FALLBACK = { 0.62, 0.60, 0.58 }
 
--- Per-model colour overrides (highest priority), keyed by model name then
--- material name — voxel exports use meaningless generic names ("mat17") that
--- differ per model, so these are scoped, never global. The tug's near-blacks
--- become warm wood so the boat reads as wood, not a silhouette on the water.
+-- Per-model overrides, highest priority. Scoped by model name because voxel
+-- exports use generic material names ("mat17") that differ per model.
 local MODEL_PALETTE = {
     toffe = {
-        -- happier than the source's black-on-black work tug:
         ["13___Default"] = { 0.24, 0.42, 0.66 },  -- hull sides: friendly blue
         ["07___Default"] = { 0.78, 0.20, 0.15 },  -- hull bottom: livelier red
     },
 }
 
--- Load-time geometry stripping, opt-in PER MODEL — never automatic (voxel
--- exports are hundreds of tiny disconnected boxes; blanket rules eat funnels
--- and fenders):
--- SIDE_GEAR: small components sitting fully off one side of the hull (the
---   viking ship's oars — frozen mid-air they looked wrong, rowing worse).
--- THIN: wire-thin components (rigging lines). At ~100px on screen they are
---   thinner than a pixel and can only shimmer.
+-- Load-time geometry stripping, opt-in PER MODEL and never automatic: voxel
+-- exports are hundreds of disconnected boxes, and a blanket rule eats funnels
+-- and fenders.
+--   SIDE_GEAR  components fully off one side of the hull (the viking oars)
+--   THIN       wire-thin components (rigging) -- sub-pixel at ~100px, so they
+--              can only shimmer
 local STRIP_SIDE_GEAR = { vikingskipet = true }
 local STRIP_THIN      = { toffe = true }
 
@@ -66,8 +54,8 @@ local CANVAS = 512      -- offscreen render size; blit scales it to spriteWidth
 local MARGIN = 0.04     -- content margin inside the canvas
 local WHITE  = { 1, 1, 1 }
 
--- Position + colour use the built-in attribute locations (0, 2); the flat face
--- normal rides along as a custom attribute at location 3.
+-- position + colour use the built-in locations (0, 2); the flat face normal
+-- rides along as a custom attribute at 3
 local FORMAT = {
     { name = "VertexPosition", format = "floatvec3",  location = 0 },
     { name = "VertexTexCoord", format = "floatvec2",  location = 1 },
@@ -75,9 +63,8 @@ local FORMAT = {
     { name = "VertexNormal",   format = "floatvec3",  location = 3 },
 }
 
--- Iso camera basis (unit vectors, Z-up world): RIGHT/UP span the screen, FWD
--- is the view direction (larger dot = farther away). Duplicated as constants
--- in the shader below — keep the two in sync.
+-- Iso camera basis, Z-up: RIGHT/UP span the screen, FWD is the view direction
+-- (larger dot = farther). Duplicated in the shader below -- keep them in sync.
 local UPZ, UPG = 0.8660254, 0.3535534   -- UP's height / ground components
 
 local SHADER_SRC = [[
@@ -137,13 +124,11 @@ local function whiteTexture()
     return whiteImg
 end
 
--- Parse the OBJ into a flat-shaded triangle mesh. OBJ files are Y-up (Blender
--- export default): (x, y, z) becomes Z-up world (x, -z, y). The ground-plane
--- centre is moved to the origin and the model lifted so its lowest point (the
--- keel) sits at z = 0 — the waterline — regardless of where the exporter put
--- the origin. Polygons are fan-triangulated and every corner carries its
--- face's normal (flat shading, mixed windings fine — the shader flips
--- normals toward the camera).
+-- Parse the OBJ into a flat-shaded triangle mesh. OBJ is Y-up, so (x, y, z)
+-- becomes Z-up (x, -z, y). The model is centred and lifted so its keel sits at
+-- z = 0, the waterline, wherever the exporter put the origin. Polygons are
+-- fan-triangulated, every corner carrying its face normal; mixed windings are
+-- fine, the shader flips normals toward the camera.
 local function parseObj(text)
     local verts, vts, faces, mtl, obj = {}, {}, {}, nil, nil
     for line in text:gmatch("[^\r\n]+") do
@@ -185,7 +170,7 @@ local function parseObj(text)
     return verts, faces, vts
 end
 
--- Kd colours from assets/models/<name>.mtl (missing file -> empty table).
+-- Kd colours from assets/models/<name>.mtl; missing file -> empty table
 local function loadMtl(name)
     local colors = {}
     local text = love.filesystem.read("assets/models/" .. name .. ".mtl")

@@ -1,15 +1,12 @@
--- src/ui/pixelscene.lua
--- Shared early-90s pixel-scene primitives (Bayer-dithered gradients, discs,
--- hills, clouds, sun, mini sailboats) used by the title screen and the boat
--- chooser backdrop. Everything except miniBoat is meant for BAKE time: draw
--- once onto a nearest-filtered virtual-res canvas and upscale -- never call
--- the per-pixel fills in a per-frame path.
+-- Early-90s pixel-scene primitives shared by the title, boat and map screens.
+-- Everything except miniBoat and drawLive is BAKE time: draw once onto a
+-- nearest-filtered virtual-res canvas and upscale. Never per frame.
 
 local Scene = {}
 
 Scene.VRES_H = 540   -- virtual scanlines (between VGA 480 and SVGA 600)
 
--- Bayer 4x4 ordered-dither matrix (0..15), for the crosshatched VGA gradients.
+-- Bayer 4x4 ordered-dither matrix, 0..15
 Scene.BAYER = {
     { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 },
 }
@@ -17,8 +14,7 @@ Scene.BAYER = {
 local BAYER = Scene.BAYER
 local function lerp(a, b, t) return a + (b - a) * t end
 
--- Vertical colour gradient quantized into `levels` bands and crosshatched with
--- the Bayer matrix -- the classic VGA sky/sea fill.
+-- vertical gradient in `levels` bands, crosshatched: the VGA sky/sea fill
 function Scene.dithGradient(x0, y0, w, h, cTop, cBottom, levels)
     for yy = y0, y0 + h - 1 do
         local f = (yy - y0) / math.max(1, h - 1)
@@ -36,7 +32,7 @@ function Scene.dithGradient(x0, y0, w, h, cTop, cBottom, levels)
     end
 end
 
--- A clean pixel disc (every virtual pixel inside the radius), filled at vres.
+-- clean pixel disc, filled at vres
 function Scene.disc(cx, cy, r, col)
     love.graphics.setColor(col)
     local r2 = r * r
@@ -48,7 +44,7 @@ function Scene.disc(cx, cy, r, col)
     end
 end
 
--- A smooth pixel hill (parabola), lighter band along the grassy top.
+-- parabolic hill, lighter band along the grassy top
 function Scene.hill(cx, baseY, halfW, height, col, top)
     for bx = -halfW, halfW do
         local f = bx / halfW
@@ -62,7 +58,7 @@ function Scene.hill(cx, baseY, halfW, height, col, top)
     end
 end
 
--- A soft pixel cloud: a few overlapping discs with a dithered flat bottom.
+-- overlapping discs with a dithered flat bottom
 function Scene.cloud(cx, cy, w)
     local white = { 0.97, 0.98, 1.0 }
     Scene.disc(cx, cy, w * 0.5, white)
@@ -73,7 +69,6 @@ function Scene.cloud(cx, cy, w)
     love.graphics.rectangle("fill", cx - w * 0.8, cy + w * 0.30, w * 1.6, 1)
 end
 
--- Sun with a soft layered glow and a bright highlight.
 function Scene.sun(cx, cy, r)
     love.graphics.setColor(1, 0.95, 0.7, 0.12); love.graphics.circle("fill", cx, cy, r * 2.2)
     love.graphics.setColor(1, 0.96, 0.76, 0.22); love.graphics.circle("fill", cx, cy, r * 1.5)
@@ -81,7 +76,7 @@ function Scene.sun(cx, cy, r)
     Scene.disc(cx - r * 0.28, cy - r * 0.28, r * 0.5, { 1.0, 0.98, 0.82 })
 end
 
--- Shimmering reflection straight down from the sun onto the water.
+-- shimmering reflection straight down from the sun
 function Scene.sunReflection(cx, fromY, toY, r, step)
     for i = 0, 22 do
         local ry = fromY + i * step
@@ -93,8 +88,7 @@ function Scene.sunReflection(cx, fromY, toY, r, step)
     end
 end
 
--- Faraway haze hills behind the islands: a pale blue-grey back range, the
--- cheap old trick that gives a flat horizon real depth. BAKE time.
+-- pale blue-grey back range: the cheap trick that gives a flat horizon depth
 function Scene.hazeHills(x0, w, horizonY, sceneH)
     local haze = { 0.62, 0.72, 0.84 }
     Scene.hill(x0 + w * 0.30, horizonY, w * 0.16, sceneH * 0.10, haze, haze)
@@ -102,8 +96,7 @@ function Scene.hazeHills(x0, w, horizonY, sceneH)
     Scene.hill(x0 + w * 0.04, horizonY, w * 0.10, sceneH * 0.07, haze, haze)
 end
 
--- A horizon island: grass crest over a sandy beach base, with a scatter of
--- tiny tree tufts on the flank (deterministic). BAKE time.
+-- horizon island: grass crest, sandy base, deterministic tree tufts
 function Scene.island(cx, horizonY, halfW, height, grass, gdk, sand)
     Scene.hill(cx, horizonY + math.max(2, math.floor(height * 0.09)), halfW,
         math.floor(height * 0.35), sand, sand)
@@ -120,10 +113,9 @@ function Scene.island(cx, horizonY, halfW, height, grass, gdk, sand)
     end
 end
 
--- Cloud sprites for the live layer: each cloud baked once onto its own tiny
--- nearest-filtered canvas at scene pixel density, drifted by Scene.drawLive.
--- specs = { {w=<frac of sceneW>, yf=<frac of sceneH>, speed=<vpx/s>}, ... };
--- positions come out in SCREEN coords (scale = virtual->screen factor).
+-- Each cloud baked once onto its own tiny canvas at scene pixel density, then
+-- drifted by drawLive. specs = { {w, yf, speed}, ... } as fractions of the
+-- scene; positions come out in SCREEN coords.
 function Scene.makeClouds(specs, sceneW, sy, sceneH, scale)
     local clouds = {}
     for i, spec in ipairs(specs) do
@@ -145,11 +137,9 @@ function Scene.makeClouds(specs, sceneW, sy, sceneH, scale)
     return clouds
 end
 
--- The LIVE layer all the pixel scenes share (title, boat chooser, map
--- chooser): breathing sun halo + turning rays, sun-glitter on the water,
--- drifting clouds, wheeling gulls. Everything is a pure function of t --
--- no allocations. S = { x, y, w, h, horizon, blk, scale,
--- sun = {x,y,r}, clouds = Scene.makeClouds(...) }, all in screen coords.
+-- The live layer the pixel scenes share: sun halo and rays, glitter, drifting
+-- clouds, gulls. Pure functions of t, no allocations. S = { x, y, w, h,
+-- horizon, blk, scale, sun = {x,y,r}, clouds }, all in screen coords.
 function Scene.drawLive(S, t)
     local sun = S.sun
     if sun then
@@ -169,7 +159,7 @@ function Scene.drawLive(S, t)
         end
         love.graphics.pop()
 
-        -- sun-glitter twinkling on the water along the reflection column
+        -- glitter along the reflection column
         local seaB = S.y + S.h
         for i = 1, 16 do
             local fy = (i * 0.618) % 1
@@ -188,8 +178,7 @@ function Scene.drawLive(S, t)
         love.graphics.setBlendMode("alpha")
     end
 
-    -- drifting clouds: slow parallax, wrapping around, each bobbing a whisper
-    -- (drawn after the sun so they pass in front of it -- lovely)
+    -- after the sun, so they pass in front of it
     for i, cl in ipairs(S.clouds or {}) do
         local cw = cl.cv:getWidth() * S.scale
         local span = S.w + cw * 2
@@ -199,7 +188,7 @@ function Scene.drawLive(S, t)
         love.graphics.draw(cl.cv, cx, cl.y + bob, 0, S.scale, S.scale)
     end
 
-    -- a few gulls wheeling high in the sky (two flapping strokes each)
+    -- gulls, two flapping strokes each
     love.graphics.setLineWidth(math.max(1.5, S.blk * 0.5))
     for i = 1, 3 do
         local u = (t * (0.022 + i * 0.007) + i * 0.37) % 1.3 - 0.15
@@ -215,7 +204,7 @@ function Scene.drawLive(S, t)
     love.graphics.setColor(1, 1, 1)
 end
 
--- A tiny sailboat silhouette drifting on the horizon (cheap: fine per frame).
+-- horizon sailboat; cheap enough for a per-frame path
 function Scene.miniBoat(x, y, s, col)
     love.graphics.setColor(1, 1, 1, 0.35)
     love.graphics.ellipse("fill", x, y + 7 * s, 16 * s, 3 * s)            -- reflection

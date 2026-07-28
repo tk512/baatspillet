@@ -1,18 +1,17 @@
--- Asset loader for teh game
--- We cache all PNGs from assets/ (missing files return nil so
--- entities fall back to placeholder art), and synthesizes all sfx + music in
--- code so no audio files ship
+-- Asset loader: caches PNGs from assets/ (a missing file returns nil, so the
+-- caller falls back to placeholder art) and synthesizes every sfx and the music
+-- in code, so no audio has to ship. Files in assets/sfx and assets/voice
+-- override the synth versions when present.
 
 local config = require("src.config")
 
 local Assets = {}
 
--- cache value: an Image, or false meaning "checked, not present".
+-- cache value: an Image, or false for "checked, not present"
 local imageCache = {}
 local groundCache = {}  -- path -> y of the sprite's ground line
 
--- Lowest opaque pixel row (scanning bottom-up): the point that should sit on the
--- tile, ignoring any transparent padding below it.
+-- lowest opaque row: what should sit on the tile, ignoring padding below it
 local function computeGroundY(data)
     local w, h = data:getWidth(), data:getHeight()
     for y = h - 1, 0, -1 do
@@ -24,8 +23,7 @@ local function computeGroundY(data)
     return h
 end
 
--- path is relative to assets/, e.g. "boats/boat1.png". Returns the Image, or nil
--- if it does not exist (caller draws a placeholder).
+-- path relative to assets/, e.g. "boats/boat1.png"; nil when absent
 function Assets.image(path)
     if imageCache[path] == nil then
         local full = "assets/" .. path
@@ -48,12 +46,12 @@ function Assets.image(path)
     return nil
 end
 
--- The sprite's ground line (image-space y), used to anchor it flat on a tile.
+-- the sprite's ground line in image space, to anchor it flat on a tile
 function Assets.imageGroundY(path)
     return groundCache[path]
 end
 
--- Harbor-master portrait: assets/ports/portraits/<id>.png, or nil for a placeholder.
+-- assets/ports/portraits/<id>.png, or nil
 local portraitCache = {}
 function Assets.portPortrait(id)
     if portraitCache[id] == nil then
@@ -70,7 +68,7 @@ end
 
 local RATE = 22050 -- low on purpose: small + lo-fi 90s feel
 
--- Build a SoundData from a per-sample function f(t, i) -> amplitude (-1..1).
+-- SoundData from a per-sample f(t, i) -> amplitude (-1..1)
 local function render(seconds, f)
     local n = math.floor(seconds * RATE)
     local data = love.sound.newSoundData(n, RATE, 16, 1)
@@ -84,7 +82,7 @@ local function render(seconds, f)
     return data
 end
 
--- Simple ADSR-ish envelope: fade in over `atk`, fade out over `rel`.
+-- fade in over `atk`, out over `rel`
 local function env(t, dur, atk, rel)
     if t < atk then return t / atk end
     if t > dur - rel then return math.max(0, (dur - t) / rel) end
@@ -118,8 +116,7 @@ local function makeSounds()
         local vib = 1 + 0.01 * math.sin(TAU * 5 * t)
         local s = math.sin(TAU * base * vib * t)
                 + 0.5 * math.sin(TAU * base * 2 * vib * t)
-        return 0.62 * s * env(t, 0.9, 0.03, 0.25)   -- proud, not faint: it's the
-                                                    -- kid's own toot button now
+        return 0.62 * s * env(t, 0.9, 0.03, 0.25)   -- proud, not faint
     end), "static")
 
     -- Soft "bonk" for bouncing off land/edges.
@@ -127,8 +124,7 @@ local function makeSounds()
         return 0.35 * math.sin(TAU * 120 * t) * env(t, 0.15, 0.002, 0.1)
     end), "static")
 
-    -- Comical "doooink!" for clonking into a skerry: a wobbling tone that slides
-    -- down in pitch (override with a recorded "Oops!" at assets/sfx/doink.ogg).
+    -- "doooink!" for clonking a skerry: a wobbling tone sliding down in pitch
     Assets.sounds.doink = love.audio.newSource(render(0.4, function(t)
         local f = 420 - 250 * (t / 0.4)                 -- pitch slides down
         local wob = 1 + 0.07 * math.sin(TAU * 16 * t)   -- boingy wobble
@@ -143,8 +139,7 @@ local function makeSounds()
         seed = (seed * 1103515245 + 12345) % 2147483648
         return (seed / 2147483648) * 2 - 1
     end
-    -- "Blubb": a few round bubbles popping up the scale, for the submarine
-    -- rising / sinking (override with a real blub at assets/sfx/blubb.ogg).
+    -- bubbles popping up the scale, for the submarine surfacing/diving
     Assets.sounds.blubb = love.audio.newSource(render(0.7, function(t)
         local a = 0
         for k = 0, 3 do
@@ -168,8 +163,7 @@ local function makeSounds()
         return (prev * 2.0 + boom) * amp
     end), "static")
 
-    -- Coin clink: a short bright metallic "tink" (a few high partials + a tick),
-    -- played with random pitch as coins land so a shower reads as "clirr klank".
+    -- short metallic tink, pitched randomly so a shower reads as "clirr klank"
     Assets.sounds.coin_clink = love.audio.newSource(render(0.13, function(t)
         local e    = env(t, 0.13, 0.001, 0.12)
         local body = math.sin(TAU * 2350 * t) + 0.55 * math.sin(TAU * 3160 * t)
@@ -178,8 +172,7 @@ local function makeSounds()
         return (body * 0.22 + tick) * e
     end), "static")
 
-    -- Firework: a quick rising launch whistle, then a boom and a tail of random
-    -- crackle/pops -- played repeatedly (random pitch) for the all-found finale.
+    -- launch whistle, boom, then a tail of random crackle
     Assets.sounds.firework = love.audio.newSource(render(1.0, function(t)
         local whistle = 0
         if t < 0.25 then
@@ -208,8 +201,7 @@ local function makeSounds()
         return 0
     end), "static")
 
-    -- Cannon BOOM: muzzle crack, a deep sub-bass that plunges in pitch, a
-    -- dissonant growl, a delayed second concussion, and a long rumble tail.
+    -- muzzle crack, plunging sub-bass, growl, second concussion, rumble tail
     local boomRumble = 0
     Assets.sounds.cannon = love.audio.newSource(render(1.3, function(t)
         local crack  = rnd() * math.max(0, 1 - t / 0.035) * 1.3
@@ -233,9 +225,7 @@ local function makeSounds()
         return (thud * 0.7 + splash * 0.6 + sad) * env(t, 0.45, 0.002, 0.12)
     end), "static")
 
-    -- Pirate warning: a distant two-blast foghorn, dropping a minor third
-    -- (Bb2 down to G2) -- dark enough to mean trouble, soft enough not to
-    -- startle. Slow attack, gentle vibrato, deliberately quiet.
+    -- distant two-blast foghorn, Bb2 down to G2: trouble, but never startling
     Assets.sounds.pirate_warn = love.audio.newSource(render(1.7, function(t)
         local lt = (t < 0.85) and t or (t - 0.95)
         if lt < 0 then return 0 end                     -- breath between blasts
@@ -248,7 +238,7 @@ local function makeSounds()
     end), "static")
 end
 
--- Ambient ocean: a looping bed of filtered noise that swells like waves.
+-- looping bed of filtered noise that swells like waves
 local function makeAmbience()
     local prev = 0
     local seed = 12345
@@ -266,7 +256,7 @@ local function makeAmbience()
     Assets.sounds.ambience:setVolume(0.5)
 end
 
--- Background music: a calm I-vi-IV-V arpeggio over a bass note, lo-fi on purpose.
+-- calm I-vi-IV-V arpeggio over a bass note, lo-fi on purpose
 local function makeMusic()
     local chords = {
         { 130.8, 164.8, 196.0 }, -- C major  (C3 E3 G3)

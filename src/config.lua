@@ -2,31 +2,28 @@
 
 local config = {}
 
--- True launches fullscreen (for play); false gives a resizable dev window.
+-- false gives a resizable dev window
 config.START_FULLSCREEN = true
 
--- Developer mode: dev hotkeys (F5/F6/F3, G/P/K), the touch profiler toggle and
--- the pretend-purchase stub only exist when this is true. NEVER true in a
--- shipped build: it's driven purely by the BATDEV/BATSIM env vars, which don't
--- exist inside an iOS/macOS app bundle.
+-- Gates the dev hotkeys, the touch profiler and the pretend-purchase stub.
+-- NEVER true in a shipped build: it reads only BATDEV/BATSIM, which don't exist
+-- inside an app bundle.
 config.DEV = (os.getenv("BATDEV") ~= nil) or (os.getenv("BATSIM") ~= nil)
 
--- Temporary show/hide toggles (flip back to true to restore).
+-- temporary show/hide toggles
 config.SHOW_CLOUDS       = false  -- mountain-peak clouds in the world
 config.SHOW_ARTIST_PHOTO = true   -- Finn-Erik's photo on the title screen
 
 config.WORLD_WIDTH  = 12000  -- sailable ocean width, in ground units
 config.WORLD_HEIGHT = 8000
 
--- Flat 2:1 iso tile map (water/sand/grass/rock). TILE = one tile in ground units.
--- Optional pixel tileset goes in assets/tiles/<type>.png.
+-- flat 2:1 iso tile map; TILE is one tile in ground units
 config.TILE       = 64
 
--- Procedural terrain: layered noise height field shaped by the island masks,
--- then terraced into flat bands with slope transitions (SimCity-2000 look).
+-- Layered noise shaped by the island masks, terraced into flat bands.
 -- WORLD_SEED and ISLANDS are LIVE SLOTS: Game:applyMap() installs the selected
--- map's values here (src/data/maps.lua) so terrain/treasure code reads one
--- place. The literals below are the "Norge" defaults (dev reload / tests).
+-- map's values here so terrain and treasure read one place. The literals below
+-- are the Norge defaults, for dev reloads and tests.
 config.WORLD_SEED   = 1337   -- change for a different map (F6 regenerates)
 config.LAND_THRESH  = 0.42   -- island mask + edge noise above this = land
 config.COAST_SCALE  = 520    -- coastline wiggle scale (bigger = smoother)
@@ -34,14 +31,13 @@ config.COAST_NOISE  = 0.22   -- how much noise frays the coastline
 config.COVER_SCALE  = 720    -- scale of grass-vs-rock cover patches
 config.ROCK_THRESH  = 0.62   -- cover noise above this becomes rocky ground
 
--- Coastal tiles are filled at sub-pixel resolution so the shoreline is a jagged
--- pixel line, not a single diamond. Higher = finer but more to draw.
+-- sub-pixel coastal fill, so the shoreline is jagged rather than one diamond;
+-- higher = finer but more to draw
 config.COAST_PIXELS = 10
 config.COAST_JAGGED = 0.6    -- shoreline fray (0 = clean steps)
 
--- The sand→grass edge of every beach: instead of tracing the tile diamonds,
--- grass takes over through a speckled per-pixel dither band (the same trick the
--- waterline uses). Distances are in corner steps inland (~1 = one tile).
+-- Grass takes over through a speckled dither band instead of tracing the tile
+-- diamonds. Distances are corner steps inland, ~1 per tile.
 config.BEACH = {
     INNER  = 1.1,   -- solid sand until this far inland...
     OUTER  = 1.7,   -- ...solid grass from here on; dithered mix in between
@@ -52,19 +48,15 @@ config.FOREST_SCALE   = 360    -- bigger = larger forests
 config.FOREST_THRESH  = 0.54   -- lower = more / bigger forests
 config.FOREST_DENSITY = 6      -- trees drawn per forest tile
 
--- Desert vegetation (biome `scrub`): saguaro cactus and low bushes, so the
--- desert coasts read as arid rather than as bare ground with nothing on them.
--- Drawn as SOFT code shapes, not pixel sprites -- Finn-Erik dislikes the
--- pixelised trees, and OpenGFX has no cacti anyway. Placeholder-first as usual:
--- drop assets/props/cactus.png and it takes over.
+-- Saguaro and low bushes, so desert coasts read as arid rather than bare.
+-- SOFT code shapes, not pixel sprites -- the player dislikes pixelised trees.
 config.SCRUB = {
     DENSITY   = 3,     -- plants per scrub tile (a third of a forest: it's a desert)
     CACTUS    = 0.45,  -- chance a plant is a saguaro rather than a bush
     ARM_ODDS  = 0.62,  -- chance a saguaro grows arms (the iconic silhouette)
 }
 
--- Where land sits and how big each island is. Each roughly hosts the matching
--- port in src/data/ports.lua. Spread far apart for open ocean between them.
+-- where land sits and how big; each roughly hosts its port from ports.lua
 config.ISLANDS = {
     { x = 2600, y = 2600, radius = 2520 },  -- Bergen   (huge, NW)
     { x = 6200, y = 2200, radius = 1540 },  -- Alversund (N-mid)
@@ -76,9 +68,9 @@ config.ISLANDS = {
     { x = 5100, y = 4300, radius = 1260 },  -- Florida  (big, central sea)
 }
 
--- Island BIOMES (set per island in a map's `islands` list; omitted = "green",
--- which is exactly Norge's classic look). Each biome overrides ground colours
--- and forest behaviour; snowAt pulls the snowline down to (level * STEP).
+-- Set per island in a map's `islands` list; omitted = "green", the Norge look.
+-- Each overrides ground colours and forest behaviour, and snowAt pulls the
+-- snowline down to (level * STEP).
 config.BIOMES = {
     green  = {},                                            -- the Norge baseline
     lush   = { grass = { 0.33, 0.48, 0.22 },                -- deep eastern forest
@@ -87,8 +79,7 @@ config.BIOMES = {
                rock  = { 0.66, 0.40, 0.24 },                -- red canyon stone
                sand  = { 0.85, 0.74, 0.52 },
                forest = 999, snowless = true,               -- no woods, never snow
-               -- ...but not bare: saguaro cactus + scrub instead (see SCRUB).
-               -- Offset on FOREST_THRESH, like `forest`: lower = more of it.
+               -- not bare though: cactus and scrub instead, see SCRUB
                scrub = -0.02 },
     snow   = { grass = { 0.82, 0.86, 0.92 },                -- frozen ground
                rock  = { 0.52, 0.58, 0.68 },                -- icy blue stone
@@ -96,9 +87,8 @@ config.BIOMES = {
                forest = 0.08, snowAt = 2 },                 -- sparse woods, low snowline
 }
 
--- Visual island height only — the sea stays flat (boat sails at z=0). Each land
--- tile gets an integer elevation level (low at coasts, higher inland); tiles
--- bridging two levels become shaded slope tiles. Baked into the static land mesh.
+-- Visual only: the boat always sails at z = 0. Each land tile takes an integer
+-- level, and tiles bridging two become shaded slopes.
 config.MOUNTAINS = {
     MAX_LEVEL      = 8,    -- number of elevation steps
     STEP           = 15,   -- world-units rise per level
@@ -109,71 +99,60 @@ config.MOUNTAINS = {
     SUBPIX         = 6,    -- pixels per tile side (granular surface)
 }
 
--- Fog of war: the map starts dark and is revealed (and saved) as the boat sails.
+-- the map starts dark and is revealed, and saved, as the boat sails
 config.FOG_CELL        = 192   -- reveal granularity in ground units (3 tiles)
 config.FOG_REVEAL      = 1150  -- reveal radius around the boat (see far enough not
                                -- to sail straight past an undiscovered island)
 
--- Maps each port `size` to how many houses to scatter and how far they spread.
+-- port `size` -> how many houses and how far they spread
 config.CITY_SIZES = {
     tiny       = { houses = 4,  spread = 4  },
     small      = { houses = 9,  spread = 6  },
     medium     = { houses = 18, spread = 9  },
     large      = { houses = 55, spread = 17 },
-    -- American downtowns: a dense high-rise core with sprawl around it. Packed
-    -- hard on purpose — the Amerika map is meant to swing between crowded cities
-    -- and empty wilderness (maps.lua `remote`), and a metropolis only reads as
-    -- huge next to an island where nobody lives.
+    -- Packed hard on purpose: Amerika swings between crowded cities and empty
+    -- wilderness, and a metropolis only reads as huge next to an empty island.
     metropolis = { houses = 140, spread = 24 },
 }
 
--- The one zoom the world runs at. Wheel zoom was removed on purpose: the kid
--- kept zooming all the way out and losing the boat.
+-- The one zoom the world runs at. Wheel zoom was removed on purpose: he kept
+-- zooming out and losing the boat.
 config.CAMERA_DEFAULT_ZOOM = 1.4
--- The camera does not follow the boat. Scroll with the mouse at the screen edges
--- (or right-drag); press C to recenter on the boat.
+-- desktop: no following -- edge-scroll or right-drag, C recentres
 config.EDGE_SCROLL_MARGIN = 38  -- px from an edge that triggers scrolling
 config.EDGE_SCROLL_SPEED  = 950 -- scroll speed (screen px / second)
--- Edge-scrolling stops once the boat would leave the central band, so the kid
--- can't lose it off-screen. Max boat offset from centre, as a screen fraction.
+-- edge-scrolling stops once the boat would leave the central band; max offset
+-- from centre, as a screen fraction
 config.EDGE_SCROLL_KEEP   = 0.34
--- Follow camera: the boat sailing toward a screen edge pans the map to keep it in
--- the central band (touch / iPad friendly). It still leaves room to look around
--- (mouse edge / drag) within that band; press C to recentre.
+-- the boat nearing an edge pans the map to hold it in the central band
 config.FOLLOW_CAMERA      = true
--- Touch devices (and BATSIM dev windows): edge-scroll is a mouse-hover concept,
--- so it's off there. Instead the camera GLIDES after the boat: no map movement
--- while the boat is inside a tight central band, then an eased catch-up — never
--- a jump. KEEP = max boat offset from centre (screen fraction, tighter than
--- EDGE_SCROLL_KEEP); LERP = catch-up rate per second (higher = snappier).
+-- Edge-scroll is a mouse-hover concept, so touch glides instead: nothing moves
+-- while the boat is inside a tight band, then an eased catch-up, never a jump.
+-- KEEP = max offset from centre; LERP = catch-up rate per second.
 config.TOUCH_FOLLOW_KEEP  = 0.10  -- tight: panning starts almost immediately
 config.TOUCH_FOLLOW_LERP  = 4.0
 config.TOUCH_FOLLOW_LEAD  = 0.45  -- aim this many seconds ahead of the boat's
                                   -- motion, so the map pans toward where the
                                   -- kid is going, not where the boat has been
--- Phones (small logical screens, e.g. iPhone landscape ≈ 874x402 points): text
--- scaled purely by window height comes out physically tiny, and the desktop zoom
--- shows too little sea to plan a route. Boost fonts and zoom out. Tablets and
--- desktop are untouched (Game.phone is false there).
+-- On a small logical screen (iPhone landscape is ~874x402 points) text scaled
+-- by window height alone is physically tiny, and the desktop zoom shows too
+-- little sea to plan a route. Tablets and desktop are untouched.
 config.PHONE = {
     UI_BOOST    = 1.6,   -- multiplies Scale.ui sizes (text/buttons/icons)
-    -- Scale.marker sizes (world-anchored things whose job is RECOGNITION, e.g.
-    -- the treasure chest above the boat). Deliberately between 1.0 and UI_BOOST:
-    -- pure proportionality shrinks a chest to a brown blob on a 402pt-high
-    -- screen, and the full UI boost makes a thing that hovers over the boat
-    -- swallow the sea. See src/ui/scale.lua for the admission rule.
+    -- Between 1.0 and UI_BOOST on purpose: pure proportionality shrinks a chest
+    -- to a brown blob at 402pt, and the full boost makes something hovering over
+    -- the boat swallow the sea. Admission rule in CLAUDE.md.
     MARKER_BOOST = 1.3,
     CAMERA_ZOOM = 1.1,   -- world zoom on phones: a touch wider than the desktop
                          -- 1.4, enough to see neighbouring ports, not map-like
 }
--- Apple's minimum touch target, in points. CONTROLS are held to this and status
--- is not (HUD.keySize); it lives here because two files need the same number --
--- the HUD's keys and the shelf's one tappable slot (the treasure tally).
+-- Apple's minimum touch target, in points. CONTROLS meet it, status doesn't.
+-- Here because two files need the number: the HUD's keys and the shelf's one
+-- tappable slot.
 config.TOUCH_MIN = 44
--- Touch tap-to-sail momentum: the boat sails to EXACTLY the tapped point, but
--- doesn't brake there — it glides through at speed and coasts onward, tapering
--- off over COAST_TIME. Taps chain into continuous sailing instead of
--- tap-tap-tap. Desktop clicks keep the precise stop.
+-- The boat sails to exactly the tapped point but doesn't brake there: it glides
+-- through and coasts, tapering off over COAST_TIME, so taps chain into
+-- continuous sailing. Desktop clicks keep the precise stop.
 config.TOUCH_COAST_TIME = 2.5
 
 -- Gameplay feel — kept gentle on purpose (see CLAUDE.md "child-friendly").
@@ -181,15 +160,13 @@ config.PICKUP_RADIUS  = 95    -- docking distance, from the dock point in the wa
 config.BOAT_SPRITE_WIDTH = 140 -- on-screen boat width (~2 tiles)
 config.BOUNCE_DAMPING = 0.45  -- collision softness (0 = dead stop, 1 = bouncy)
 
--- Pirate ship: a rare black-sailed hunter that appears while you sail with gold.
--- It's slower than you and docking is always safe, so it's dodge-able.
+-- a rare hunter, slower than you, and docking is always safe
 config.PIRATE = {
     SPEED_FRAC    = 0.78,   -- top speed as a fraction of YOUR boat's
     LENGTH        = 2.6,    -- length vs a normal ship (a long galleon)
     WIDTH         = 1.45,   -- beam
-    -- The arrival cry ("hiv og hoi"): shouted several times, not once. A single
-    -- shout is easy to miss over the sea and the music; a chant announces an
-    -- event. Replace the sound itself by dropping assets/sfx/pirate_warn.ogg.
+    -- Shouted several times, not once: a single shout is lost under the sea and
+    -- the music, while a chant announces an event.
     CRY_TIMES     = 3,      -- how many times the cry goes up on a spawn
     CRY_GAP       = 2.2,    -- seconds of quiet AFTER a shout finishes before the
                             -- next one. Measured from the END of the clip, not
@@ -204,11 +181,9 @@ config.PIRATE = {
     BALL_SPEED    = 250,    -- cannonball speed (slow + telegraphed)
     BALL_RADIUS   = 15,     -- cannonball hit radius
     HIT_GOLD      = 5,      -- gold lost per hit
-    -- Driving the pirate off pays. Without this, fighting back is a pure LOSS:
-    -- three hits cost a good part of a kanonkuler crate (real gold) and used to
-    -- return nothing, so running away was always the better move -- the wrong
-    -- lesson for the one part of the game the older children asked for. Roughly
-    -- a delivery's pay, so a won battle buys the crate that fought it.
+    -- Driving the pirate off has to pay, or fighting is a pure loss and running
+    -- is always correct -- the wrong lesson for the one part the older children
+    -- asked for. Roughly a delivery's pay: a won battle buys its own crate.
     DROP_GOLD     = 25,     -- gold spilled when it's finally driven off
     GIVEUP_DIST   = 2100,   -- stay this far away...
     GIVEUP_TIME   = 9,      -- ...for this long and the pirate gives up
@@ -294,13 +269,28 @@ config.TREASURE = {
     -- chance the very NEXT delivery after finishing a hunt started another one,
     -- and back-to-back hunts read as relentless -- a hunt also blocks new
     -- oppdrag, so the delivery loop never gets going in between.
-    -- Measured over 500 simulated runs: 0.50 with no floor gave a hunt every
-    -- 2.0 deliveries and half of them landed on the very NEXT delivery; 0.45
-    -- with a floor of 2 gives one every ~3.2 and never on the next one.
+    --
+    -- The gap between hunts is `MAP_COOLDOWN - 1 + 1/MAP_CHANCE` deliveries:
+    --   0.50, floor 0  ->  2.0, and half landed on the very next delivery
+    --   0.45, floor 2  ->  3.2  (but see below -- it was really running at 2.2)
+    --   0.45, floor 3  ->  4.2  <- here
+    -- Four chests exist in the whole game, so this also sets how long the arc to
+    -- the finale is: ~17 deliveries at the current numbers.
+    --
+    -- SPEND CHANGES ON THE FLOOR, NOT THE CHANCE. A bigger floor buys a
+    -- guaranteed stretch of ordinary trading; a smaller chance buys the same
+    -- average with more variance, and a drought reads to a five-year-old as
+    -- "the treasure game stopped happening".
+    --
+    -- The floor only started working properly in 2026-07: deliveries made DURING
+    -- a hunt (cargo you already carry still gets delivered) were ticking it down,
+    -- so one mid-hunt delivery ate the whole breather and maps came ~45% more
+    -- often than these numbers said. See World:openDock.
     MAP_CHANCE   = 0.45, -- chance per eligible delivery (the first is guaranteed)
-    MAP_COOLDOWN = 2,    -- deliveries that must pass after a map before another
-                         -- can be granted (1 is NOT enough: it still allows the
-                         -- very next delivery to start a second hunt)
+    MAP_COOLDOWN = 3,    -- deliveries of NORMAL trading that must pass after a
+                         -- map before another can be granted (1 is NOT enough:
+                         -- it still allows the very next delivery to start a
+                         -- second hunt)
     REACH        = 140,  -- sail this close to the X to grab the chest
     GOLD         = 40,   -- gold reward for a chest
     RACE_TRIGGER = 1600, -- a pirate joins the race once you're this close to the chest

@@ -1,8 +1,7 @@
--- src/entities/boat.lua
--- The player's boat. Movement in the flat ground plane is gentle: accelerates
--- and turns slowly, never sinks, bounces softly off land and can always sail
--- back out (speed is only damped when moving INTO an obstacle). draw() prefers a
--- side-view photo; drawVolumetric() is the code-drawn fallback when art is absent.
+-- The player's boat: gentle acceleration and turning, never sinks, bounces
+-- softly off land and can always sail back out (speed is damped only when
+-- moving INTO an obstacle). draw() prefers a photo, drawVolumetric() is the
+-- code-drawn fallback.
 
 local config  = require("src.config")
 local Assets  = require("src.assets")
@@ -12,7 +11,7 @@ local Objects = require("src.systems.objects")
 local Boat = {}
 Boat.__index = Boat
 
--- Hull outline in local boat space (pointing along +X = "forward").
+-- hull outline in local boat space, +X = forward
 local HULL = {
     { 26,   0},  -- bow tip
     { 10, -13},  -- forward port
@@ -46,9 +45,8 @@ function Boat.new(def, x, y)
     self.balls    = {}   -- player cannonballs in flight (only if a cannon is owned)
     self.cannonT  = 0    -- time until the cannon can fire again
     self.tapT     = 0    -- separate cooldown for player-aimed (tapped) shots
-    -- Wake trail: a fixed pool of foam puffs / ripple rings dropped at the
-    -- stern's WORLD position (they stay where they fell as the boat sails on).
-    -- Slots are reused ring-buffer style — no per-frame allocations.
+    -- Wake: a fixed pool of puffs dropped at the stern's WORLD position, so
+    -- they stay where they fell. Ring-buffer reuse, no per-frame allocations.
     self.wake     = {}
     for i = 1, 48 do self.wake[i] = { age = 1, life = 0 } end   -- born dead
     self.wakeHead = 1
@@ -56,14 +54,10 @@ function Boat.new(def, x, y)
     return self
 end
 
--- Auto-cannon: while a pirate is in range, fire at it on an interval. We're
--- amateurs, so each ball flies a FIXED, slightly-wild trajectory (see
--- fireCannon) -- no homing, no leading -- and only counts as a hit if it happens
--- to pass close to the (moving) pirate. Most shots miss; landing one calls
--- onHit, which scares the pirate off rather than sinking it. Only called by the
--- world while the cannon is owned and the pirate is still attacking.
--- Each shot spends one cannonball (game:useAmmo); with the locker empty the
--- cannon stays quiet -- balls already in flight still finish their arc.
+-- Auto-cannon: fires on an interval while a pirate is in range. Balls fly a
+-- fixed, slightly wild path -- no homing, no leading -- so most miss; a hit
+-- calls onHit, which scares the pirate off rather than sinking it. Each shot
+-- spends one ball, and an empty locker just goes quiet.
 function Boat:updateCannon(dt, target, onHit, game)
     local C = config.CANNON
     self.cannonT = math.max(0, self.cannonT - dt)
@@ -99,12 +93,9 @@ function Boat:updateCannon(dt, target, onHit, game)
     end
 end
 
--- Fire one wild shot: aim at where the pirate is RIGHT NOW (no leading) and add
--- a random angular SPREAD, then commit the ball to that straight path. Because
--- the pirate keeps moving and our aim is off, a moving ship is hard to hit -- as
--- it should be for a 5-year-old's first cannon.
--- `spread` overrides the aim error for one shot (tapFire passes the tighter
--- TAP_SPREAD); omitted, it's the automatic battery's usual wild SPREAD.
+-- One shot at where the pirate is right now, plus a random angular spread,
+-- committed to that straight path. `spread` overrides the aim error for one
+-- shot -- tapFire passes the tighter TAP_SPREAD.
 function Boat:fireCannon(target, dist, spread)
     local C = config.CANNON
     local ang = math.atan2(target.y - self.y, target.x - self.x)
@@ -117,16 +108,12 @@ function Boat:fireCannon(target, dist, spread)
     Assets.playSfx("cannon", 0.8)
 end
 
--- A shot the PLAYER aimed, fired by tapping the pirate (World:mousepressed).
--- It runs on its OWN cooldown, so it never has to wait for the automatic
--- battery -- tapping always feels like it did something. The auto-cannon is
--- pushed back by the same interval afterwards so the two never double-fire.
--- Returns what happened, so the caller can react without re-deriving it:
---   "fired" · "wait" (still cooling down) · "empty" (no cannonballs left)
---   "far" (out of range) · nil (no cannon aboard)
--- "far" and nil deliberately fall through to normal sailing in the caller: a
--- child tapping a distant pirate means "go there", and that IS how you close
--- to firing range.
+-- A shot the player aimed by tapping the pirate. Runs on its OWN cooldown so
+-- tapping never waits on the battery; the battery is pushed back afterwards so
+-- the two can't double-fire. Returns:
+--   "fired" | "wait" | "empty" | "far" | nil (no cannon aboard)
+-- "far" and nil fall through to normal sailing in the caller: tapping a distant
+-- pirate means "go there", which is how you close to firing range.
 function Boat:tapFire(target, game)
     if not (game and game:owns("cannon")) then return nil end
     local C = config.CANNON
@@ -135,9 +122,7 @@ function Boat:tapFire(target, game)
     if dist > C.FIRE_RANGE then return "far" end
     if (self.tapT or 0) > 0 then return "wait" end
     if not game:useAmmo() then return "empty" end
-    -- Extra cannons speed the tapped shot exactly as they speed the automatic
-    -- battery, so buying a second Kanon means something to the child hammering
-    -- the trigger and not just to the autopilot.
+    -- extra cannons speed the tapped shot as they do the automatic battery
     local iv = C.TAP_INTERVAL / (game.cannonRate and game:cannonRate() or 1)
     self.tapT = iv
     self.cannonT = math.max(self.cannonT, iv)
@@ -145,7 +130,7 @@ function Boat:tapFire(target, game)
     return "fired"
 end
 
--- Cannonballs arc over the water (a parabolic screen height), like the pirate's.
+-- cannonballs arc over the water, like the pirate's
 function Boat:drawCannonBalls()
     local C = config.CANNON
     for _, b in ipairs(self.balls) do
@@ -160,9 +145,9 @@ function Boat:drawCannonBalls()
     love.graphics.setColor(1, 1, 1)
 end
 
--- Keep the boat on water. Called each frame after update(): if it wandered onto
--- land, send it back to the last water spot and steer toward open water. Never
--- wipes the destination, so it can't get stuck against a shore.
+-- Each frame after update(): if the boat wandered onto land, send it back to
+-- the last water spot and steer out. Keeps the destination, so it can't get
+-- stuck against a shore.
 local DIRS8 = { {1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1} }
 function Boat:blockLand(terrain)
     if terrain:isWater(self.x, self.y) then
@@ -210,10 +195,9 @@ function Boat:update(dt)
     if love.keyboard.isDown("right", "d") then steer =  1;      manual = true end
     if manual then self:clearDestination(); self.coastT = 0 end
 
-    -- Auto-steer toward a clicked destination. On touch devices the boat does
-    -- NOT brake at the point: it sails through it at speed and then COASTS on
-    -- the same heading, tapering off (config.TOUCH_COAST_TIME) — so taps chain
-    -- into continuous sailing. Desktop keeps the precise slow-and-stop.
+    -- Auto-steer to a clicked destination. On touch it does NOT brake there:
+    -- it sails through and coasts on the same heading (TOUCH_COAST_TIME), so
+    -- taps chain into continuous sailing. Desktop slows and stops precisely.
     if self.destX then
         local dx, dy = self.destX - self.x, self.destY - self.y
         local dist = math.sqrt(dx * dx + dy * dy)
@@ -255,11 +239,10 @@ function Boat:clampToWorld()
     if hitX or hitY then self:softHit() end
 end
 
--- Soft circular collision (islands). Speed is only damped when moving INTO the
--- obstacle, and the destination is kept, so the boat can always sail back out.
+-- Soft circular collision. Speed is damped only when moving INTO the obstacle
+-- and the destination survives, so the boat can always sail back out.
 function Boat:collideCircle(cx, cy, cr)
-    -- squared-distance early-out: this runs once per ship/skerry per frame, and
-    -- nearly all of them are nowhere near the boat -- skip the sqrt for those
+    -- squared-distance early-out: this runs per ship/skerry per frame
     local dx, dy = self.x - cx, self.y - cy
     local minDist = cr + self.radius
     local d2 = dx * dx + dy * dy

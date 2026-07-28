@@ -1,11 +1,6 @@
--- src/ui/album.lua
--- The treasure album: a full-screen wooden panel with one BIG chest per
--- treasure in the world. Found chests are golden, shimmer, and show their
--- collectible rising out of the lid; unfound ones sit dimmed under a "?".
--- Tapping a FOUND chest fires the GOLD PARTY: coins cannonade in from every
--- corner and edge of the screen with clinking — gloriously over the top, by
--- design (the finder deserves it). Clicking anywhere else closes the album
--- and play resumes (a modal owned by the world scene, like the dock screen).
+-- The treasure album: one big chest per treasure, golden when found, dimmed
+-- under a "?" when not. Tapping a found chest fires the gold party; anywhere
+-- else closes. A modal owned by the world scene.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -25,7 +20,7 @@ function Album.new(world)
     return setmetatable({ world = world, t = 0, coins = {}, party = 0, clinkT = 0 }, Album)
 end
 
--- Panel + slot geometry, shared by draw and the tap test.
+-- geometry shared by draw and the tap test
 function Album:layout()
     local sw, sh = love.graphics.getDimensions()
     local fonts  = self.world.game.fonts
@@ -57,15 +52,12 @@ function Album:layout()
              ix = ix, iy = iy, iw = iw, ih = ih, cell = cell, slots = slots }
 end
 
--- ── THE GOLD PARTY ───────────────────────────────────────────────────────────
 function Album:burst()
     self.party = PARTY_TIME + (self.party > 0 and 0.8 or 0)   -- re-taps stack
     local sw, sh = love.graphics.getDimensions()
     for _ = 1, 50 do self:spawnCoin(sw, sh) end               -- opening salvo
     Assets.playPitched("coin_clink", 0.9, 0.8 + love.math.random() * 0.6)
-    -- The finale song (du_vant, same bright pitch as the win screen) plays
-    -- ONCE per party — looping it is the finale's exclusive privilege. It
-    -- always finishes its take; a new tap after it ends starts it fresh.
+    -- once per party: looping du_vant is the finale's privilege alone
     if not (self.song and self.song:isPlaying()) then
         local src = Assets.namedVoice("du_vant")
         if src then
@@ -79,7 +71,7 @@ end
 function Album:spawnCoin(sw, sh)
     if #self.coins >= PARTY_MAX then return end
     local k = sh / 800
-    -- emitters: the four corners plus mid-edges — money from EVERYWHERE
+    -- emitters: four corners plus mid-edges
     local ex, ey
     local e = love.math.random(7)
     if     e == 1 then ex, ey = 0, 0
@@ -89,15 +81,15 @@ function Album:spawnCoin(sw, sh)
     elseif e == 5 then ex, ey = sw / 2, -20
     elseif e == 6 then ex, ey = -20, sh / 2
     else               ex, ey = sw + 20, sh / 2 end
-    -- aim into the middle-ish of the screen with generous spread
+    -- aim mid-screen, generous spread
     local tx = sw * (0.25 + love.math.random() * 0.5)
     local ty = sh * (0.15 + love.math.random() * 0.5)
     local ang = math.atan2(ty - ey, tx - ex) + (love.math.random() - 0.5) * 0.7
-    local sp = (400 + love.math.random() * 520) * k   -- slower: savour the chaos
+    local sp = (400 + love.math.random() * 520) * k
     self.coins[#self.coins + 1] = {
         x = ex, y = ey,
         vx = math.cos(ang) * sp, vy = math.sin(ang) * sp,
-        r = (16 + love.math.random() * 18) * k,   -- BIG doubloons, engravings visible
+        r = (16 + love.math.random() * 18) * k,
         rot = love.math.random() * math.pi,
         vr = (love.math.random() - 0.5) * 10,
     }
@@ -117,9 +109,8 @@ function Album:update(dt)
             Assets.playPitched("coin_clink", 0.5, 0.7 + love.math.random() * 0.9)
         end
     end
-    -- coin physics: fly, spin, fall off the bottom
     local sh = love.graphics.getHeight()
-    local g = 950 * (sh / 800)                     -- lazier arcs, more air time
+    local g = 950 * (sh / 800)
     for i = #self.coins, 1, -1 do
         local c = self.coins[i]
         c.vy = c.vy + g * dt
@@ -130,7 +121,7 @@ function Album:update(dt)
     end
 end
 
--- Tap a found chest = party. Anywhere else = close, back to the game.
+-- tap a found chest = party, anywhere else = close
 function Album:mousepressed(x, y, button)
     if button ~= 1 then return end
     local L = self:layout()
@@ -189,10 +180,9 @@ function Album:draw()
             WOOD.deep, WOOD.hi, WOOD.lo, math.max(2, math.floor(L.t * 0.6)), false)
 
         if tr.found then
-            -- the treasure sits calmly above the open chest (no bouncing)
             Icons.draw(tr.good, s.cx, s.cy - cell * 0.20, cell * 0.32)
             Icons.draw("chest", s.cx, s.cy + cell * 0.14, cell * 0.60)
-            -- golden = yours: frame + corner glints (the bought-shimmer language)
+            -- golden = yours: frame + corner glints
             love.graphics.setColor(WOOD.accent)
             love.graphics.setLineWidth(math.max(2, cell * 0.02))
             love.graphics.rectangle("line", s.x + cell * 0.08, s.y + cell * 0.08,
@@ -212,7 +202,7 @@ function Album:draw()
             end
         else
             Icons.draw("chest", s.cx, s.cy + cell * 0.08, cell * 0.60)
-            love.graphics.setColor(0, 0, 0, 0.45)   -- still locked away
+            love.graphics.setColor(0, 0, 0, 0.45)
             love.graphics.rectangle("fill", s.x + cell * 0.08, s.y + cell * 0.08,
                 cell * 0.84, cell * 0.84)
             love.graphics.setFont(fonts.big)
@@ -240,7 +230,7 @@ function Album:draw()
             iy + ih - fonts.small:getHeight() - 8)
     end
 
-    -- THE GOLD PARTY: over absolutely everything
+    -- the party draws over everything
     for _, c in ipairs(self.coins) do drawCoin(c.x, c.y, c.r, c.rot) end
     love.graphics.setColor(1, 1, 1)
 end

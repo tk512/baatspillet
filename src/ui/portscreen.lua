@@ -1,9 +1,7 @@
--- src/ui/portscreen.lua
--- The docking screen, styled like an early-90s strategy briefing: a beveled wood
--- panel with the harbour master's portrait, dither + scanlines, and a per-harbour
--- mood (cosy or scary, each with its own theme and music). The master gives the
--- order: frakt fisk, ta passasjerer, etc.
--- An overlay owned by the world scene. Modes: offer / busy / deliver / visit.
+-- The docking screen: an early-90s briefing panel with the harbour master's
+-- portrait, dither and scanlines, and a per-harbour mood (cosy or scary, each
+-- with its own theme and music). An overlay owned by the world scene.
+-- Modes: offer / busy / deliver / visit.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -14,8 +12,7 @@ local HarborMark = require("src.ui.harbormark")
 local PortScreen = {}
 PortScreen.__index = PortScreen
 
--- The Butikk's own look: a weathered, warm-lit pirate trading post (dark wood +
--- lantern glow), regardless of the harbour's cosy/scary mood.
+-- the Butikk's own look, whatever the harbour's mood
 local STORE = {
     wood   = {0.26, 0.17, 0.10}, woodhi = {0.42, 0.29, 0.16}, woodlo = {0.10, 0.06, 0.03},
     deep   = {0.16, 0.10, 0.06},
@@ -26,7 +23,7 @@ local STORE = {
     red    = {0.86, 0.36, 0.28},
 }
 
--- Color themes: warm wood vs cold stone.
+-- warm wood vs cold stone
 local THEMES = {
     cosy = {
         face = {0.40, 0.29, 0.19}, hi = {0.62, 0.46, 0.30}, lo = {0.20, 0.14, 0.09},
@@ -52,8 +49,7 @@ local function vfont(px)
     return fontCache[px]
 end
 
--- Norwegian name list: "Solveig og Frida", "A, B og C". For a harbour run by
--- more than one havnesjef (ports.lua `master` given as a list).
+-- "Solveig og Frida", "A, B og C" -- for a harbour with several havnesjefer
 local function joinNames(t)
     if #t <= 1 then return t[1] or "" end
     return table.concat(t, ", ", 1, #t - 1) .. " og " .. t[#t]
@@ -88,8 +84,7 @@ end
 
 local function rnd(a, b) return a + love.math.random() * (b - a) end
 
--- One gold coin. They start staggered above the screen so they rain in, bounce
--- on a floor near the bottom, and settle into a pile.
+-- staggered above the screen, so they rain in, bounce and settle into a pile
 function PortScreen:newCoin()
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
     return {
@@ -103,8 +98,8 @@ function PortScreen:newCoin()
     }
 end
 
--- Briefing -> recorded "Du har et oppdrag!", wrong harbour -> "FEIL HAVN!",
--- else a per-town clip (dock_<id>.ogg) if recorded, else a boat horn.
+-- briefing -> "Du har et oppdrag!", wrong harbour -> "FEIL HAVN!", else the
+-- town's own dock_<id>.ogg, else a boat horn
 function PortScreen:playVoice()
     if self.mode == "findfirst" then               -- turned away: "find the treasure first!"
         if not Assets.playNamedVoice("finn_skatten_forst") then Assets.playSfx("bump") end
@@ -164,7 +159,7 @@ function PortScreen:drawCoin(co)
     Icons.coin(co.x, co.y, co.r, co.spin)
 end
 
--- Panel fills the (size-capped) area; everything is laid out relative to it.
+-- everything below is laid out relative to the panel
 function PortScreen:layout(vw, vh)
     local pw, ph, px, py = vw, vh, 0, 0
     local pad = math.max(3, math.floor(vw * 0.03))
@@ -173,7 +168,7 @@ function PortScreen:layout(vw, vh)
     local bodyY = py + titleH + pad
     local bodyH = ph - titleH - btnH - pad * 3
     local portraitW = math.floor(pw * 0.36)
-    -- Widen the primary button when it carries the longer "Finn skatten!" label.
+    -- wider for the longer "Finn skatten!" label
     local seilW = math.floor(pw * (self.mapGiven and 0.40 or 0.30))
     local butW  = math.floor(pw * 0.28)
     local rowY  = py + ph - btnH - pad
@@ -195,8 +190,7 @@ function PortScreen:mousepressed(mx, my, button)
     mx = mx - self._ox
     my = my - self._oy
 
-    -- Inside the store: crates + Tilbake/Seil arm on press, fire on release
-    -- (Retro press protocol -- the kids-app squish).
+    -- Retro press protocol: arm on press, fire on release
     if self.shopOpen then
         if self._crates then
             for _, c in ipairs(self._crates) do
@@ -208,8 +202,7 @@ function PortScreen:mousepressed(mx, my, button)
         return
     end
 
-    -- Focused screens (map handoff / turned-away / wrong harbour): no Butikk, the
-    -- only thing to do is go -- any click sets sail.
+    -- focused screens have no Butikk: the only thing to do is go
     if self.mapGiven or self.mode == "findfirst" or self.mode == "busy" then
         self:confirm(); return
     end
@@ -252,10 +245,10 @@ function PortScreen:keypressed(key)
     end
 end
 
--- The buy button is always clickable. Clicking it:
---   already owned -> a voice "du har allerede en kanon" (so he learns he's set)
---   can afford    -> spend the gold, see it go down, happy fanfare
---   too poor      -> a gentle nudge (the "Spar X til!" maths is on screen)
+-- Always clickable:
+--   owned      -> a voice saying he already has one
+--   affordable -> spend the gold, watch it go down, fanfare
+--   too poor   -> a nudge; the "Spar X til!" sum is on screen
 function PortScreen:tryBuy(item)
     local game = self.world.game
     if not item then return end
@@ -280,8 +273,7 @@ function PortScreen:tryBuy(item)
     if ok then
         self.buyFlash, self.buyItem = 1.4, item
         self.storeMsg = nil
-        -- the bought item leaps out of its crate and floats away (the crate
-        -- keeps its picture — you can buy more lemons)
+        -- the crate keeps its picture: you can buy more lemons
         if self._crates then
             for _, c in ipairs(self._crates) do
                 if c.item.id == item.id then
@@ -298,8 +290,7 @@ function PortScreen:tryBuy(item)
         end
         self.world:showToast("Kjøpt: " .. item.name .. "!")
     else
-        -- can't afford -> the crate shakes its head "nuh-uh" + the words show
-        -- the subtraction the store exists to teach
+        -- the crate shakes its head, and the words show the subtraction
         local need = item.price - game.state.coins
         self.storeMsg = { text = "Spar " .. need .. " til!", t = 2.5 }
         self.shakeItem, self.shakeT = item.id, 0.45
@@ -315,17 +306,14 @@ function PortScreen:confirm()
         self.world:showToast("Ombord!")
     end
     if wasDeliver then
-        -- the town celebrates the delivery with mini fireworks once you're
-        -- back on the water (deferred like the map card; see World:update)
+        -- fireworks once you're back on the water, deferred like the map card
         self.world.pendingFireworks = self.port
     end
     Assets.stopDockMood()
     self.world.dock = nil
 
-    -- After the HURRA screen, offer the next mission right away so the reward
-    -- screen is never skipped and the child can keep sailing town to town -- BUT
-    -- if this delivery earned a treasure map, skip the new oppdrag and go straight
-    -- into the hunt (the "Finn skatten!" card pops once this screen closes).
+    -- Straight into the next mission, so the reward screen is never skipped --
+    -- unless this delivery earned a map, in which case the hunt comes first.
     if wasDeliver and not self.world.pendingMapReveal then
         local off = self.world.cargoSystem:offerAt(self.port.id)
         if off and self.world.boat:hasRoom() then
@@ -339,12 +327,10 @@ local bevel = Retro.bevel
 function PortScreen:draw()
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
 
-    -- The Butikk is its own bigger, full-panel screen.
     if self.shopOpen then self:drawStoreScreen(sw, sh); return end
 
-    -- Panel size capped so it stays a tidy dialog (and the text readable) on big
-    -- monitors. Drawn at full resolution; the retro feel comes from the bevels,
-    -- dither and blocky icons.
+    -- capped so it stays a tidy dialog on big monitors; drawn at full res, the
+    -- retro feel comes from the bevels and dither
     local pw = math.min(math.floor(sw * 0.80), 880)
     local ph = math.min(math.floor(sh * 0.82), 600)
     self._ox = math.floor((sw - pw) / 2)   -- centre the panel on screen
@@ -360,7 +346,7 @@ function PortScreen:draw()
     self:drawRetro(self._L, pw, ph)
     love.graphics.pop()
 
-    -- raining gold coins pour over the whole screen during a delivery
+    -- gold rains over the whole screen during a delivery
     if self.coins then
         for _, co in ipairs(self.coins) do self:drawCoin(co) end
     end
@@ -372,7 +358,7 @@ function PortScreen:drawRetro(L, vw, vh)
     local P = L.panel
     local t = math.max(1, math.floor(vh / 120))   -- bevel thickness
 
-    -- double bevel: raised outer, sunken inner groove
+    -- raised outer bevel, sunken inner groove
     bevel(P.x, P.y, P.w, P.h, th.face, th.hi, th.lo, t, true)
     bevel(P.x + t * 2, P.y + t * 2, P.w - t * 4, P.h - t * 4, th.face, th.hi, th.lo, t, false)
 
@@ -391,7 +377,7 @@ end
 function PortScreen:drawTitle(L, t)
     local th, T = self.theme, L.title
     bevel(T.x + t * 2, T.y + t * 2, T.w - t * 4, T.h - t * 2, th.title, th.hi, th.lo, t, true)
-    -- town harbour badge (two gabled houses in the town colour)
+    -- town badge in the town colour
     HarborMark.draw(T.x + L.pad * 2, T.y + T.h * 0.25, T.h * 0.58, T.h * 0.5, self.port.color)
     -- town name (gold, with a hard shadow)
     local f = vfont(T.h * 0.42)
@@ -403,16 +389,14 @@ function PortScreen:drawTitle(L, t)
     love.graphics.setColor(th.accent);    love.graphics.print(name, nx, ny)
 end
 
--- Backdrop behind the portrait. Placeholder-first: assets/ports/havn.png (a
--- painted harbour street) is used when present — cover-fit, scissored, and
--- dimmed a touch (colder for scary harbours) so the face stays the focus.
--- Without the file, the blocky code-drawn dock below carries it.
+-- Placeholder-first: assets/ports/havn.png is cover-fit, scissored and dimmed
+-- so the face stays the focus; without it the code-drawn dock carries it.
 function PortScreen:drawDockBackdrop(x, y, w, h)
     local scary = (self.mood == "scary")
     local img = Assets.image("ports/havn.png")
     if img then
         local sc = math.max(w / img:getWidth(), h / img:getHeight())
-        -- setScissor ignores the panel's translate: convert to window coords
+        -- setScissor ignores the panel's translate
         love.graphics.setScissor(x + (self._ox or 0), y + (self._oy or 0), w, h)
         if scary then love.graphics.setColor(0.45, 0.48, 0.60)
         else love.graphics.setColor(0.82, 0.82, 0.82) end
@@ -449,7 +433,7 @@ function PortScreen:drawDockBackdrop(x, y, w, h)
     love.graphics.setColor(seam)
     for i = 1, 4 do love.graphics.rectangle("fill", x, y + waterH + (h - waterH) * (i / 5), w, 2) end
 
-    -- a few stacked crates (the loading area), in muted town colours
+    -- stacked crates in muted town colours
     local cr = config.BUILDING_COLORS
     local s = w * 0.13
     local function crate(cx, cy, col)
@@ -470,7 +454,7 @@ function PortScreen:drawPortrait(L, t)
     local ix, iy, iw, ih = R.x + t * 2, R.y + t * 2, R.w - t * 4, R.h - t * 4
     self:drawDockBackdrop(ix, iy, iw, ih)
 
-    -- port-specific portrait if present, else the shared default harbour master
+    -- port portrait if present, else the shared default
     local img = Assets.portPortrait(self.port.id) or Assets.portPortrait("default")
     if img then
         local s = math.min(iw / img:getWidth(), ih / img:getHeight())
@@ -481,10 +465,8 @@ function PortScreen:drawPortrait(L, t)
         self:drawHarborMaster(ix, iy, iw, ih)
     end
 
-    -- name plate under the portrait — BIG and on a carved plank (user-group
-    -- feedback: too small on iOS)
-    -- `master` is one name, or a LIST when a harbour is run by more than one
-    -- person (Skiparviken's Solveig og Frida) -- then the title goes plural.
+    -- `master` is one name, or a LIST for a harbour run by several -- then the
+    -- title goes plural
     local master = self.port.def and self.port.def.master
     local label = "Havnesjef"
     if type(master) == "table" then

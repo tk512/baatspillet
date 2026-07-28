@@ -28,9 +28,8 @@ local function defaultState()
         ammo             = 0,    -- cannonballs left (the cannon comes with some)
         cannons          = 0,    -- cannons bought; extras fire a bit faster
         hintFindPort     = false,           -- one-time "Finn en havn!" shown?
-        -- Per-WORLD progress (fog, discovered islands, treasures) lives under
-        -- maps[mapId] — switching maps must never leak exploration between
-        -- worlds. See Game:mapState().
+        -- Per-WORLD progress lives under maps[mapId]: switching maps must never
+        -- leak exploration between worlds. See Game:mapState().
         maps             = {},
     }
 end
@@ -38,9 +37,8 @@ end
 function Game:load()
     love.graphics.setDefaultFilter("nearest", "nearest")
 
-    -- Device class, needed before fonts. mobile = any iOS device; phone = small
-    -- logical screen (iPhone) → boosted UI + wider zoom (config.PHONE). BATSIM
-    -- dev windows on a Mac count too, so both modes are testable without a device.
+    -- Needed before fonts. mobile = any iOS; phone = small logical screen ->
+    -- boosted UI and wider zoom. BATSIM dev windows count, so both are testable.
     self.mobile = (love.system.getOS() == "iOS")
     self.touchCamera = self.mobile or (os.getenv("BATSIM") ~= nil)
     self.phone = self.touchCamera
@@ -54,8 +52,8 @@ function Game:load()
     self:loadSave()
     self:applyMap(self.state.selectedMap)
 
-    -- iOS/iPadOS is always fullscreen at the device's native size; forcing a
-    -- mode switch there is pointless and can reset the GL context.
+    -- iOS is always fullscreen natively; forcing a mode switch can reset the
+    -- GL context
     if config.START_FULLSCREEN and not self.mobile and not os.getenv("BATSIM") then
         love.window.setFullscreen(true, "desktop")
     end
@@ -68,7 +66,7 @@ function Game:load()
         world     = require("src.scenes.world"),
     }
 
-    -- Dev profiler overlay (F3): rolling update/draw timings + FPS + draw stats.
+    -- F3 overlay: rolling update/draw timings, FPS, draw stats
     self.profile = { on = false, upd = 0, drw = 0 }
 
     Assets.startMusic()
@@ -76,11 +74,10 @@ function Game:load()
 end
 
 function Game:update(dt)
-    -- Cap dt so a hitch (e.g. window drag) never teleports the boat.
+    -- cap dt so a hitch never teleports the boat
     if dt > 0.05 then dt = 0.05 end
     local p = self.profile
-    -- Time the scene when EITHER the on-screen overlay (F3) or the CSV
-    -- recorder (F4) wants it; otherwise skip the clock reads entirely.
+    -- only when F3 or F4 wants it; otherwise skip the clock reads
     local t0 = ((p and p.on) or Profiler.on) and love.timer.getTime() or nil
     if self.scene and self.scene.update then self.scene:update(dt) end
     if t0 then
@@ -102,14 +99,13 @@ function Game:draw()
     end
     if p and p.on then self:drawProfiler() end
     Retro.drawFx()
-    -- One CSV row per frame, last thing, so getStats() covers the whole frame.
+    -- last, so getStats() covers the whole frame
     Profiler.frame(self._dt or 0, self._updMs or 0, self._drawMs or 0,
         (self.sceneName == "world") and self.scene or nil)
 end
 
--- Compact dev overlay. Draw timings are CPU submit time (not GPU); FPS reflects
--- real frame pacing, so if FPS sits at the vsync cap (e.g. 60) while scrolling,
--- the bottleneck is elsewhere (vsync / scroll speed), not the frame budget.
+-- Draw timings are CPU submit time, not GPU. FPS is real pacing, so FPS sitting
+-- at the vsync cap while scrolling means the bottleneck is elsewhere.
 function Game:drawProfiler()
     local f = (self.fonts and self.fonts.small) or love.graphics.getFont()
     love.graphics.setFont(f)
@@ -138,9 +134,8 @@ function Game:setScene(name)
     self.scene = self.scenes[name]
     if self.scene.load then self.scene:load(self) end
     Retro.cancelPress()
-    -- Clicks queued up while a scene transition hitched would otherwise fire
-    -- on the NEW scene (double-clicking a laggy "Gå ut" used to start a whole
-    -- new voyage from the menu). Swallow input for a beat after any switch.
+    -- Clicks queued during a hitched transition would fire on the NEW scene --
+    -- a double-tapped "Gå ut" once started a whole new voyage.
     self._sceneSwitchT = love.timer.getTime()
 end
 
@@ -150,12 +145,10 @@ function Game:reloadScene()
     end
 end
 
--- Start a brand-new playthrough: wipe PROGRESS back to the first state (map
--- re-discovered, gold re-earned, cannon re-bought, treasures re-found) — but
--- NEVER the things that aren't progress: the PAID Kaptein-pakken entitlement,
--- gold-unlocked boats, the boats' names and the boat/map choice. "Spill igjen"
--- must never cost a family their purchase. Used by the win screen.
--- FUTURE: rotate the map here for variety (new WORLD_SEED per finish).
+-- Wipes PROGRESS back to the start -- map, gold, cannon, treasures -- but NEVER
+-- what isn't progress: the paid entitlement, gold-unlocked boats, boat names and
+-- the boat/map choice. "Spill igjen" must never cost a family their purchase.
+-- FUTURE: rotate WORLD_SEED here so each finish gives a different map.
 function Game:newGame()
     local keep = {
         premium       = self.state.premium,
@@ -172,8 +165,7 @@ function Game:newGame()
     end
 end
 
--- Fonts scale via Scale.ui (window-proportional + phone boost); see
--- src/ui/scale.lua for the sizing rule.
+-- sized through Scale.ui; the rule is in src/ui/scale.lua
 function Game:buildFonts()
     local s = Scale.ui(1)
     self.fonts = {
@@ -194,7 +186,7 @@ function Game:loadData()
     }
 end
 
--- F6: re-read the data files from disk without restarting the game.
+-- F6: re-read the data files without restarting
 function Game:reloadData()
     package.loaded["src.data.boats"] = nil
     package.loaded["src.data.maps"]  = nil
@@ -207,9 +199,8 @@ function Game:reloadData()
     self:reloadScene()
 end
 
--- Per-world progress bucket for a map id (default: the selected map).
--- Fog, discovered islands and treasure progress belong to a WORLD, not the
--- player; gold/boats/premium stay global.
+-- Fog, discovered islands and treasure belong to a WORLD, not the player;
+-- gold, boats and premium stay global.
 function Game:mapState(id)
     id = id or self.state.selectedMap or "norge"
     self.state.maps = self.state.maps or {}
@@ -218,23 +209,21 @@ function Game:mapState(id)
         ms = { fog = nil, discoveredIslands = {}, treasuresFound = {}, treasuresMapped = {} }
         self.state.maps[id] = ms
     end
-    -- A bucket that came off disk can be missing its lists entirely: loadSave
-    -- takes `data.maps` wholesale, so a save written by an older build (or one
-    -- hand-edited, or truncated) hands us a table with only some keys. Backfill
-    -- here, in the one place every caller goes through, rather than let the
-    -- first `ipairs(ms.treasuresMapped)` in World:load crash on a nil.
+    -- loadSave takes `data.maps` wholesale, so an older or truncated save hands
+    -- us a bucket with only some keys. Backfill here, the one place every caller
+    -- goes through, rather than crash on a nil list in World:load.
     ms.discoveredIslands = ms.discoveredIslands or {}
     ms.treasuresFound    = ms.treasuresFound    or {}
     ms.treasuresMapped   = ms.treasuresMapped   or {}
     return ms
 end
 
--- The player's name for a boat (falls back to the boat's own).
+-- the player's name for a boat, else the boat's own
 function Game:boatDisplayName(id)
     return (self.state.boatNames and self.state.boatNames[id]) or self:getBoatDef(id).name
 end
 
--- Look up a map definition by id; falls back to the first (free) map.
+-- by id, falling back to the first (free) map
 function Game:getMapDef(id)
     for _, m in ipairs(self.data.maps) do
         if m.id == id then return m end
@@ -242,10 +231,9 @@ function Game:getMapDef(id)
     return self.data.maps[1]
 end
 
--- Install a map as THE world: copy its seed/islands into config's live slots
--- (terrain + treasure read those) and load its ports/ships files. Worldgen is
--- seeded, so the same map always builds the identical world. Called by the map
--- selector before "loading", and at startup for the saved selection.
+-- Installs a map as THE world: its seed and islands go into config's live slots
+-- (terrain and treasure read those) and its ports/ships files load. Worldgen is
+-- seeded, so a map always builds the identical world.
 function Game:applyMap(id)
     local m = self:getMapDef(id)
     if m.comingSoon then m = self.data.maps[1] end
@@ -258,7 +246,7 @@ function Game:applyMap(id)
     return m
 end
 
--- Look up a boat definition by id; falls back to the first boat.
+-- by id, falling back to the first boat
 function Game:getBoatDef(id)
     for _, b in ipairs(self.data.boats) do
         if b.id == id then return b end
@@ -266,42 +254,35 @@ function Game:getBoatDef(id)
     return self.data.boats[1]
 end
 
--- Has the player bought the single premium pack (Kaptein-pakken)?
--- Development always owns it (no clicking through the pretend purchase):
--- either dev env vars (BATSIM/BATDEV) or running UNFUSED — i.e. `love .`
--- straight from the source tree. Shipped builds (iOS app, Mac dmg) are fused,
--- so they are never affected. Runtime-only; nothing is written to the save.
+-- Development always owns the pack, so nobody clicks through a pretend purchase
+-- every run: dev env vars, or running UNFUSED from the source tree. Shipped
+-- builds are fused, so they're never affected. Nothing is written to the save.
 function Game:isPremium()
     if config.DEV then return true end
     if love.filesystem.isFused and not love.filesystem.isFused() then return true end
     return self.state.premium == true
 end
 
--- Do we own this boat? Free boats always; premium boats are all unlocked together
--- by the one pack -- never bought individually.
--- Own a boat when it's free, or premium with the pack bought. Gold NEVER buys
--- boats — boats are the Kaptein-pakken's whole value (per Torbjørn).
+-- Free boats always; premium boats unlock together with the one pack, never
+-- individually. Gold NEVER buys boats -- they are the pack's whole value.
 function Game:ownsBoat(id)
     local def = self:getBoatDef(id)
     if not def.premium then return true end
     return self:isPremium()
 end
 
--- Unlock the whole premium pack. PRETEND purchase for now (just flips the flag).
--- TODO(IAP): replace with a real App Store / Google Play non-consumable purchase
--- (and a "restore purchases"); call this only once the OS confirms it. Everything
--- premium already keys off Game:isPremium(), so one unlock opens it all.
+-- Call only once the store confirms. Everything premium keys off isPremium(),
+-- so one unlock opens it all.
 function Game:unlockPremium()
     self.state.premium = true
     self:save()
 end
 
--- Load the save, falling back to the .bak when the main file is corrupt
--- (an iOS app kill mid-write truncates it — the backup means "lose a few
--- seconds", never "lose the child's whole world").
--- Validate a string as UTF-8; if invalid, re-encode it as Latin-1 -> UTF-8
--- (the one corruption our old JSON decoder produced). Pure Lua: also runs
--- under plain luajit in the tests.
+-- Loads the save, falling back to the .bak when the main file is corrupt: an
+-- iOS kill mid-write truncates it, and the backup makes that cost seconds
+-- rather than the child's whole world.
+-- Strings are validated as UTF-8 and re-encoded from Latin-1 when not -- the one
+-- corruption the old JSON decoder produced. Pure Lua, so the tests can run it.
 function Game.repairUtf8(s)
     if type(s) ~= "string" then return s end
     local i, n, valid = 1, #s, true
@@ -356,7 +337,7 @@ function Game:loadSave()
     end
     do
         if type(data) == "table" then
-            -- Merge defensively so an old/partial save still loads.
+            -- merge defensively so an old or partial save still loads
             self.state.coins = data.coins or self.state.coins
             self.state.unlockedBoats = data.unlockedBoats or self.state.unlockedBoats
             self.state.maps = data.maps or self.state.maps
@@ -364,16 +345,15 @@ function Game:loadSave()
             self.state.food = data.food or self.state.food
             self.state.ammo = data.ammo or self.state.ammo
             self.state.cannons = data.cannons or self.state.cannons
-            -- Saves from before cannonballs/multi-cannon: a cannon owner starts
-            -- fully loaded, with that one cannon counted.
+            -- pre-ammo saves: a cannon owner starts loaded, that cannon counted
             if data.ammo == nil and data.owned and data.owned.cannon then
                 self.state.ammo = config.CANNON.START_AMMO
             end
             if data.cannons == nil and data.owned and data.owned.cannon then
                 self.state.cannons = 1
             end
-            -- Pre-maps saves kept world progress at the top level: it all
-            -- belonged to the one world that existed — Norge.
+            -- pre-maps saves kept world progress at the top level; it all
+            -- belonged to Norge, the only world there was
             if not data.maps and (data.fog or data.discoveredIslands
                     or data.treasuresFound or data.treasuresMapped) then
                 local ms = self:mapState(data.selectedMap or "norge")
@@ -384,15 +364,13 @@ function Game:loadSave()
             end
             self.state.selectedBoat = data.selectedBoat or self.state.selectedBoat
             self.state.selectedMap = data.selectedMap or self.state.selectedMap
-            -- Names are per boat; old saves had ONE boatName — it belonged to
-            -- the boat that was selected at the time.
+            -- old saves had ONE boatName: it belonged to the selected boat
             self.state.boatNames = data.boatNames or self.state.boatNames
             if data.boatName and not data.boatNames then
                 self.state.boatNames[self.state.selectedBoat] = data.boatName
             end
-            -- Repair names saved by the old \uXXXX decoder, which wrote
-            -- Latin-1 bytes ("T\xF8ffe") -- invalid UTF-8 that crashes text
-            -- drawing the moment the name is shown.
+            -- repair names from the old decoder, which wrote Latin-1 bytes --
+            -- invalid UTF-8 that crashes text drawing when the name is shown
             for id, nm in pairs(self.state.boatNames) do
                 self.state.boatNames[id] = Game.repairUtf8(nm)
             end
@@ -402,10 +380,9 @@ function Game:loadSave()
     end
 end
 
--- Save with backup rotation: keep the previous good save as .bak BEFORE
--- overwriting the real file, so a write interrupted by an app kill can always
--- be recovered by loadSave. (love.filesystem has no atomic rename; this is
--- the next-best guarantee.)
+-- The previous good save is rotated to .bak BEFORE the real file is
+-- overwritten, so a write killed mid-flight is recoverable. love.filesystem has
+-- no atomic rename; this is the next best thing.
 function Game:save()
     local ok, encoded = pcall(json.encode, self.state)
     if not ok then return end
@@ -422,8 +399,7 @@ function Game:addCoins(n)
     self:save()
 end
 
--- Shop ownership: owns() checks a purchase, buyUpgrade() spends gold to acquire
--- one (only if you can afford it). Both persist via the save.
+-- owns() checks a purchase, buyUpgrade() spends gold if you can afford it
 function Game:owns(id)
     return self.state.owned and self.state.owned[id] == true
 end
@@ -437,7 +413,7 @@ function Game:buyUpgrade(id, price)
     return true
 end
 
--- Food provisions: bought repeatedly (a stock count), eaten on voyages.
+-- bought repeatedly as a stock count, eaten on voyages
 function Game:foodCount(id)
     return (self.state.food and self.state.food[id]) or 0
 end
@@ -451,9 +427,8 @@ function Game:buyFood(id, price)
     return true
 end
 
--- Cannons: the first purchase unlocks the auto-cannon (owned.cannon, which all
--- the gating checks keep using); every further cannon fires the battery a bit
--- faster (config.CANNON.EXTRA_RATE per extra, capped at MAX_RATE).
+-- The first purchase unlocks the auto-cannon (owned.cannon, which every gating
+-- check still reads); each further one speeds the battery up.
 function Game:cannonCount()
     return self.state.cannons or (self:owns("cannon") and 1 or 0)
 end
@@ -474,8 +449,7 @@ function Game:buyCannon(price)
     return true
 end
 
--- Cannonballs: a stock like food, but spent by the auto-cannon (one per shot).
--- Buy packs in the Butikk; each cannon comes with a starting stock.
+-- a stock like food, spent one per shot; each cannon ships with a starting one
 function Game:ammoCount()
     return self.state.ammo or 0
 end
@@ -492,11 +466,11 @@ function Game:buyAmmo(price, n)
     return true
 end
 
--- Spend one ball; false when the locker is empty (the cannon stays quiet).
+-- false when the locker is empty, and the cannon stays quiet
 function Game:useAmmo()
     if (self.state.ammo or 0) <= 0 then return false end
     self.state.ammo = self.state.ammo - 1
-    -- No save() here: the auto-cannon fires ~1/s in a fight and re-encoding
+    -- No save() here: the cannon fires ~1/s in a fight and re-encoding
     -- the whole state (fog blob included) each shot caused combat hitches.
     -- The count rides along on the next natural save (delivery, dock, blur).
     return true

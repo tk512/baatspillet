@@ -1,12 +1,6 @@
--- src/entities/dolphins.lua
--- A little pod of dolphins that comes to play when the boat sails fast: they
--- porpoise alongside in staggered arcs, splashing as they enter and leave the
--- water, then peel off and dive after a while. Pure joy, no interaction -- they
--- never block or bump the boat, and they only show on open water. Everything is
--- code-drawn (crescent body + dorsal fin + belly), so no art is needed; drop
--- Finn-Erik's voice at assets/voice/delfiner.ogg and it plays when they arrive.
--- Movement lives in the flat ground plane; the world depth-sorts the pod like
--- the boat and shark. Tuning in config.DOLPHINS.
+-- A pod that porpoises alongside when the boat holds speed on open water, then
+-- dives away. No interaction: they never block or bump. Code-drawn; voice hook
+-- assets/voice/delfiner.ogg. Tuning in config.DOLPHINS.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -40,14 +34,14 @@ end
 
 function Dolphins:isVisible() return self.playing end
 
--- Anchor point for the world's depth sort (the pod swims beside the boat).
+-- anchor for the world's depth sort
 function Dolphins:depthPos()
     local m = self.members[1]
     return m.x, m.y
 end
 
 function Dolphins:update(dt, boat, terrain)
-    -- age the little splashes regardless of state
+    -- splashes age regardless of state
     for i = #self.ripples, 1, -1 do
         local r = self.ripples[i]
         r.t = r.t + dt
@@ -58,7 +52,7 @@ function Dolphins:update(dt, boat, terrain)
     if not self.playing then
         self.cooldown = math.max(0, self.cooldown - dt)
         self.fastT = fast and (self.fastT + dt) or 0
-        -- they join once you've held full sail for a moment, on open water
+        -- join after a moment at full sail, on open water
         if self.cooldown <= 0 and self.fastT > 1.5
             and terrain:isWater(boat.x + math.cos(boat.angle + 1.57) * D.SIDE,
                                 boat.y + math.sin(boat.angle + 1.57) * D.SIDE) then
@@ -73,7 +67,6 @@ function Dolphins:update(dt, boat, terrain)
         return
     end
 
-    -- playing: ride along beside the boat
     self.playT = self.playT - dt
     self.slowT = (boat.speed < boat.maxSpeed * 0.3) and (self.slowT + dt) or 0
     if self.playT <= 0 or self.slowT > 2.5 then     -- bored, or you stopped: dive away
@@ -92,14 +85,13 @@ function Dolphins:update(dt, boat, terrain)
 
         m.phase = m.phase + dt / D.PERIOD
         local u = m.phase % 1
-        -- first AIR_FRAC of the cycle is the leap; the rest is a glide below
+        -- first part of the cycle is the leap, the rest a glide below
         local wasUp = m.up
         m.up = m.water and u < 0.55
         m.z = m.up and math.sin((u / 0.55) * math.pi) * D.JUMP_H or 0
         m.u = u
 
-        -- splash + a soft "blub" where it breaks the surface (leader only, so
-        -- three dolphins don't turn into a drum machine)
+        -- leader only, or three dolphins become a drum machine
         if m.up ~= wasUp and m.water then
             self.ripples[#self.ripples + 1] = { x = m.x, y = m.y, t = 0 }
             if i == 1 and m.up then
@@ -109,10 +101,8 @@ function Dolphins:update(dt, boat, terrain)
     end
 end
 
--- One dolphin body, drawn in screen space: dark back, pale belly, dorsal fin.
--- `pitch` tips the nose up on the way out of the water and down on re-entry;
--- `flip` mirrors it to face the way the pod is moving on screen. Exported so
--- the title screen can send a pod across its sea band too.
+-- Screen-space body. `pitch` tips the nose out of and back into the water,
+-- `flip` mirrors it to face the pod's screen direction. Exported for the title.
 function Dolphins.drawBody(sx, sy, s, pitch, flip)
     love.graphics.push()
     love.graphics.translate(sx, sy)
@@ -142,11 +132,9 @@ function Dolphins:draw()
         if m.up and m.z > 0.5 then
             local sx, sy = Iso.project(m.x, m.y, m.z)
             local gx, gy = Iso.project(m.x, m.y, 0)
-            -- which way is it travelling on screen? (same trick as the boat)
             local vsx = self.flip or 1
-            -- pitch: nose up leaving the water, level at the top, down going in
             local pitch = (m.u / 0.55 - 0.5) * 1.5
-            love.graphics.setColor(0, 0, 0, 0.14)                -- shadow on the sea
+            love.graphics.setColor(0, 0, 0, 0.14)                -- shadow
             love.graphics.ellipse("fill", gx, gy + 2, 14, 5)
             Dolphins.drawBody(sx, sy, 1.15, pitch, vsx)
         end

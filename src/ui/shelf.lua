@@ -1,24 +1,8 @@
--- src/ui/shelf.lua
--- THE "what do I have" surface. One compact plaque on the left edge holding
--- everything the player possesses, in ONE visual grammar: a sunken slot with an
--- icon in it, and a count badge when there's more than one.
---
--- The rule this enforces, and the reason the module exists:
---
---   HAVE  -> the shelf (gold, cargo aboard, gear, treasures)
---   DO    -> the mission banner, the gold arrow, the treasure arrow
---
--- Before this, possessions were spread over four different grammars (a text
--- "Kjøpt:" grid, a "Skatter" slot bar, the mission banner's ×N, and icons drawn
--- on the boat itself) and the counts were written three different ways. A child
--- who cannot read had to learn each one separately. Now he learns a slot once.
---
--- Sections are separated by a thin rule and carry NO text headers -- the player
--- can't read them. Order is most-changing first: gold, then what's aboard, then
--- gear, then the treasure tally.
---
--- Nothing is ever drawn on top of the boat: the boat is the thing the child is
--- steering and it must stay clean and legible.
+-- The "what do I have" surface: one plaque on the left holding everything the
+-- player owns, in ONE grammar -- a sunken slot with an icon and an xN badge.
+-- This is the HAVE side of the HUD split (see CLAUDE.md, "HAVE vs DO").
+-- Sections are split by a thin rule with NO text headers, since the player
+-- can't read them, and run most-changing first: gold, cargo, gear, treasure.
 
 local config = require("src.config")
 local Retro = require("src.ui.retro")
@@ -30,8 +14,7 @@ local WOOD = Retro.WOOD
 
 Shelf.PER_ROW = 4        -- slots before wrapping (keeps the plaque narrow)
 
--- The two pieces every slot shares, so the plain slot and the progress slot
--- can't drift apart in look.
+-- shared by both slot kinds, so they can't drift apart in look
 local function well(x, y, s, t)
     local st = math.max(1, math.floor(t * 0.5))
     Retro.bevel(x, y, s, s, WOOD.deep, WOOD.hi, WOOD.lo, st, false)
@@ -48,34 +31,21 @@ local function badge(x, y, s, st, lbl, font)
     love.graphics.print(lbl, bx, by)
 end
 
--- One slot: sunken well, optional icon, optional "xN" badge.
+-- sunken well, optional icon, optional xN badge
 function Shelf.slot(x, y, s, icon, count, font, t)
     local st = well(x, y, s, t)
     if icon then Icons.draw(icon, x + s * 0.5, y + s * 0.5, s * 0.84) end
     if count and count > 1 then badge(x, y, s, st, "x" .. count, font) end
 end
 
--- THE TREASURE TALLY: ONE well that fills with gold from the bottom as chests
--- are dug up, in place of one well per chest.
---
--- Why one well and not four: four wells cost four slots of the panel that is
--- already the largest object on an iPhone, and they say the same thing a rising
--- gold line says in one.
---
--- Why a FILL and not just the "2/4": Finn-Erik cannot read, least of all a
--- fraction. The gold height IS the message -- more gold, more treasure, no
--- literacy required. The numerals ride along for the grown-up looking over his
--- shoulder, and must never be the only signal.
---
--- Static on purpose (no tween): the moment a chest is found is already
--- celebrated loudly -- coin burst, sticker, album -- and an animation here would
--- need update-loop state inside a panel whose contents are signature-cached.
--- `frac` and `label` are computed once in Shelf.build, not per frame.
+-- The treasure tally: ONE well filling with gold from the bottom, not one well
+-- per chest. The gold HEIGHT is the message -- he can't read a fraction, so the
+-- numerals ride along for the grown-up and must never be the only signal.
+-- Static on purpose: `frac` and `label` come from Shelf.build, not per frame.
 function Shelf.progressSlot(x, y, s, icon, frac, label, font, t)
     local st = well(x, y, s, t)
-    -- The fill is a PLAIN RECTANGLE anchored to the bottom of the well. The well
-    -- is a rectangle, so there is nothing to clip: no stencil (which would cost
-    -- an extra pass and break batching on a panel drawn every frame), no scissor.
+    -- plain rectangle anchored to the well's bottom: the well is a rectangle,
+    -- so there's nothing to clip -- no stencil pass, no scissor
     local inner = s - st * 2
     local fh = math.floor(inner * math.max(0, math.min(1, frac)))
     if fh > 0 then
@@ -87,8 +57,7 @@ function Shelf.progressSlot(x, y, s, icon, frac, label, font, t)
     if label then badge(x, y, s, st, label, font) end
 end
 
--- The ONE place that decides which kind of slot a section draws, so the two
--- layouts below can't disagree about it.
+-- the one place deciding a section's slot kind, so the layouts can't disagree
 function Shelf.drawEntry(sec, e, x, y, s, font, t)
     if sec.progress then
         Shelf.progressSlot(x, y, s, e.icon, e.frac, e.label, font, t)
@@ -97,11 +66,10 @@ function Shelf.drawEntry(sec, e, x, y, s, font, t)
     end
 end
 
--- How much room a section needs, IN ITS OWN SLOT SIZE. One definition, read by
--- both layouts below. The phone flow and the desktop column each used to
--- re-derive this, and had to agree numerically or the plaque drew at the wrong
--- size on one device class. Multiple returns, not a table: this runs per
--- section per frame.
+-- Room a section needs, in its own slot size. One definition for both layouts:
+-- when the phone flow and the desktop column each derived it, they had to agree
+-- numerically or the plaque drew wrong on one device class. Multiple returns,
+-- not a table -- this runs per section per frame.
 local function sectionExtent(sec, gapi, perRow)
     local n = #sec
     if n == 0 then return 0, 0 end
@@ -111,23 +79,19 @@ local function sectionExtent(sec, gapi, perRow)
     return cols * s + (cols - 1) * gapi, rows * s + (rows - 1) * gapi
 end
 
--- Rebuild the section list only when something behind it actually changed.
--- Building tables every frame is steady garbage for the GC (micro-stutter while
--- sailing), so the slot entries are pooled and reused in place.
--- Mixed with a modulo, NOT a bare running product. A plain `sig = sig * k + v`
--- chain overflows the 53 bits a double holds exactly once there are a dozen-odd
--- inputs (shop items alone contribute k^7), and past that the EARLIEST inputs
--- are the ones that fall off the end -- so a change in gold, which is mixed
--- first, could stop invalidating the cache at all. Staying under 2^31 keeps
--- every mix exact.
+-- Rebuilds only when something behind it changed; entries are pooled, since
+-- building tables per frame is steady GC garbage and micro-stutter.
+-- Mixed with a MODULO, not a running product: a plain `sig = sig * k + v` chain
+-- overflows a double's 53 exact bits after a dozen inputs, and it's the
+-- EARLIEST ones that fall off -- gold is mixed first, so it would stop
+-- invalidating the cache at all. Under 2^31 every mix stays exact.
 local function mix(h, v)
     return (h * 31 + v) % 2147483647
 end
 
--- EVERY input the build below reads must be mixed in here. A field that build
--- branches on but signature ignores means the shelf silently keeps drawing a
--- stale layout until some unrelated change happens to bump the number --
--- intermittent, and impossible to reproduce on purpose. See tests/shelf.lua.
+-- EVERY input the build reads must be mixed in here. One that build branches on
+-- but this ignores leaves the shelf stale until something unrelated bumps the
+-- number: intermittent and unreproducible. See tests/shelf.lua.
 local function signature(world)
     local game = world.game
     local sig = mix(0, game.state.coins)
@@ -140,8 +104,7 @@ local function signature(world)
             or (it.stack and game:cannonCount()) or (game:owns(it.id) and 1) or 0
         sig = mix(sig, n)
     end
-    -- the treasure tally's two inputs: whether the hunt has been introduced at
-    -- all, and how many chests are dug up
+    -- the tally's two inputs: hunt introduced at all, and chests dug up
     sig = mix(sig, world.huntSeen and 1 or 0)
     if world.treasures then
         for _, tr in ipairs(world.treasures) do sig = mix(sig, tr.found and 1 or 0) end
@@ -149,7 +112,7 @@ local function signature(world)
     return sig
 end
 
--- A pooled slot entry, so a rebuild allocates nothing after the first time.
+-- pooled, so a rebuild allocates nothing after the first
 local function push(sec, pool, icon, count)
     local n = #sec + 1
     local e = pool[n]
@@ -163,10 +126,8 @@ function Shelf.build(world)
     local sh = world._shelf
     if not sh then
         sh = { cargo = {}, gear = {}, treas = {}, pools = { {}, {}, {} } }
-        -- `progress` marks the section that draws with Shelf.progressSlot and
-        -- `slot` its own slot size -- per-section rather than one size for the
-        -- whole shelf, because the treasure tally is the only TAPPABLE slot and
-        -- has to meet the touch minimum (see Shelf.draw).
+        -- slot size is per-section, not global: the tally is the only TAPPABLE
+        -- slot and has to meet the touch minimum
         sh.treas.progress = true
         world._shelf = sh
     end
@@ -176,9 +137,8 @@ function Shelf.build(world)
 
     local game = world.game
 
-    -- NOTE: there is deliberately no treasure-MAP slot here. While a hunt is on,
-    -- the chest marker hovers over the boat for exactly as long as it lasts
-    -- (World:drawTreasurePointer), so a map icon in the shelf would say the same
+    -- No treasure-MAP slot on purpose: the chest marker hovers over the boat
+    -- for exactly as long as the hunt lasts, so a map icon would say the same
     -- thing twice and cost a slot on the panel we're trying to keep small.
 
     -- Ombord: one slot per job aboard, its own count. This is what replaces

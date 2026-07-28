@@ -1,18 +1,14 @@
--- Port definitions. (x, y) is the intended spot; the terrain engine snaps each
--- port to the nearest coast and flattens under it, so just place them roughly
--- next to an island. Add a town by copying a block.
+-- Port definitions. (x, y) is a rough intent -- terrain snaps each port to the
+-- nearest coast and flattens under it. Add a town by copying a block.
 --
--- Fields:
 --   id        unique lowercase string (also the photo/voice/portrait filename)
 --   name      shown in UI (Norwegian)
 --   x, y      approximate location (snapped to a coast)
 --   color     {r,g,b} accent for the roof + destination flag
 --   size      city size: tiny / small / medium / large (see config.CITY_SIZES)
---   master    optional harbour master's name, shown as "Havnesjef <master>".
---             A LIST of names -- { "Solveig", "Frida" } -- turns the title
---             plural: "Havnesjefer Solveig og Frida". Either way the portrait
---             is assets/ports/portraits/<id>.png (one photo of all of them).
---             Omit for a plain "Havnesjef".
+--   master    harbour master's name -> "Havnesjef <master>"; a LIST turns it
+--             plural, "Havnesjefer Solveig og Frida". Portrait either way is
+--             assets/ports/portraits/<id>.png. Omit for a plain "Havnesjef".
 --   produces  what this town sends:
 --               { mode = "passengers", label = "Passasjerer", icon = "passenger" }
 --               { mode = "cargo",      label = "Fisk",        icon = "fish" }

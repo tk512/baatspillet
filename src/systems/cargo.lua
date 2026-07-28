@@ -1,35 +1,27 @@
--- src/systems/cargo.lua
--- The little economy that drives the gameplay loop:
---   each port OFFERS a cargo bound for another port. The boat picks it up,
---   sails to the destination, and delivers it for GOLD.
---
--- Kept deliberately simple and forgiving: there is no timer, no failure
--- state, and the boat can carry several jobs at once (up to its capacity).
+-- The delivery loop: a port offers a cargo bound for another port, the boat
+-- carries it there for gold. No timer, no failure, several jobs at once.
 
 local CargoSystem = {}
 CargoSystem.__index = CargoSystem
 
--- ports is the list of Port entities created by world.lua.
 function CargoSystem.new(ports)
     local self = setmetatable({}, CargoSystem)
     self.ports = ports
-    self.offers = {}        -- portId -> offer table (or nil if none right now)
+    self.offers = {}        -- portId -> offer, or nil if none right now
     for _, p in ipairs(ports) do
         self.offers[p.id] = self:makeOffer(p)
     end
     return self
 end
 
--- Build a new delivery job that starts at `port` and ends at another port.
 function CargoSystem:makeOffer(port)
     if #self.ports < 2 then return nil end
-    -- pick a random destination that isn't this port
     local dest
     repeat
         dest = self.ports[love.math.random(#self.ports)]
     until dest.id ~= port.id
 
-    -- What this town sends. `produces` is preferred; fall back to old `cargo`.
+    -- what the town sends; `produces` wins, old `cargo` is the fallback
     local prod = port.def.produces
     if not prod then
         local c = port.def.cargo or { label = "Last", icon = "box" }
@@ -42,20 +34,18 @@ function CargoSystem:makeOffer(port)
 
     local offer = {
         mode   = prod.mode,            -- "passengers" | "cargo"
-        type   = prod.label,           -- shown in HUD / screen
-        icon   = prod.icon,            -- passenger / fish / apple / flower / box
+        type   = prod.label,
+        icon   = prod.icon,
         count  = count,
         fromId = port.id,
         toId   = dest.id,
         toName = dest.name,
-        color  = dest.color,           -- destination's accent color (for the flag)
+        color  = dest.color,           -- destination accent, used for the flag
         reward = reward,
     }
 
-    -- Passengers are real little people: pick a specific action-figure for each
-    -- one (passenger1..4 -> assets/icons/passengerN.png). `figures` is the per-
-    -- person list (shown at the harbour); `icon` becomes one of them so the HUD's
-    -- single-icon mission banner shows a real passenger too.
+    -- Passengers are individuals: one action figure each, and `icon` becomes one
+    -- of them so the single-icon mission banner shows a real passenger too.
     if prod.mode == "passengers" then
         offer.figures = {}
         for i = 1, count do
@@ -71,20 +61,18 @@ function CargoSystem:offerAt(portId)
     return self.offers[portId]
 end
 
--- Try to load this port's offered cargo onto the boat.
--- Returns the picked-up offer, or nil (no offer / boat full).
+-- Returns the picked-up offer, or nil if there is none or the boat is full.
 function CargoSystem:tryPickup(boat, port)
     local offer = self.offers[port.id]
     if not offer then return nil end
     if not boat:hasRoom() then return nil end
 
     boat.cargo[#boat.cargo + 1] = offer
-    self.offers[port.id] = self:makeOffer(port)  -- port restocks immediately
+    self.offers[port.id] = self:makeOffer(port)  -- restocks immediately
     return offer
 end
 
--- Deliver any cargo aboard that is destined for this port.
--- Returns total gold earned and the number of items delivered.
+-- Delivers everything aboard bound for this port. Returns gold, item count.
 function CargoSystem:tryDeliver(boat, port)
     local earned, count = 0, 0
     local kept = {}

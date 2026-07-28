@@ -19,3 +19,5 @@ save/
 __pycache__/
 *.pyc
 engine/build
+
+docs/

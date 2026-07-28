@@ -1,8 +1,6 @@
--- src/entities/port.lua
--- A harbour the boat visits to load / deliver cargo. It's a multi-tile object;
--- terrain snaps it to a coastline, flattens the ground under it, and tells it
--- which way the open sea is (seaDx, seaDy) so the dock faces the water.
--- Drop in assets/ports/<id>.png to replace the placeholder art.
+-- A harbour: a multi-tile object that terrain snaps to a coastline, flattens
+-- under, and hands a sea direction (seaDx, seaDy) so the dock faces the water.
+-- The town itself is code-drawn and stays that way (see CLAUDE.md).
 
 local config  = require("src.config")
 local Iso     = require("src.systems.iso")
@@ -29,7 +27,7 @@ function Port.new(def)
     return self
 end
 
--- Called by terrain after it snaps the port to a coast + flattens the site.
+-- called by terrain once the port is snapped and the site flattened
 function Port:placeAt(tx, ty, cx, cy, buildZ, seaDx, seaDy)
     self.tx, self.ty = tx, ty
     self.x, self.y = cx, cy
@@ -39,20 +37,19 @@ end
 
 function Port:update(dt) self.bob = self.bob + dt end
 
--- The spot the boat pulls up to: out in the water in front of the harbour
--- (the buildings sit on unreachable land). Pushed past the flattened footprint
--- so it lands on sailable water.
+-- Where the boat pulls up: water in front of the harbour, past the flattened
+-- footprint so it's sailable.
 function Port:dockPoint()
     if self.dockX then return self.dockX, self.dockY end   -- set by terrain (shoreline water)
     local d = Port.FOOTPRINT * config.TILE * 0.5 + 40       -- fallback
     return self.x + self.seaDx * d, self.y + self.seaDy * d
 end
 
--- Where the boat parks: sea-ward of the dock point, beside the pier. The boat
--- glides here before the docking screen opens.
+-- Where the boat parks before the docking screen opens: seaward of the dock
+-- point, beside the pier.
 function Port:berth()
     local dpx, dpy = self:dockPoint()
-    -- 52 (was 34): parked beside the pier tip, not visually ON the planks
+    -- beside the pier tip, not visually on the planks
     return dpx + self.seaDx * 52, dpy + self.seaDy * 52
 end
 
@@ -71,8 +68,7 @@ function Port:toObject()
     }
 end
 
--- The pier as a separate object so it depth-sorts with the boat (and so the
--- dock art can be swapped via assets/ports/dock.png). Sits at the dock-point tile.
+-- A separate object so it depth-sorts with the boat. Sits at the dock tile.
 function Port:toDockObject()
     local T = config.TILE
     local dpx, dpy = self:dockPoint()
@@ -80,10 +76,8 @@ function Port:toDockObject()
         tx = math.floor(dpx / T) + 1, ty = math.floor(dpy / T) + 1, w = 1, h = 1, z = 0,
         sprite = "ports/dock.png",
         data = self,
-        -- Depth-sort the jetty by its SHORE end, not the seaward tip: the boat
-        -- berths right at the tip, and sorting by the tip painted the pier
-        -- over the boat ("the boat slides under the bryggen"). Anchored at the
-        -- shore, the berthed boat draws on top, as it should.
+        -- Sort by the SHORE end, not the tip: the boat berths at the tip, and
+        -- sorting there paints the pier over the boat.
         depth = Iso.depth(dpx - self.seaDx * T, dpy - self.seaDy * T),
         draw = function(_, g) self:drawDock() end,
     }
@@ -98,8 +92,8 @@ function Port:drawDock()
     local px, py   = -sdy, sdx                      -- along the shore
     local len, hw, deckZ = T * 1.5, T * 0.16, 9    -- reach, half-width, deck height
 
-    -- point at distance s along the sea axis (0 = dock point, negative = shoreward)
-    -- and offset w across the shore axis, at height z.
+    -- point at distance s along the sea axis (0 = dock, negative = shoreward),
+    -- offset w across the shore axis, at height z
     local function P(s, w, z)
         return Iso.project(dpx + sdx * s + px * w, dpy + sdy * s + py * w, z)
     end
@@ -198,10 +192,8 @@ function Port:drawCrane(gx, gy, z)
     love.graphics.rectangle("fill", tx + 26, ty + 22, 8, 6)  -- hook block
 end
 
--- Own font cache so the label never inherits whatever font was last set globally
--- (the dock/shop screens leave a big title font active; without this the name
--- flashes huge for a frame on entering/leaving a harbour). Sized to the screen so
--- it stays consistent on any resolution.
+-- Own font cache: the dock/shop screens leave a big title font active, and
+-- without this the name flashes huge for a frame on entering a harbour.
 local labelFontCache = {}
 local function labelFont()
     local px = math.max(10, math.floor(13 * love.graphics.getHeight() / 800))

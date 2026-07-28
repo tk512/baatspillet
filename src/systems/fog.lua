@@ -1,12 +1,7 @@
--- src/systems/fog.lua
--- Fog of war / exploration. The world starts as dark "unknown" cells; sailing
--- near a cell reveals it permanently (the reveal grid is saved), so uncovering
--- the map is a surprise. Coarse cells (config.FOG_CELL) keep it cheap to store
--- and give a chunky, Civ-like reveal.
---
--- Persistence format (game.state.fog):
---   { w=<cols>, h=<rows>, cell=<px>, rows = { "010..", "110..", ... } }
--- one string per column, one char ('0'/'1') per row.
+-- Fog of war. Sailing near a coarse cell (config.FOG_CELL) reveals it for good;
+-- the grid is saved, so uncovering the map persists.
+-- Saved as game.state.fog = { w, h, cell, rows = { "010..", ... } } -- one
+-- string per column, one char per row.
 
 local config = require("src.config")
 
@@ -21,7 +16,7 @@ function Fog.new(saved)
     self.grid = {}
     for cx = 0, self.w - 1 do self.grid[cx] = {} end
 
-    -- Restore a saved reveal grid if it matches the current world dimensions.
+    -- restore only if the saved grid matches the current world dimensions
     if type(saved) == "table" and saved.w == self.w and saved.h == self.h
        and type(saved.rows) == "table" then
         for cx = 0, self.w - 1 do
@@ -49,8 +44,8 @@ function Fog:pointRevealed(x, y)
     return self.grid[cx][cy] == true
 end
 
--- Reveal every cell whose center is within `radius` of (x, y). Returns true if
--- at least one NEW cell was lit (so the caller knows to re-save).
+-- Reveals every cell centred within `radius`. True if any NEW cell lit, so the
+-- caller knows to re-save.
 function Fog:revealAround(x, y, radius)
     local new = false
     local r = math.ceil(radius / self.cell)

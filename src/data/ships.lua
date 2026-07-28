@@ -1,32 +1,16 @@
--- src/data/ships.lua
--- Real boats (photographed, stylized by tools/make_ships.py) that sail the sea as
--- ambient traffic. Click one in-game for a little MarineTraffic-style popup.
---
---   photo    basename in assets/ships_photos/<photo>.png (bow pointing right)
---   name     display name
---   country  Norwegian country name (drives the flag in src/ui/shipinfo.lua)
---   type     Norwegian vessel type, e.g. "Passasjerskip", "Lasteskip", "Ferje"
---   scale    OPTIONAL size multiplier (default 1). A given boat always renders at
---            this one size everywhere -- use it to make a small ferry smaller than
---            a big cruise ship (e.g. scale = 0.7). Different boats = different sizes;
---            the SAME boat is never shown bigger in one spot than another.
---   cruise   OPTIONAL true = the boat sails slowly in a straight line instead of
---            lying at anchor; when land (or the world edge) blocks the way it
---            turns around and sails back the other way.
---   home     OPTIONAL port id (see ports.lua): the boat runs a little ferry
---            route around that harbour -- a stop just off the pier, a stop on
---            another part of the island, pausing at each (Beffen at Bergen).
---   visits   OPTIONAL list of port ids: every so often the boat steers to an
---            anchorage off one of these cities, lies still a while, then sails
---            on (the big liners calling at Bergen/Oslo).
---   submarine OPTIONAL true = a submarine: it cruises DEEP (invisible, not
---            solid, not clickable) and only now and then rises through the
---            waterline with a "blubb" + bubbles, runs surfaced a while, then
---            sinks away again. Timings in config.SUBMARINE.
---
--- Add a boat: make a "<Name> - <Country> - sprite.png" (background removed),
--- run tools/make_ships.py, paste its stub here and fill in `type` (and `scale`).
--- Safe to edit by non-coders; F6 reloads it.
+-- Ambient traffic: real boats, photographed and stylized by tools/make_ships.py.
+-- Tap one in-game for a MarineTraffic-style popup. Safe to edit; F6 reloads.
+--   photo      basename in assets/ships_photos/<photo>.png, bow pointing right
+--   name       display name
+--   country    Norwegian country name, drives the flag in src/ui/shipinfo.lua
+--   type       Norwegian vessel type ("Passasjerskip", "Lasteskip", "Ferje"…)
+--   scale      size multiplier (default 1); one boat is always the same size
+--   cruise     sails a straight line, turning at land, instead of lying at anchor
+--   home       port id: runs a two-stop ferry route around that harbour
+--   visits     port ids: calls at an anchorage off each now and then
+--   submarine  cruises invisible and unclickable, surfacing now and then
+-- Add a boat: make "<Name> - <Country> - sprite.png" (background removed), run
+-- tools/make_ships.py, paste its stub here, fill in `type` and `scale`.
 
 return {
     { photo = "aidaluna", name = "Aidaluna", country = "Tyskland", type = "Passasjerskip", cruise = true, visits = { "bergen", "oslo" } },
@@ -37,7 +21,6 @@ return {
     { photo = "hurtigruten_nordlys", name = "MS Nordlys", country = "Norge", type = "Hurtigruteskip", cruise = true, visits = { "bergen", "oslo" } },
     { photo = "rem_inspektor", name = "Rem Inspektør", country = "Norge", type = "Arbeidsskip", cruise = true },
     { photo = "norsk_ubat", name = "Norsk ubåt", country = "Norge", type = "Ubåt", cruise = true, submarine = true },
-    -- The police boat: hangs around Hjellestad, drifting slowly (leash, no
-    -- ferry route — its photo only reads well in one direction).
-    { photo = "hjellestad_politikammer", name = "Hjellestad Politikammer", country = "Norge", type = "Politibåt", scale = 0.9, cruise = true, home = "hjellestad", speed = 10, leashOnly = true, heading = -math.pi / 2 },  -- drifts screen-northeast
+    -- leashed, no ferry route: the photo only reads well in one direction
+    { photo = "hjellestad_politikammer", name = "Hjellestad Politikammer", country = "Norge", type = "Politibåt", scale = 0.9, cruise = true, home = "hjellestad", speed = 10, leashOnly = true, heading = -math.pi / 2 },
 }

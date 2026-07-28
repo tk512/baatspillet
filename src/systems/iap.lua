@@ -1,29 +1,19 @@
--- src/systems/iap.lua
--- In-app purchases, kept to the ONE product this game sells: Kaptein-pakken
--- (a non-consumable; see config.PREMIUM and the monetization rule: one pack,
--- no per-item purchases, no ads). This module is the seam between the game
--- and the platform store:
---
---   IAP.buy(cb)       start the purchase; cb(ok, errMsg) when it settles
---   IAP.restore(cb)   re-grant an earlier purchase (Apple REQUIRES this path)
---   IAP.price()       localized display price (store) or config fallback
---   IAP.busy()        true while a transaction is in flight (disable buttons)
+-- In-app purchases for the one product this game sells, Kaptein-pakken
+-- (non-consumable, config.PREMIUM).
+--   IAP.buy(cb)       cb(ok, errMsg) when it settles
+--   IAP.restore(cb)   Apple REQUIRES this path
+--   IAP.price()       localized store price, or the config fallback
+--   IAP.busy()        true mid-transaction (disable buttons)
 --   IAP.update(dt)    pump; call each frame while store UI is up
---
--- Backends:
---  * native — ios/storekit/bt_iap.m, a source member of the vendored engine's
---    love-ios target (every build style links it), reached via LuaJIT FFI.
---    Poll-based: the ObjC side queues event strings, we drain one per frame:
---    "purchased" | "restored" | "restoredone" | "failed:<msg>" |
---    "restorefailed:<msg>". Restore succeeds iff a "restored" event arrives
---    before "restoredone" (that's how SKPaymentQueue reports "nothing found").
---  * stub — dev only (config.DEV): settles successfully after a pretend delay
---    so the whole flow is testable anywhere. A NON-dev build without the
---    bridge FAILS CLOSED — pretending success would give the pack away free.
+-- Native backend: ios/storekit/bt_iap.m over FFI, polled one queued event per
+-- frame -- "purchased" | "restored" | "restoredone" | "failed:<msg>" |
+-- "restorefailed:<msg>". A restore succeeded iff "restored" arrives before
+-- "restoredone", which is how SKPaymentQueue reports "nothing found".
+-- Without the bridge: dev builds use a pretend stub, real builds FAIL CLOSED.
 
 local config = require("src.config")
 
-local C, ffi = nil, nil   -- FFI namespace + module when the bridge is linked in
+local C, ffi = nil, nil
 do
     local ok, f = pcall(require, "ffi")
     if ok then
@@ -34,8 +24,7 @@ do
             const char *bt_iap_poll(void);
             const char *bt_iap_price(void);
         ]])
-        -- Symbol lookup throws when the bridge isn't linked in (desktop) —
-        -- that's our backend detection.
+        -- symbol lookup throws when the bridge isn't linked: that's the detection
         if pcall(function() return f.C.bt_iap_init end) then
             C, ffi = f.C, f
             C.bt_iap_init(config.PREMIUM.PRODUCT_ID)
@@ -46,15 +35,14 @@ end
 local IAP = {
     _cb        = nil,     -- pending callback
     _t         = 0,       -- stub timer
-    _restoring = false,   -- native: current transaction is a restore
-    _restored  = false,   -- native: saw a "restored" before "restoredone"
+    _restoring = false,
+    _restored  = false,   -- saw "restored" before "restoredone"
 }
 
 function IAP.busy() return IAP._cb ~= nil end
 
--- Localized display price ("kr 19,00", "€1,99"…) from the store when the
--- bridge has fetched the product; config's string is the stub/offline
--- fallback. The real price is an App Store Connect price point, never code.
+-- The real price is an App Store Connect price point, never code; config's
+-- string is only the stub/offline fallback.
 function IAP.price()
     if C then
         local p = C.bt_iap_price()
@@ -87,8 +75,8 @@ function IAP.update(dt)
     if not C then
         IAP._t = IAP._t - dt
         if IAP._t <= 0 then
-            if config.DEV then settle(true)          -- dev stub: pretend success
-            else settle(false, "Kjøp er ikke tilgjengelig her") end  -- fail CLOSED
+            if config.DEV then settle(true)
+            else settle(false, "Kjøp er ikke tilgjengelig her") end   -- fail closed
         end
         return
     end
@@ -100,7 +88,7 @@ function IAP.update(dt)
     if ev == "purchased" then
         settle(true)
     elseif ev == "restored" then
-        IAP._restored = true            -- success confirmed at "restoredone"
+        IAP._restored = true            -- confirmed at "restoredone"
     elseif ev == "restoredone" then
         if IAP._restored then settle(true)
         else settle(false, "Fant ingen tidligere kjøp") end

@@ -1,12 +1,7 @@
--- src/entities/shark.lua
--- A friendly shark that wanders the open sea. The opposite of the pirate: there
--- is no danger here. It ambles over when you get near, and if you bump into it
--- the boat just softly bounces (the world calls boat:collideCircle, the very
--- same soft bounce as nudging an island) while the shark chomps once and darts
--- away. It won't pester -- after a bump it keeps its distance for a while. While
--- a pirate is hunting it dives out of sight, so the two never crowd the screen.
--- Tuning lives in config.SHARK. Lives in the flat ground plane; only draw() knows
--- the iso projection, and the world depth-sorts it like the boat and pirate.
+-- A friendly shark, the pirate's opposite: no danger anywhere in it. It ambles
+-- over when you're near, bumps softly (the world applies boat:collideCircle),
+-- chomps and darts off, then keeps its distance a while. It dives out of sight
+-- while a pirate hunts, so the two never crowd the screen. Tuning: config.SHARK.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -45,15 +40,13 @@ function Shark.new(x, y)
     return self
 end
 
--- True while the shark is up at the surface and can be bumped / will react.
+-- at the surface, so bumpable and reacting
 function Shark:isActive()
     return self.dive < 0.4
 end
 
 function Shark:update(dt, boat, terrain, pirateActive, onBump)
-    -- Surfacing schedule: it spends most of its time hidden, playing somewhere
-    -- deep in the ocean, and only pops up briefly to look around (and maybe get
-    -- bumped) before diving again. A hunting pirate keeps it down regardless.
+    -- mostly hidden deep, surfacing briefly; a hunting pirate keeps it down
     self.phaseT = self.phaseT - dt
     if self.phaseT <= 0 then
         self.surfaced = not self.surfaced
@@ -72,7 +65,6 @@ function Shark:update(dt, boat, terrain, pirateActive, onBump)
     local dx, dy = boat.x - self.x, boat.y - self.y
     local dist = math.sqrt(dx * dx + dy * dy)
 
-    -- Decide where to head and how fast.
     local targetSpeed = S.SPEED
     if self.dartT > 0 then
         self.targetAngle = math.atan2(-dy, -dx)     -- scoot away from the boat
@@ -86,15 +78,14 @@ function Shark:update(dt, boat, terrain, pirateActive, onBump)
             self.targetAngle = self.angle + (love.math.random() - 0.5) * 1.8
             self.wanderT = 2 + love.math.random() * 2
         end
-        if self:isActive() then targetSpeed = S.SPEED * 0.4 end  -- dawdle & look around up top
+        if self:isActive() then targetSpeed = S.SPEED * 0.4 end  -- dawdle up top
     end
 
-    -- Turn toward the target heading, then ease the speed toward its target.
     local diff = angleDiff(self.angle, self.targetAngle)
     self.angle = self.angle + math.max(-1, math.min(1, diff * 2)) * S.TURN_RATE * dt
     self.speed = approach(self.speed, targetSpeed, dt * 2)
 
-    -- Move; if land is ahead, veer back toward open water (it stays at sea).
+    -- veer back to open water if land is ahead
     local nx = self.x + math.cos(self.angle) * self.speed * dt
     local ny = self.y + math.sin(self.angle) * self.speed * dt
     if terrain:isWater(nx, ny) then
@@ -106,8 +97,7 @@ function Shark:update(dt, boat, terrain, pirateActive, onBump)
     self.x = math.max(20, math.min(config.WORLD_WIDTH - 20, self.x))
     self.y = math.max(20, math.min(config.WORLD_HEIGHT - 20, self.y))
 
-    -- Contact: react with a chomp + dart. The boat's bounce is applied by the
-    -- world (boat:collideCircle), so here we only kick off the shark's reaction.
+    -- contact: only the shark's reaction; the world bounces the boat
     if self:isActive() and self.bumpCooldown == 0
             and dist <= boat.radius + self.radius + 4 then
         self.dartT        = S.DART_TIME
@@ -116,18 +106,13 @@ function Shark:update(dt, boat, terrain, pirateActive, onBump)
         if onBump then onBump() end
     end
 
-    -- Jaw animation: a gentle idle chomp, faster while darting off.
     self.chompT = self.chompT + dt * (self.dartT > 0 and S.DART_CHOMP or S.CHOMP_RATE)
 end
 
 function Shark:draw()
     local img = Assets.image("shark/shark_" .. FRAMES[math.floor(self.chompT) % #FRAMES + 1] .. ".png")
     if not img then return end
-    -- Keep the Assets default nearest filter: the sprite is pixel-art now, so it
-    -- should stay crisp and chunky, not smoothed like the boat photo.
-
-    -- Billboard like the boat: the sprite faces left, so mirror it when the
-    -- shark is moving to the right on the iso screen.
+    -- billboard: the sprite faces left, so mirror it when moving right on screen
     local vsx = (math.cos(self.angle) - math.sin(self.angle)) * Iso.SX
     local flip = (vsx >= 0) and -1 or 1
 
@@ -135,10 +120,9 @@ function Shark:draw()
     local scale = want / img:getWidth()
     local sx, sy = Iso.project(self.x, self.y, 0)
     local vis = 1 - self.dive
-    local sink = self.dive * want * 0.35           -- slip down into the water as it dives
+    local sink = self.dive * want * 0.35           -- slips under as it dives
     local bob = math.sin(love.timer.getTime() * 1.4) * 3
 
-    -- soft shadow on the water (fades as it dives)
     love.graphics.setColor(0, 0, 0, 0.16 * vis)
     love.graphics.ellipse("fill", sx, sy + 5, want * 0.40, want * 0.11)
 

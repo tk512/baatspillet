@@ -1,14 +1,8 @@
--- src/data/ports_amerika.lua
--- The Amerika map's harbours. Same schema as ports.lua: (x, y) is approximate
--- (snapped to the nearest coast + flattened). Harbour masters are deliberately
--- unnamed placeholders for now — real names + photos drop into
--- assets/ports/portraits/<id>.png later with zero code changes.
---
---   landmarks  OPTIONAL list of named installations (see LANDMARKS in
---              src/scenes/world.lua). Each is placed as a cluster just past the
---              built-up edge. "airport" = control tower + terminal + hangar --
---              the loudest "this is a big foreign city" signal we have, and the
---              two metropolises are the only towns big enough to earn one.
+-- The Amerika map's harbours; same schema as ports.lua, (x, y) approximate and
+-- snapped to the nearest coast. Harbour masters are still unnamed -- names and
+-- assets/ports/portraits/<id>.png drop in with no code changes.
+--   landmarks  named installations (LANDMARKS in src/scenes/world.lua), placed
+--              as a cluster just past the built-up edge
 
 return {
     {
@@ -26,10 +20,7 @@ return {
         x     = 8500, y = 3100,        -- fjord mouth of the lush NE coast
         color = {0.95, 0.78, 0.22},    -- taxi yellow
         size  = "metropolis",
-        -- NOT `chest`: that icon is the treasure hunt's own language (the album
-        -- sticker and the shelf's Skatter row), so shipping containers wearing it
-        -- read as treasure. Own icon; drop assets/icons/container.png to replace
-        -- the placeholder.
+        -- own icon, NOT `chest`: that one is the treasure hunt's language
         landmarks = { "airport" },
         produces = { mode = "cargo", label = "Containere", icon = "container" },
     },

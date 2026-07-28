@@ -1,11 +1,7 @@
--- src/ui/winscreen.lua
--- The grand finale: shown when every treasure chest has been found. A full-screen
--- party -- rotating golden light rays, layered fireworks, jewels raining down and
--- a never-ending shower of gold coins that PILE UP along the bottom (each landing
--- with a random-pitched clink), the open chest with all the collected stickers
--- fanned above it, Finn-Erik the pirate cheering, and a big rainbow "HURRA!!".
--- A modal owned by the world scene (freezes the world). A click dismisses it.
--- Voice can be added later (hook "du_vant").
+-- The grand finale, once every chest is found: light rays, fireworks, and a
+-- shower of coins that pile up along the bottom, over the open chest with all
+-- the stickers fanned above it. A modal owned by the world scene; a click
+-- dismisses it. Voice hook: du_vant.
 
 local Icons  = require("src.ui.icons")
 local config = require("src.config")
@@ -18,9 +14,8 @@ local FW_COLORS = {
     { 1.0, 0.85, 0.3 }, { 1.0, 0.4, 0.4 }, { 0.5, 0.8, 1.0 },
     { 0.6, 1.0, 0.6 }, { 1.0, 0.6, 0.9 }, { 0.7, 0.6, 1.0 },
 }
--- mostly coins, plus treasure chests (the real chest.png sprite) and a few jewels
--- raining down for "gold + treasure". Coins are drawn specially; everything else
--- goes through Icons.draw, so "chest" uses assets/icons/chest.png.
+-- mostly coins, plus chests and jewels. Coins are drawn specially; the rest go
+-- through Icons.draw.
 local FALL_KINDS = { "coin", "coin", "coin", "coin", "coin", "chest", "chest", "gem", "pearl" }
 
 local BINW = 18          -- width of a coin-stacking column
@@ -38,15 +33,14 @@ function WinScreen:update(dt)
     local sw, sh = love.graphics.getDimensions()
     self.clinkT = self.clinkT - dt
 
-    -- a steady volley of firework booms (random pitch) -- bababa-baaaaa-boom!
+    -- a steady volley of booms, random pitch
     self.fwT = self.fwT - dt
     if self.fwT <= 0 then
         self.fwT = 0.45 + love.math.random() * 0.6
         Assets.playPitched("firework", 0.45, 0.92 + love.math.random() * 0.2)   -- random fw clip
     end
 
-    -- rain new coins/jewels from the top (stops once the heap is capped) -- big,
-    -- fast and plentiful for a proper crazy gold storm
+    -- rain from the top, stopping once the heap is capped
     self.spawnAcc = self.spawnAcc + dt * (self.full and 0 or 70)
     while self.spawnAcc >= 1 and #self.items < 150 do
         self.spawnAcc = self.spawnAcc - 1
@@ -68,7 +62,7 @@ function WinScreen:update(dt)
         it.rot = it.rot + it.rotV * dt
         local r = it.size * 0.5
         if it.kind == "coin" then
-            -- land + stack when it reaches the top of its column's pile
+            -- land and stack at the top of the column's pile
             local bin   = math.floor(it.x / BINW)
             local pile  = self.pile[bin] or 0
             local restY = sh - pile - r
@@ -91,8 +85,7 @@ function WinScreen:update(dt)
     end
 end
 
--- A short delay so an in-flight click (the one that dug up the last chest) does
--- not skip the celebration instantly.
+-- brief delay so the click that dug up the last chest can't skip this
 function WinScreen:mousepressed(_, _, button)
     if button == 1 and self.t > 0.6 then self.world:closeWinScreen() end
 end
@@ -103,7 +96,7 @@ function WinScreen:keypressed(key)
     end
 end
 
--- A spinning coin: the ellipse width oscillates with rotation to fake a 3D flip.
+-- ellipse width oscillates with rotation to fake a 3D flip
 local function drawCoin(x, y, r, rot) Icons.coin(x, y, r, rot) end
 
 
@@ -113,7 +106,7 @@ function WinScreen:draw()
     local t      = self.t
     local cx, cy = sw / 2, sh * 0.52
 
-    -- background: night, then a warm gold radial glow from the centre
+    -- night, then a warm gold radial glow
     love.graphics.setColor(0.06, 0.05, 0.12)
     love.graphics.rectangle("fill", 0, 0, sw, sh)
     for i = 8, 1, -1 do
@@ -152,7 +145,7 @@ function WinScreen:draw()
         end
     end
 
-    -- the open chest with every collected sticker fanned in an arc above it
+    -- the open chest, stickers fanned in an arc above it
     local chestS = math.min(sw, sh) * 0.17
     Icons.draw("chest", cx, cy + chestS * 0.35 + math.sin(t * 3) * 5, chestS)
     local list = self.world.treasures or {}
@@ -168,7 +161,7 @@ function WinScreen:draw()
         end
     end
 
-    -- the accumulated gold heap along the bottom (drawn before the falling ones)
+    -- the heap, drawn before the still-falling coins
     for _, c in ipairs(self.landed) do drawCoin(c.x, c.y, c.r, c.rot) end
 
     -- still-falling coins + jewels, over the heap

@@ -1,14 +1,12 @@
--- src/ui/flags.lua
--- One place to draw country flags (ship info cards, map cards). Placeholder-
--- first: assets/flags/<iso>.png (real flag images, ~128px) when present,
--- else the hand-painted fallbacks below. Aspect-fit into the given box with a
--- hairline border so small flags stay crisp. Norwegian country names.
+-- Country flags for ship info and map cards, keyed by Norwegian country name.
+-- Placeholder-first: assets/flags/<iso>.png, else the painted fallbacks below.
+-- Aspect-fit with a hairline border so small flags stay crisp.
 
 local Assets = require("src.assets")
 
 local Flags = {}
 
--- Norwegian country name -> ISO code (the flag image filename).
+-- country name -> ISO code, which is the image filename
 local CODES = {
     ["Norge"]      = "no",
     ["Tyskland"]   = "de",
@@ -19,7 +17,6 @@ local CODES = {
 }
 Flags.CODES = CODES
 
--- Draw `country`'s flag fitted inside the (x, y, w, h) box.
 function Flags.draw(country, x, y, w, h)
     local code = CODES[country]
     local img = code and Assets.image("flags/" .. code .. ".png")
@@ -39,7 +36,7 @@ function Flags.draw(country, x, y, w, h)
     Flags.painted(country, x, y, w, h)
 end
 
--- Hand-painted fallbacks (the pre-image originals from shipinfo.lua).
+-- painted fallbacks, used when no image exists
 function Flags.painted(country, x, y, w, h)
     local function band(n, i, r, g, b)        -- horizontal stripe i of n
         love.graphics.setColor(r, g, b)
@@ -83,7 +80,7 @@ function Flags.painted(country, x, y, w, h)
         love.graphics.polygon("fill", x, y + h * 0.20, x + w * 0.21, y + h * 0.5, x, y + h * 0.80)
         love.graphics.setLineWidth(1)
     else
-        -- unknown country: a neutral pennant
+        -- unknown: a neutral pennant
         love.graphics.setColor(0.75, 0.73, 0.68)
         love.graphics.polygon("fill", x, y, x + w, y + h / 2, x, y + h)
     end

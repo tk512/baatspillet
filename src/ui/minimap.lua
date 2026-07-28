@@ -1,20 +1,12 @@
--- src/ui/minimap.lua
--- A Civilization-style world map in the top-right corner: a small top-down view
--- of the whole ocean, revealed only where you've sailed. It shares the fog grid
--- with the fog-of-war (so "explored" means the same thing on the map as in the
--- world) and bakes the revealed terrain into one texture, repainting only the
--- cells that newly light up -- no per-frame terrain scan, no per-frame allocs.
+-- The world map, top right: the whole ocean, revealed only where you've sailed.
+-- Shares the fog grid with the fog-of-war and bakes revealed terrain into one
+-- texture, repainting only newly-lit cells -- no per-frame scan or allocation.
 --
--- The map is drawn in the SAME isometric projection as the world, so it comes
--- out as a diamond rather than a rectangle. That is deliberate and worth
--- keeping: when the map was a straight top-down scaling (x = gx, y = gy) it
--- disagreed with the view by a 45-degree rotation, so a child who looked at the
--- map, decided the chest was "up and to the left", and then sailed that way on
--- screen went somewhere else entirely. Up on this map is now up in the world.
---
--- Everything therefore goes through Iso.project, exactly like the world does --
--- the texture (drawn rotated + squashed), the port pips, the treasure X's, the
--- boat and the camera viewport.
+-- It is drawn in the SAME iso projection as the world, so it's a diamond, not a
+-- rectangle. Don't "fix" that: drawn top-down it disagreed with the view by 45
+-- degrees, and a child who read the map and sailed that way went elsewhere.
+-- Everything therefore goes through Iso.project -- texture, pips, X's, boat,
+-- viewport.
 
 local config = require("src.config")
 local utf8  = require("utf8")
@@ -25,8 +17,8 @@ local Retro  = require("src.ui.retro")
 local Minimap = {}
 Minimap.__index = Minimap
 
--- "Unknown" (not-yet-explored) cells: a dark slate, a touch lighter than the
--- in-world fog so the map reads as parchment-dark rather than dead black.
+-- unexplored cells: a touch lighter than the in-world fog, so the map reads
+-- parchment-dark rather than dead black
 local UNK = { 0.07, 0.09, 0.13 }
 
 function Minimap.new(world)
@@ -35,8 +27,7 @@ function Minimap.new(world)
     self.fog     = world.fog
     self.terrain = world.terrain
     self.w, self.h = self.fog.w, self.fog.h
-    -- Ground extent the texture spans (the fog grid is ceil()'d, so it can be a
-    -- hair wider than WORLD_*; use the grid extent so overlays line up exactly).
+    -- the fog grid is ceil()'d, so use ITS extent or overlays drift
     self.worldW = self.w * self.fog.cell
     self.worldH = self.h * self.fog.cell
 
@@ -52,9 +43,8 @@ function Minimap.new(world)
     return self
 end
 
--- Colour for the fog cell (cx, cy) from the terrain under its centre: blue for
--- sea (lighter in the shallows), land by cover type, paling toward snow as the
--- elevation level climbs so mountains stand out the way they do in the world.
+-- Cell colour from the terrain under its centre: sea by depth, land by cover,
+-- paling toward snow with elevation so mountains stand out as they do in world.
 function Minimap:terrainColor(cx, cy)
     local cell = self.fog.cell
     local i, j = self.terrain:tileIndexAt((cx + 0.5) * cell, (cy + 0.5) * cell)
@@ -74,9 +64,8 @@ function Minimap:terrainColor(cx, cy)
     return r, g, b
 end
 
--- Paint any cell that has become revealed since the last call, and re-upload the
--- texture only if something actually changed. Called when the fog reveals a new
--- cell (rare relative to the frame rate), so the per-cell work stays tiny.
+-- Paints newly-revealed cells and re-uploads only if something changed. Called
+-- when the fog reveals a cell, which is rare next to the frame rate.
 function Minimap:refresh()
     local fog = self.fog
     local changed = false
@@ -95,14 +84,10 @@ function Minimap:refresh()
     return changed
 end
 
--- Push a closed polygon outward by `m`, the way a mitred picture frame goes
--- round a painting: every EDGE moves along its own normal and neighbouring
--- edges are re-intersected. At a sharp corner that intersection lands well
--- beyond the original vertex -- which is exactly the long point a real frame
--- has where two mitred lengths meet, and what the map's east/west corners were
--- missing when the frame was a stroked path (a stroke can only flat-cut or
--- spike there). Offsetting the VERTICES instead does not work at all: see the
--- note in draw().
+-- Push a closed polygon out by `m` like a mitred picture frame: every EDGE
+-- moves along its own normal and neighbours are re-intersected, so a sharp
+-- corner lands beyond the original vertex -- the long point a real mitre has.
+-- Offsetting the VERTICES instead does not work; see the note in draw().
 local function offsetPolygon(pts, m)
     local n = #pts / 2
     local cx, cy = 0, 0
@@ -142,9 +127,8 @@ local function offsetPolygon(pts, m)
     return out
 end
 
--- The map diamond's four corners: the world's four corners, projected. Not
--- symmetric -- a 12000x8000 world puts the top vertex 40% across and the bottom
--- at 60%. Given in a box iw x ih with its origin at (0, 0).
+-- The world's four corners, projected. Not symmetric: a 12000x8000 world puts
+-- the top vertex 40% across and the bottom at 60%. Origin at (0, 0).
 local function diamond(iw, ih, worldW, worldH)
     local fx = worldH / (worldW + worldH)
     local fy = worldH / (worldW + worldH)
@@ -154,18 +138,15 @@ local function diamond(iw, ih, worldW, worldH)
              0, ih * fy }                -- left   = world (0, H)
 end
 
--- Where the map plaque sits, as PURE geometry (no drawing). The HUD reads this
--- to keep the shelf clear of the map, and re-deriving the sizing rule over
--- there would guarantee the two drift apart the first time either is tweaked.
--- Also hands back the frame polygons so draw() can't disagree with the space
--- reserved for them -- a mitred corner reaches further out than the band width,
--- so the padding has to come from the actual geometry, not a guess.
+-- Pure geometry, no drawing: the HUD reads this to keep clear of the map, and
+-- re-deriving the rule there would drift. Hands back the frame polygons too,
+-- since a mitred corner reaches further out than the band width -- the padding
+-- has to come from the real geometry, not a guess.
 function Minimap:layout()
     local sw = love.graphics.getWidth()
     local t  = math.max(2, math.floor(self.world.game.fonts.small:getHeight() * 0.20))
-    -- A touch bigger than the old rectangular map: the diamond is 2:1 so it's
-    -- shorter than the 3:2 rectangle was, and the width buys back legibility
-    -- without costing the height we just saved.
+    -- the 2:1 diamond is shorter than a 3:2 rectangle, so width buys back
+    -- legibility without costing height
     local iw = Scale.phone and math.floor(math.max(160, math.min(215, sw * 0.17)))
         or math.floor(math.max(200, math.min(300, sw * 0.21)))
     -- The iso diamond's aspect is SX:SY (2:1), NOT the world's w:h -- projecting

@@ -1,9 +1,6 @@
--- src/systems/objects.lua
--- The sprite-object layer: buildings, trees, rocks and other decorations that
--- sit on top of the ground tiles, single-tile or multi-tile (SimCity-2000
--- style), depth-sorted against the terrain and the boat.
---
--- An object is just data:
+-- The sprite-object layer: buildings, trees, rocks and other decorations on top
+-- of the ground tiles, single- or multi-tile, depth-sorted against the terrain
+-- and the boat. An object is data:
 --   {
 --     tx, ty,            -- top-left tile it occupies (1-based)
 --     w = 1, h = 1,      -- footprint size in tiles (e.g. a 2x2 warehouse)
@@ -12,8 +9,8 @@
 --     data = ...,        -- anything the owner wants to stash
 --   }
 --
--- A `sprite` PNG is blitted to cover the footprint; otherwise `draw(obj, g)`
--- paints the in-code placeholder.
+-- A `sprite` PNG covers the footprint; otherwise `draw(obj, g)` paints the
+-- placeholder.
 
 local config  = require("src.config")
 local Assets  = require("src.assets")
@@ -23,7 +20,7 @@ local Model3D = require("src.systems.model3d")
 local Objects = {}
 Objects.__index = Objects
 
--- Fraction of the footprint width a sprite fills (>1.0 lets art overhang).
+-- fraction of the footprint width a sprite fills; >1 lets art overhang
 local SPRITE_FILL = 1.0
 
 function Objects.new()
@@ -40,7 +37,7 @@ function Objects:add(obj)
     return obj
 end
 
--- Drop every object matching `pred` (used to clear a yard for a big landmark).
+-- drop everything matching `pred`, e.g. to clear a yard for a landmark
 function Objects:removeWhere(pred)
     local list = self.list
     for i = #list, 1, -1 do
@@ -48,9 +45,8 @@ function Objects:removeWhere(pred)
     end
 end
 
--- Append every object whose footprint touches the visible tile range to `out`
--- and return the new length. world.lua merges these with terrain tiles and the
--- boat into one sorted pass.
+-- Appends visible objects to `out`, returning the new length. world.lua merges
+-- these with tiles and the boat into one sorted pass.
 function Objects:collectVisible(i0, j0, i1, j1, out)
     local n = #out
     for _, obj in ipairs(self.list) do
@@ -64,17 +60,15 @@ function Objects:collectVisible(i0, j0, i1, j1, out)
     return n
 end
 
--- Draw one object: PNG if present, otherwise its placeholder. Called with the
--- camera already attached (we draw in iso space).
+-- PNG if present, else the placeholder; camera already attached
 function Objects.draw(obj)
     local g = Iso.footprint(obj.tx, obj.ty, obj.w, obj.h, config.TILE)
     g.z = obj.z or 0
 
     local img = obj.sprite and Assets.image(obj.sprite)
     if img then
-        -- Iso tile sprites are bottom-aligned: anchor the image's bottom-center
-        -- at the footprint's front (south) corner and scale its diamond to the
-        -- footprint width. Per-sprite nudges via obj.spriteScale / offset.
+        -- bottom-aligned: the image's bottom-centre sits at the footprint's
+        -- front corner, its diamond scaled to the footprint width
         local sx, sy = Iso.project(g.gx1, g.gy1, g.z)
         local scale = (g.width * SPRITE_FILL * (obj.spriteScale or 1)) / img:getWidth()
         -- anchor at the sprite's real ground line so padding doesn't float it
@@ -88,9 +82,8 @@ function Objects.draw(obj)
     if obj.draw then obj.draw(obj, g) end
 end
 
--- Placeholder drawing helpers.
 
--- Flat diamond "lot" covering the footprint, at the object's ground height.
+-- flat diamond lot over the footprint, at ground height
 function Objects.drawLot(g, color)
     local z = g.z or 0
     local ax, ay = Iso.project(g.gx0, g.gy0, z)
@@ -101,9 +94,8 @@ function Objects.drawLot(g, color)
     love.graphics.polygon("fill", ax, ay, bx, by, cx, cy, dx, dy)
 end
 
--- A cobblestone harbour plaza filling the footprint: a grid of small stone
--- diamonds with deterministic light/dark variation and a darker rim, so the port
--- ground reads as paved ground rather than one flat coloured square.
+-- cobblestone plaza: stone diamonds with deterministic variation and a rim, so
+-- port ground reads as paved rather than one flat square
 function Objects.drawPavedLot(g, salt)
     local z = g.z or 0
     local N = 8
@@ -137,8 +129,7 @@ function Objects.drawPavedLot(g, salt)
     love.graphics.setColor(1, 1, 1)
 end
 
--- An extruded iso box over a ground rect (cx,cy = center, hw/hd = half-extents
--- in ground units) from z0..z1. Three shaded faces for readable volume.
+-- extruded iso box over a ground rect, z0..z1; three shaded faces
 function Objects.box(cx, cy, hw, hd, z0, z1, col)
     local function shade(f) return { col[1] * f, col[2] * f, col[3] * f } end
     local x0, x1 = cx - hw, cx + hw
@@ -158,12 +149,10 @@ function Objects.box(cx, cy, hw, hd, z0, z1, col)
     love.graphics.polygon("fill", Ax, Ay, Bx, By, Cx, Cy, Dx, Dy)     -- top
 end
 
--- A detailed building: shaded walls + rows of windows on the two viewer-facing
--- faces + a pitched gable roof.
+-- shaded walls, windows on the two viewer-facing faces, pitched gable roof
 local function lerp2(p, q, a) return { p[1] + (q[1] - p[1]) * a, p[2] + (q[2] - p[2]) * a } end
 
--- Window grid on a face given its 4 screen corners (t1,t2 top edge; b1 under
--- t1, b2 under t2).
+-- window grid on a face, given its 4 screen corners
 local function faceWindows(t1, t2, b1, b2, cols, rows)
     love.graphics.setColor(0.20, 0.24, 0.30, 0.92)
     for ci = 1, cols do
@@ -205,16 +194,13 @@ function Objects.building(cx, cy, hw, hd, z, wallH, roofH, wall, roof)
     end
 end
 
--- A dense forest tile: many overlapping trees so neighbouring forest tiles blend
--- into one woodland. `salt` makes the layout deterministic per tile; layouts
--- never change, so each is computed once and cached. Trees are real 3D models
--- (assets/models/trees.obj) baked ONCE to smooth sprites in a few leaf-colour
--- variants — never pixel art, and never per-frame 3D. The soft code-drawn
--- tree remains the fallback so the game always runs with no art.
+-- Overlapping trees, so neighbouring forest tiles blend into one woodland.
+-- `salt` fixes the layout per tile, computed once and cached. Trees are 3D
+-- models baked ONCE to smooth sprites -- never pixel art (the player dislikes
+-- pixelised trees) and never per-frame 3D. Code-drawn trees are the fallback.
 local forestCache = {}
 
--- The tree pack's per-variant colours (a healthy mixed woodland) and the
--- per-biome tint the whole tree gets on non-green islands.
+-- per-variant leaf colours, plus the per-biome tint on non-green islands
 local TREE_TRUNK = { 0.40, 0.29, 0.18 }
 local TREE_PALETTES = {
     { Body = TREE_TRUNK, Leaves = { 0.27, 0.42, 0.20 } },  -- classic green
@@ -234,14 +220,9 @@ local function trees3d()
     return treePack or nil
 end
 
--- Desert vegetation: saguaro cactus and low scrub bushes, on tiles where the
--- desert biome forbids woods (config.SCRUB). Soft rounded shapes rather than
--- pixel sprites -- the pixelised trees were the one thing the actual player
--- disliked, and OpenGFX has no cactus art to borrow anyway.
---
--- Positions are cached per tile in the same forestCache, keyed by a salt that
--- can't collide with a forest's (a tile is one or the other, never both), so a
--- scrub tile costs no per-frame allocation either.
+-- Saguaro and scrub where the desert biome forbids woods (config.SCRUB). Soft
+-- rounded shapes, not pixel sprites. Cached in the same forestCache under a
+-- salt that can't collide with a forest's -- a tile is only ever one of them.
 function Objects.drawScrub(g, salt)
     local S = config.SCRUB
     local z = g.z or 0
@@ -270,10 +251,8 @@ function Objects.drawScrub(g, salt)
         love.graphics.ellipse("fill", sx, sy + 2, 7 * sc, 3 * sc)
 
         if p[4] < S.CACTUS then
-            -- Saguaro: a tapered column with up to two raised arms, built from
-            -- QUADS. Drawn as thick lines with round caps this was ~11 draw
-            -- calls a plant -- 1.7x a whole forest tile, on ground that covers
-            -- three islands. Quads land the same silhouette in ~5.
+            -- QUADS, not thick round-capped lines: those cost ~11 draw calls a
+            -- plant, 1.7x a whole forest tile. Quads get there in ~5.
             local h  = 22 * sc
             local w  = 3.4 * sc
             local body, hi = { 0.32, 0.50, 0.30 }, { 0.44, 0.63, 0.38 }
@@ -281,8 +260,7 @@ function Objects.drawScrub(g, salt)
             -- trunk (slightly narrower at the top so it reads as a cactus)
             love.graphics.polygon("fill", sx - w, sy, sx + w, sy,
                 sx + w * 0.78, sy - h, sx - w * 0.78, sy - h)
-            -- one arm = an elbow: a quad out, then a quad up (both convex, so
-            -- they fill correctly -- an L-shaped polygon would be concave)
+            -- an elbow is a quad out then a quad up: both convex, so they fill
             local function arm(dir, ay, reach, rise, t2)
                 love.graphics.polygon("fill",
                     sx, ay + t2, sx + dir * reach, ay + t2,
@@ -321,7 +299,7 @@ function Objects.drawForest(g, salt, biome)
             s = (s * 1103515245 + 12345) % 2147483648
             return s / 2147483648
         end
-        -- pick tree positions, then sort back-to-front so nearer trees overlap
+        -- sorted back-to-front so nearer trees overlap
         trees = {}
         for k = 1, config.FOREST_DENSITY do
             local gx = g.gx0 + rnd() * (g.gx1 - g.gx0)
@@ -362,9 +340,8 @@ function Objects.drawForest(g, salt, biome)
     love.graphics.setColor(1, 1, 1)
 end
 
--- A skerry: a small rocky outcrop sitting in open water, ringed by a gentle
--- pulsing foam wash at the waterline. `salt` varies the rock shape + foam phase
--- per skerry. No per-frame allocations (hot draw path).
+-- Rocky outcrop in open water with a pulsing foam wash; `salt` varies shape and
+-- phase. Hot draw path -- no per-frame allocations.
 function Objects.drawSkerry(g, salt)
     local c = config.colors
     local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
@@ -385,9 +362,8 @@ function Objects.drawSkerry(g, salt)
     love.graphics.circle("fill", sx + 4, sy - 3 - j, 4)
 end
 
--- City landmark placeholders (swap for pixel art later). Each is anchored on its
--- 1-tile footprint center (g.cx, g.cy) at height g.z, mixing grounded iso boxes
--- with a few screen-space details (spires, awnings, cables).
+-- Landmark placeholders, anchored on the 1-tile footprint centre at height g.z:
+-- grounded iso boxes plus a few screen-space details.
 
 local function shadow(sx, sy, rx)
     love.graphics.setColor(0, 0, 0, 0.14)

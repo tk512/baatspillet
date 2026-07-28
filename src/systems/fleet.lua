@@ -1,13 +1,7 @@
--- src/systems/fleet.lua
--- The ambient fleet: every non-player vessel on the sea (the photo-billboard
--- boats from src/data/ships.lua, or the OpenGFX sprite ships as fallback) plus
--- the skerries they weave between. Owns spawning (populate), the sail-about AI
--- (update: wait/goal/free modes) and the screen-space tap test (shipAt).
--- Extracted from world.lua so the scene only orchestrates.
---
--- Ships and skerries are plain tables: world.lua reads fleet.ships for the
--- depth-sorted draw pass and player collision, fleet.obstacles for skerry bumps.
--- Add a boat in src/data/ships.lua, not here.
+-- Every non-player vessel plus the skerries they weave between: spawning
+-- (populate), the sail-about AI (wait/goal/free) and the tap test (shipAt).
+-- world.lua reads fleet.ships for the draw pass and collision, fleet.obstacles
+-- for skerry bumps. Add a boat in src/data/ships.lua, not here.
 
 local config  = require("src.config")
 local Assets  = require("src.assets")
@@ -16,8 +10,7 @@ local Objects = require("src.systems.objects")
 local Fleet = {}
 Fleet.__index = Fleet
 
--- True if (x,y) is within `r` of any of `ports`. Module-level so world.lua can
--- share it (clouds keep off the towns) without a second copy.
+-- module-level so world.lua shares it (clouds keep off the towns)
 function Fleet.nearAnyPort(ports, x, y, r, except)
     for _, p in ipairs(ports) do
         if p ~= except then
@@ -38,9 +31,8 @@ local function lookForDef(d)
     return { billboard = true, img = "ships_photos/" .. d.photo .. ".png", def = d }
 end
 
--- deps: terrain, ports, objects (the sprite layer, for skerry visuals), boat
--- (the player's -- spawn clearance + the AI LOD distance), data (ships.lua list),
--- splash (optional fn(x,y): a water burst, for the submarine's bubbles).
+-- deps: terrain, ports, objects, boat (spawn clearance + AI LOD distance),
+-- data (the ships.lua list), splash (optional fn(x,y) for the sub's bubbles)
 function Fleet.new(deps)
     local self = setmetatable({}, Fleet)
     self.terrain = deps.terrain
@@ -54,8 +46,7 @@ function Fleet.new(deps)
     return self
 end
 
--- Fill the sea: pick the ship pool, scatter the boats and skerries, anchor the
--- Viking Sky. One call from World:load.
+-- one call from World:load
 function Fleet:populate()
     self:buildShipPool()
     self:scatterAmbientBoats(26)
@@ -63,9 +54,7 @@ function Fleet:populate()
     self:spawnVikingSky()
 end
 
--- Decide the look of ambient ships: if any photo boats (src/data/ships.lua) have
--- their art present, the fleet is those stylized real-boat billboards; otherwise
--- it falls back to the OpenGFX 8-direction sprite ships.
+-- photo billboards when their art is present, else OpenGFX sprite ships
 function Fleet:buildShipPool()
     self.shipDefs = {}
     for _, d in ipairs(self.data) do
@@ -76,9 +65,8 @@ function Fleet:buildShipPool()
     self.usePhotos = #self.shipDefs > 0
 end
 
--- One ship's visual + metadata (a random pick from the active pool). A given boat
--- always renders at ONE size (its def.scale, default 1) -- the same ship is never
--- shown bigger in one place than another; variety comes from adding more boats.
+-- A ship's visual + metadata. One boat always renders at ONE size (def.scale);
+-- variety comes from adding boats, never from resizing the same one.
 function Fleet:pickShipLook()
     if self.usePhotos then
         local d = self.shipDefs[love.math.random(#self.shipDefs)]
@@ -92,8 +80,7 @@ function Fleet:pickShipLook()
     }
 end
 
--- Register an ambient ship. opts: moving/speed/turn/turnDir, or an explicit `look`
--- (e.g. the Viking Sky). Size is fixed per boat (look.def.scale, default 1).
+-- opts: moving/speed/turn/turnDir, or an explicit `look`
 function Fleet:addShip(gx, gy, angle, opts)
     opts = opts or {}
     local look = opts.look or self:pickShipLook()
@@ -117,22 +104,19 @@ function Fleet:addShip(gx, gy, angle, opts)
         s.waitT = (s.dwell or config.AMBIENT_VISIT.DWELL) * (0.3 + love.math.random() * 0.7)
     end
     if look.def and look.def.submarine then
-        -- Submarine: starts deep and pops up somewhere on its cruise. s.dive is
-        -- 0 surfaced .. 1 fully under (drives draw clipping, collision, tap test).
+        -- s.dive: 0 surfaced .. 1 under; drives clipping, collision and taps
         local U = config.SUBMARINE
         s.submarine = true
         s.dive = 1
         s.subState = "under"
-        -- first surfacing comes sooner, so the sea shows its surprise early
+        -- first surfacing comes sooner, so the surprise lands early
         s.subT = (U.SUBMERGED_MIN + love.math.random() * (U.SUBMERGED_MAX - U.SUBMERGED_MIN)) * 0.5
     end
     self.ships[#self.ships + 1] = s
     return s
 end
 
--- Bubbles + a "blubb" where the submarine crosses the waterline -- but only
--- when the player is close enough for it to mean anything (no mystery blubbs
--- from across the ocean).
+-- only when the player is near: no mystery blubbs from across the ocean
 function Fleet:subFX(s)
     local dx, dy = s.x - self.boat.x, s.y - self.boat.y
     if (dx * dx + dy * dy) > config.SUBMARINE.FX_DIST * config.SUBMARINE.FX_DIST then return end
@@ -140,10 +124,8 @@ function Fleet:subFX(s)
     Assets.playSfx("blubb", 0.9)
 end
 
--- The submarine's peek-a-boo cycle: deep (invisible) -> rise through the
--- waterline (blubb + bubbles) -> cruise surfaced a while -> sink again (blubb).
--- Movement is untouched -- it keeps sailing the normal ambient AI while under,
--- so every surfacing happens somewhere new.
+-- Peek-a-boo cycle: deep -> rise -> cruise surfaced -> sink. Movement is
+-- untouched, so every surfacing happens somewhere new.
 function Fleet:updateDive(s, dt)
     local U = config.SUBMARINE
     if s.subState == "under" then
@@ -175,17 +157,14 @@ function Fleet:updateDive(s, dt)
     end
 end
 
--- The real "Viking Sky" cruise liner, anchored on the open water just outside
--- Bergen. A normal (stationary) ship like the rest: flat on the water, tappable
--- for its info card. A bit larger than the others, as the landmark. Missing
--- art -> the world runs without it.
+-- The Viking Sky, anchored outside Bergen as a landmark. An ordinary
+-- stationary ship otherwise; without its art the world just runs without it.
 function Fleet:spawnVikingSky()
     if not Assets.image("props/vikingsky.png") then return end
     local port = portById(self.ports, "bergen")
     if not port then return end
 
-    -- Anchor it well out from the harbour and off to one side (not right on the
-    -- pier): step further out + along the shore until we hit open water.
+    -- out from the harbour and off to one side, never on the pier
     local sidex, sidey = -port.seaDy, port.seaDx      -- unit vector along the shore
     local gx, gy
     for _, d in ipairs({ 740, 860, 620, 980, 540 }) do
@@ -211,16 +190,15 @@ function Fleet:spawnVikingSky()
     })
 end
 
--- Water with clear water `m` units in all four directions: a spot a ship of that
--- reach can sit (or sail through) without clipping a coast.
+-- clear water `m` units in all four directions
 function Fleet:openSea(gx, gy, m)
     return self.terrain:isWater(gx, gy)
         and self.terrain:isWater(gx + m, gy) and self.terrain:isWater(gx - m, gy)
         and self.terrain:isWater(gx, gy + m) and self.terrain:isWater(gx, gy - m)
 end
 
--- A random open-sea spot clear of the player's start AND every harbour (so a ship
--- never sits on a port and steals the docking click). Returns nil if none found.
+-- Clear of the player's start and every harbour, so a ship can't sit on a port
+-- and steal the docking click. nil if none found.
 function Fleet:findShipSpot()
     local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
     for _ = 1, 800 do
@@ -233,7 +211,7 @@ function Fleet:findShipSpot()
     end
 end
 
--- Open water all the way from (gx,gy) `dist` units out along `ang`?
+-- open water all the way `dist` out along `ang`?
 function Fleet:clearAlong(gx, gy, ang, dist)
     local c, s = math.cos(ang), math.sin(ang)
     for t = 40, dist, 40 do
@@ -242,11 +220,9 @@ function Fleet:clearAlong(gx, gy, ang, dist)
     return true
 end
 
--- A spawn spot + heading for a cruise ship: open water at least `reach` in BOTH
--- directions along the line, so its back-and-forth patrol is a real lane and it
--- never ends up pacing a puddle. With `port` set the spot is a ring just outside
--- that harbour (a boat with a `home`, e.g. Beffen off Bergen) -- still clear of
--- the pier so it never steals the docking click. nil if no lane exists.
+-- Spawn + heading for a cruise ship: open water at least `reach` BOTH ways
+-- along the line, so the patrol is a real lane and not a puddle. With `port`
+-- set it's a ring outside that harbour, still clear of the pier. nil if no lane.
 function Fleet:findCruiseLane(reach, port)
     for _ = 1, 20 do
         local gx, gy
@@ -276,15 +252,13 @@ function Fleet:findCruiseLane(reach, port)
     end
 end
 
--- A little two-stop ferry route around `port`'s island: stop A just off the pier
--- (outside the keep-out ring), stop B on another part of the island, with a
--- straight all-water line between them so the pathfinding-less ferry can't
--- beach. nil if the local coast is too tight.
+-- Two-stop ferry route around `port`'s island, with an all-water line between
+-- the stops so the pathfinding-less ferry can't beach. nil if the coast is
+-- too tight.
 function Fleet:buildFerryRoute(port)
     local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
     local base = math.atan2(port.seaDy, port.seaDx)
-    -- measure from the PIER TIP, not the town centre: ambient boats must
-    -- never dwell on top of the dock art (or in the player's berth)
+    -- from the PIER TIP, not the town centre: never dwell on the dock art
     local dpx, dpy = port.x, port.y
     if port.dockPoint then dpx, dpy = port:dockPoint() end
     local ax, ay
@@ -317,8 +291,7 @@ function Fleet:buildFerryRoute(port)
     return { { x = ax, y = ay }, { x = bx, y = by } }
 end
 
--- An anchorage off `port` for a visiting liner: in the ring outside the pier
--- (docking stays clear), open water. nil if the coast is too tight.
+-- open water in the ring outside the pier, so docking stays clear
 function Fleet:findAnchorage(port)
     local V = config.AMBIENT_VISIT
     for _ = 1, 50 do
@@ -332,10 +305,9 @@ function Fleet:findAnchorage(port)
     end
 end
 
--- Populate the sea. With real photo boats we place exactly ONE of each (there's
--- only one Aidaluna, one Viking Sky, etc. -- never the same ship twice); the sea
--- fills out as more boats are added to src/data/ships.lua. Without photos we fall
--- back to scattering `count` generic OpenGFX sprite ships (duplicates are fine).
+-- Exactly ONE of each photo boat -- there is only one Aidaluna -- so the sea
+-- fills out by adding boats to ships.lua. Without photos, `count` generic
+-- sprite ships are scattered instead and duplicates are fine.
 -- Boats flagged `cruise` in ships.lua sail slowly instead of lying at anchor,
 -- turning around when land blocks the way. A `home` boat runs a ferry route
 -- (buildFerryRoute); a `visits` boat calls at its listed cities now and then.

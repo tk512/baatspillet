@@ -1,11 +1,7 @@
--- src/systems/loader.lua
--- Cooperative chunked loading: the world build is heavy, so running it in a
--- coroutine and calling Loader.tick() inside the big loops time-slices it and
--- lets the loading screen animate.
---
--- The loading scene sets Loader.deadline = now + budget before each resume;
--- tick() yields once that budget is used up. Outside a coroutine (e.g. an F5
--- synchronous load) deadline stays math.huge, so tick() is a no-op.
+-- Time-slices the heavy world build: it runs in a coroutine, and Loader.tick()
+-- inside the big loops yields once the frame's budget is spent so the loading
+-- screen keeps animating. The loading scene sets `deadline` before each resume;
+-- outside a coroutine (an F5 reload) it stays math.huge and tick() is a no-op.
 
 local Loader = { deadline = math.huge }
 

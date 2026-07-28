@@ -1,20 +1,13 @@
--- src/ui/icons.lua
--- One place to draw the little game symbols (cargo, treats, the cannon) so the
--- HUD and the shop never duplicate icon art. Each is drawn centred at (x, y) and
--- roughly `s` wide.
---
--- Placeholder-first: if assets/icons/<kind>.png exists it's drawn instead of the
--- code shape, so Finn-Erik's own drawings drop in later with zero code changes.
+-- The game's little symbols, drawn centred at (x, y) and roughly `s` wide, so
+-- the HUD and the shop never duplicate icon art. Placeholder-first:
+-- assets/icons/<kind>.png wins over the code shape.
 
 local Assets = require("src.assets")
 
 local Icons = {}
 
--- THE gold coin, used everywhere gold shows (HUD, prices, coin rains).
--- Placeholder-first: assets/icons/gull.png (the engraved doubloon) when
--- present, else the classic gold disc. `rot` (optional) flips the coin
--- edge-on like it's spinning — image and fallback both support it.
--- Perf note: many image coins batch on one texture — cheaper than circles.
+-- The gold coin, everywhere gold shows. `rot` flips it edge-on as if spinning.
+-- Image coins batch on one texture, which beats drawing circles.
 function Icons.coin(x, y, r, rot)
     local img = Assets.image("icons/gull.png")
     if img then
@@ -35,9 +28,8 @@ function Icons.coin(x, y, r, rot)
     love.graphics.ellipse("fill", x - w * 0.3, y - r * 0.3, w * 0.25, r * 0.25)
 end
 
--- Draw `kind` centred at (x, y), CONTAINED in a `size`×`size` box: the photo's
--- longest side is scaled to exactly `size`, so the whole product is visible.
--- The Butikk's square display windows use this.
+-- Contained in a size x size box -- longest side scaled to `size`, so the whole
+-- product shows. Used by the Butikk's square windows.
 function Icons.drawBox(kind, x, y, size, alpha)
     local img = Assets.image("icons/" .. tostring(kind) .. ".png")
     if img then
@@ -51,13 +43,11 @@ function Icons.drawBox(kind, x, y, size, alpha)
     Icons.draw(kind, x, y, size)   -- glyphs span roughly one `s` already
 end
 
--- Draw `kind` centred at (x, y), about `s` across. Unknown kinds fall back to a
--- generic crate.
+-- about `s` across; unknown kinds fall back to a crate
 function Icons.draw(kind, x, y, s)
     local img = Assets.image("icons/" .. tostring(kind) .. ".png")
     if img then
-        -- linear: these are downscaled photos (like the boat), so smooth-shrink
-        -- them rather than crunch to hard pixels
+        -- downscaled photos: smooth-shrink rather than crunch to hard pixels
         if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
         local scale = (s * 1.5) / math.max(img:getWidth(), img:getHeight())
         love.graphics.setColor(1, 1, 1)
@@ -194,11 +184,8 @@ function Icons.draw(kind, x, y, s)
         love.graphics.rectangle("fill", x - s * 0.06, y + s * 0.06, s * 0.12, s * 0.12)
 
     elseif kind == "book" then
-        -- An OPEN book with a gold star on the page. Drawn closed (a rectangle
-        -- inside a rectangle) it read as a plain box at button size -- one
-        -- playtester took it for a treasure chest. The open silhouette is
-        -- unmistakable even at 27px, and the star says "the things I've found"
-        -- to someone who can't read the word "album".
+        -- Open, not closed: closed it reads as a plain box at button size, and
+        -- a playtester took it for a chest.
         love.graphics.setColor(0.50, 0.24, 0.19)                                          -- cover, peeking out
         love.graphics.polygon("fill", x - s * 0.48, y - s * 0.14, x, y - s * 0.26,
             x + s * 0.48, y - s * 0.14, x + s * 0.48, y + s * 0.34,
@@ -224,9 +211,8 @@ function Icons.draw(kind, x, y, s)
         love.graphics.polygon("fill", star)
 
     elseif kind == "map" then
-        -- The treasure map: aged parchment with a curled edge and a red X. Shown
-        -- in the shelf while a hunt is live. Real art: assets/icons/map.png
-        -- (assets/ui/treasuremap.png is the big reveal card, a different thing).
+        -- shelf icon while a hunt is live; assets/ui/treasuremap.png is the
+        -- big reveal card, a different thing
         love.graphics.setColor(0.86, 0.76, 0.53)
         love.graphics.rectangle("fill", x - s * 0.40, y - s * 0.34, s * 0.80, s * 0.68, 2, 2)
         love.graphics.setColor(0.72, 0.61, 0.40)                                          -- curled top edge
@@ -242,10 +228,8 @@ function Icons.draw(kind, x, y, s)
         love.graphics.setLineWidth(1)
 
     elseif kind == "container" then
-        -- Two stacked shipping containers. Deliberately NOT the wooden crate and
-        -- NOT the treasure chest: New York ships containers, and borrowing the
-        -- chest made its cargo look like treasure. Ribbed sides + a flat top so
-        -- it reads as steel at a glance. Real art: assets/icons/container.png.
+        -- Not the crate and not the chest: borrowing the chest made New York's
+        -- cargo look like treasure. Ribbed sides read as steel at a glance.
         local function box(by, col, dark)
             love.graphics.setColor(col)
             love.graphics.rectangle("fill", x - s * 0.44, by, s * 0.88, s * 0.30)

@@ -1,21 +1,13 @@
--- src/data/maps.lua
--- Every world the game can sail. A map is DATA: a seed plus authored island
--- anchors plus which ports/ships files populate it. Worldgen is seeded, so the
--- same entry always builds the exact same world — which is what makes maps
--- shippable (and sellable) as resources. A future paid pack ("Amerika",
--- "Asia"…) is a new entry here with its own ports/ships files and a product id
--- (own state flag, NOT the Kaptein-pakken `premium` flag).
---
--- NOTE before shipping a second real map: fog / discovered islands / treasures
--- in the save are currently global, not per-map — they must move under the map
--- id or switching maps will leak exploration between worlds.
---
--- `comingSoon = true` shows a non-interactive teaser card in the selector.
---
--- Per-island fields: `biome` (see config.BIOMES) and `remote = true`, which
--- grows NO countryside houses there — so it stays forest, rock and coast, with
--- no farms and no country roads. Mixing packed islands with empty ones is what
--- makes a big map feel travelled rather than uniformly populated.
+-- Every world the game can sail. A map is data: a seed, authored island anchors,
+-- and which ports/ships files populate it. Worldgen is seeded, so an entry always
+-- builds the same world. A paid pack is a new entry with its own product id and
+-- state flag -- NOT the Kaptein-pakken `premium` flag.
+-- Before a second real map ships: fog / discovered islands / treasures in the
+-- save are global and must move under the map id, or exploration leaks between
+-- worlds.
+--   comingSoon  non-interactive teaser card in the selector
+--   biome       per island, see config.BIOMES
+--   remote      no countryside houses -- forest, rock and coast, no farms/roads
 
 return {
     {
@@ -43,22 +35,16 @@ return {
         country = "Amerika",
         premium = true,      -- part of Kaptein-pakken (boats + Amerika)
         seed    = 8492,
-        -- TWO CONTINENTS split by a winding central strait, ~60% land:
-        -- overlapping islands merge into landmasses, and the narrow gaps
-        -- between them become FJORDS. West: snowy Alaska shelf → green Pacific
-        -- coast → desert southwest. East: lush northeast → green mid-Atlantic
-        -- and south. A mid-strait island is the crossing waypoint, and an
-        -- arctic islet guards the northern passage.
+        -- Two continents split by a winding central strait, ~60% land: islands
+        -- merge into landmasses and the narrow gaps between them read as fjords.
         islands = {
             -- west continent
-            -- The Alaskan shelf is empty wilderness: ice, rock and nobody home.
             { x = 1600, y = 1300, radius = 2500, biome = "snow", remote = true },
             { x = 3700, y = 1000, radius = 1900, biome = "snow", remote = true },
             { x = 4900, y = 2100, radius = 1500 },
             { x = 1500, y = 3600, radius = 2000 },
             { x = 3300, y = 3300, radius = 1700 },
             { x = 2300, y = 5900, radius = 2400, biome = "desert" },  -- Los Angeles
-            -- deep desert: canyon country, no farms out here
             { x = 4500, y = 6600, radius = 1900, biome = "desert", remote = true },
             { x = 4700, y = 4900, radius = 1600, biome = "desert", remote = true },
             -- east continent
@@ -71,7 +57,7 @@ return {
             { x = 9800, y = 6200, radius = 1900 },                    -- Washington DC
             { x = 11300, y = 5600, radius = 1400 },                   -- Norfolk
             { x = 6900, y = 6500, radius = 1600 },
-            -- the strait: both are lonely rocks you pass, not places you visit
+            -- the strait: rocks you pass, not places you visit
             { x = 6100, y = 3900, radius = 1250, remote = true },     -- crossing waypoint
             { x = 6300, y = 300,  radius = 900, biome = "snow", remote = true }, -- arctic islet
         },

@@ -1,6 +1,5 @@
--- src/scenes/loading.lua
--- Loading screen due to World:load being heavy
--- Run as coroutine
+-- Animated loading screen: World:load is heavy, so it runs as a coroutine and
+-- this draws a frame between slices.
 
 local config = require("src.config")
 local Loader = require("src.systems.loader")
@@ -11,7 +10,7 @@ function Loading:load(game)
     self.game = game
     self.t = 0
     self.done = false
-    -- The big terrain loops call Loader.tick() to yield this coroutine.
+    -- the big terrain loops call Loader.tick() to yield this coroutine
     local World = game.scenes.world
     self.co = coroutine.create(function() World:load(game) end)
 end
@@ -37,7 +36,7 @@ function Loading:draw()
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
     local c = config.colors
 
-    -- sea backdrop (top -> deep gradient in a few bands)
+    -- sea backdrop, banded gradient
     for b = 0, 5 do
         local f = b / 5
         love.graphics.setColor(c.water_top[1] + (c.water_deep[1] - c.water_top[1]) * f,
@@ -46,7 +45,7 @@ function Loading:draw()
         love.graphics.rectangle("fill", 0, sh * (b / 6), sw, sh / 6 + 1)
     end
 
-    -- watery animation: rolling foam rows drifting across the sea
+    -- foam rows drifting across
     local t = self.t
     for r = 1, 8 do
         local wy = sh * (0.12 + r * 0.095)
@@ -59,7 +58,7 @@ function Loading:draw()
         end
     end
 
-    -- a few expanding ripple rings near the middle
+    -- expanding ripple rings
     love.graphics.setLineWidth(3)
     for i = 0, 2 do
         local pr = ((t * 0.45 + i / 3) % 1)
@@ -69,7 +68,6 @@ function Loading:draw()
     end
     love.graphics.setLineWidth(1)
 
-    -- "Laster kartet…" with animated dots
     love.graphics.setFont(self.game.fonts.big)
     local dots = string.rep(".", (math.floor(self.t * 3) % 4))
     local label = "Laster kartet" .. dots

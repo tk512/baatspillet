@@ -1,17 +1,24 @@
--- src/systems/treasure.lua
--- Places the treasure chests for the hunt: one on a "sandbank" in open water just
--- off each of the biggest islands (clean water the boat can sail right up to).
--- Placement is deterministic from the world seed -- the same map always hides the
--- chests in the same spots -- so the save only needs to remember which were found.
---
--- A treasure is a plain table: { id, x, y, good, found }.
---   good = the collectible it yields (an Icons kind, e.g. "shell")
+-- Places the hunt's chests: one per big island, on a sandbank in open water.
+-- Seeded from the world seed, so the save only stores which were found.
+-- A treasure is { id, x, y, good, found }; `good` is an Icons kind.
 
 local config = require("src.config")
 
 local Treasure = {}
 
--- The COUNT biggest islands, in island order (stable -> stable collectible map).
+-- Is a map due on this delivery? Pure, and tested (tests/treasure.lua) --
+-- the cadence is tuned in config.TREASURE and explained in CLAUDE.md.
+--   everHad   the first map is guaranteed
+--   sinceMap  normal deliveries since the last map; deliveries made DURING a
+--             hunt don't count (World:openDock)
+--   roll      0..1, drawn by the caller
+function Treasure.mapDue(everHad, sinceMap, cooldown, roll, chance)
+    if not everHad then return true end
+    if sinceMap < cooldown then return false end
+    return roll < chance
+end
+
+-- the COUNT biggest islands, in island order (stable -> stable collectibles)
 local function pickIslands(n)
     local idx = {}
     for i = 1, #config.ISLANDS do idx[i] = i end
@@ -22,19 +29,17 @@ local function pickIslands(n)
     return picks
 end
 
--- An OPEN-water spot just off `isl`: the first tile (stepping out from the coast
--- at a seeded angle) that has water on all sides, so the boat -- which sails in
--- straight lines, no pathfinding -- can pull right up to it without grinding the
--- shore. The sandbank is only a visual; placing it in clean water is what keeps
--- the approach smooth. Returns world x, y (tile centre) or nil.
+-- First tile off `isl` with water on all sides, stepping out from the coast at
+-- a seeded angle. The boat has no pathfinding, so open water is what lets it
+-- pull straight up. Returns world x, y (tile centre) or nil.
 local function sandbankNear(terrain, isl, salt)
     local T = config.TILE
     local ci = math.floor(isl.x / T) + 1
     local cj = math.floor(isl.y / T) + 1
     local r0 = math.max(2, math.floor(isl.radius / T))    -- roughly the coast
-    local start = salt * 2.3999632                        -- golden-angle spread per chest
+    local start = salt * 2.3999632                        -- golden angle, spreads the chests
 
-    local function openWater(i, j)                         -- water all around (reachable)
+    local function openWater(i, j)
         for di = -1, 1 do
             for dj = -1, 1 do
                 local row = terrain.tiles[i + di]
@@ -59,7 +64,7 @@ local function sandbankNear(terrain, isl, salt)
     return nil
 end
 
--- Build the chest list. `foundSet[id] = true` for chests already dug up.
+-- `foundSet[id] = true` for chests already dug up.
 function Treasure.build(terrain, foundSet)
     foundSet = foundSet or {}
     local goods = config.TREASURE_GOODS

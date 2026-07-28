@@ -1,7 +1,5 @@
--- src/ui/pausemenu.lua
--- A simple in-game pause overlay in the wooden retro style: dims the world and
--- shows a centred plaque with big, touch-friendly buttons. Built so it works
--- the same with a mouse or an iPad tap.
+-- In-game pause overlay: dims the world, centres a plaque with big touch-sized
+-- buttons.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -14,10 +12,9 @@ function PauseMenu.new(world)
     local self = setmetatable({}, PauseMenu)
     self.world = world
     self.t = 0
-    -- Deliberately just TWO choices (kid-clear). No Lyd toggle: the voice
-    -- prompts ARE the pre-reader UI, so an in-game mute is a footgun — volume
-    -- is the platform's job (hardware buttons / silent switch); desktop keeps
-    -- the M key for grown-ups.
+    -- Two choices only. No Lyd toggle: the voice prompts ARE the pre-reader UI,
+    -- so muting in-game is a footgun; volume is the platform's job (desktop
+    -- keeps the M key for grown-ups).
     self.buttons = {
         { label = "Fortsett", action = function() world:closePause() end,
           face = { 0.30, 0.50, 0.28 }, hi = { 0.44, 0.68, 0.40 }, lo = { 0.15, 0.28, 0.14 } },
@@ -28,8 +25,7 @@ end
 
 function PauseMenu:update(dt) self.t = self.t + dt end
 
--- Lay the panel out (also used by mousepressed). Returns the panel rect and a list
--- of button rects, sized to the screen so it scales on any resolution / iPad.
+-- Panel rect + button rects, sized to the screen. Also used by mousepressed.
 function PauseMenu:layout()
     local sw, sh = love.graphics.getDimensions()
     local fonts = self.world.game.fonts
@@ -81,7 +77,6 @@ end
 
 local function inRect(r, x, y) return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h end
 
--- Press-in on touch, act on release (Retro press protocol).
 function PauseMenu:mousepressed(x, y, button)
     if button ~= 1 then return end
     local P, rects = self:layout()

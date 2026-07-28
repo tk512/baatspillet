@@ -1,7 +1,6 @@
--- src/systems/terrain.lua
--- Procedural isometric tilemap: water / sand / grass / rock tiles with curvy
--- coastlines, plus a discrete-plateau heightfield for visual mountains. Tiles
--- draw a PNG from assets/tiles/<type>.png when present, else code art.
+-- Procedural isometric tilemap: water / sand / grass / rock with curvy
+-- coastlines, plus a plateau heightfield for visual mountains. Elevation is
+-- visual only -- the boat always sails at z = 0.
 
 local config = require("src.config")
 local Iso    = require("src.systems.iso")
@@ -11,7 +10,7 @@ local Loader = require("src.systems.loader")
 local Terrain = {}
 Terrain.__index = Terrain
 
--- Deterministic value noise (stable per seed).
+-- deterministic value noise, stable per seed
 local function hashf(x, y, seed)
     local s = math.sin(x * 12.9898 + y * 78.233 + seed * 0.1357) * 43758.5453
     return s - math.floor(s)
@@ -59,8 +58,7 @@ function Terrain.new(ports)
     return self
 end
 
--- Corner grid: 1 = land, 0 = sea. Island masks set the broad shape; noise
--- perturbs the edge so coastlines are irregular rather than circular.
+-- corner grid, 1 = land: island masks give the shape, noise frays the edge
 function Terrain:generateLand()
     local T = config.TILE
     local seed = config.WORLD_SEED
@@ -88,7 +86,7 @@ local function cornersAllZero(self, i, j)
        and self.corner[i + 1][j + 1] == 0 and self.corner[i][j + 1] == 0
 end
 
--- Place each port on the nearest coastal land tile + record the build pad.
+-- snap each port to the nearest coastal land tile and record its build pad
 function Terrain:snapPorts(ports)
     local T = config.TILE
     self.buildMask = {}
@@ -122,7 +120,7 @@ function Terrain:snapPorts(ports)
         local i0 = math.min(math.max(1, best[1] - 1), self.nx - w)
         local j0 = math.min(math.max(1, best[2] - 1), self.ny - h)
 
-        -- force the footprint to solid land + flag it (flat, no props)
+        -- force the footprint to solid land and flag it: flat, no props
         for ci = i0, i0 + w do for cj = j0, j0 + h do self.corner[ci][cj] = 1 end end
         for i = i0, i0 + w - 1 do
             self.buildMask[i] = self.buildMask[i] or {}
@@ -147,9 +145,8 @@ function Terrain:snapPorts(ports)
         local ux, uy = sdx / mag, sdy / mag
         port:placeAt(i0, j0, cx, cy, 0, ux, uy)  -- buildZ = 0 (flat)
 
-        -- Dock point: step out from the harbour centre along the sea direction
-        -- to the FIRST water tile (then a touch further), so the boat has a real
-        -- spot in the water to pull up to. Stored on the port for isBoatInRange.
+        -- step out to the first water tile (and a touch further), so the boat
+        -- has a real spot to pull up to
         local dockX, dockY = cx + ux * T, cy + uy * T
         for s = 1, 40 do
             local gx, gy = cx + ux * T * 0.5 * s, cy + uy * T * 0.5 * s
@@ -162,12 +159,10 @@ function Terrain:snapPorts(ports)
     end
 end
 
--- Combined island-mask value at a world point (1 at a centre, 0 past the
--- radius). The shape that carved the islands, reused to raise elevation toward
--- each island's middle.
--- Which island "owns" this spot: the one contributing most mask here, or nil
--- over open water and unclaimed land. Everything that varies per island (biome,
--- and whether it's a remote wilderness) reads from this one lookup.
+-- Combined island-mask value: 1 at a centre, 0 past the radius. The shape that
+-- carved the islands, reused to raise elevation toward each middle.
+-- Which island owns a spot -- the one contributing most mask, or nil over open
+-- water. Everything per-island (biome, remote) reads this one lookup.
 function Terrain:islandAt(gx, gy)
     local best, owner = 0, nil
     for _, isl in ipairs(config.ISLANDS) do
@@ -180,16 +175,14 @@ function Terrain:islandAt(gx, gy)
     return owner
 end
 
--- Biome of the owning island; unclaimed ground is "green" (the Norge baseline).
+-- unclaimed ground is "green", the Norge baseline
 function Terrain:biomeAt(gx, gy)
     local isl = self:islandAt(gx, gy)
     return (isl and isl.biome) or "green"
 end
 
--- A REMOTE island (maps.lua `remote = true`) grows no countryside houses, so it
--- stays wilderness: forest, rock and coast, with no scattered farms and — since
--- the country roads link neighbouring houses — no roads either. Sailing past one
--- should feel like nobody lives there.
+-- A remote island grows no countryside houses, so it stays forest, rock and
+-- coast -- and since roads link neighbouring houses, no roads either.
 function Terrain:isRemoteAt(gx, gy)
     local isl = self:islandAt(gx, gy)
     return isl ~= nil and isl.remote == true
@@ -208,11 +201,10 @@ function Terrain:islandMask(gx, gy)
     return m
 end
 
--- Discrete-plateau terrain. Each full-land tile gets an integer level from a
--- smooth field (large contiguous plateaus). A corner's height is the average of
--- its touching tile levels x STEP, so plateau interiors stay flat and only
--- boundary tiles ramp up one level: no bumps, no walls.
--- tile.level = plateau level; cz[ci][cj] = corner height; tile.z = avg height.
+-- Each land tile takes an integer level from a smooth field, and a corner's
+-- height is the average of its touching levels x STEP -- so plateau interiors
+-- stay flat and only boundary tiles ramp one level. No bumps, no walls.
+-- tile.level = plateau level; cz[ci][cj] = corner height; tile.z = average.
 function Terrain:buildHeightfield()
     local T = config.TILE
     local M = config.MOUNTAINS
@@ -229,7 +221,7 @@ function Terrain:buildHeightfield()
                 local shape = (mask - config.LAND_THRESH) / (1 - config.LAND_THRESH) -- 0 coast .. 1 centre
                 if shape < 0 then shape = 0 end
                 local n = fbm(cx / M.NOISE_SCALE, cy / M.NOISE_SCALE, seed + 300)
-                -- shape tapers to 0 at the coast; noise terraces the interior
+                -- shape tapers to 0 at the coast, noise terraces the interior
                 local h = shape * (0.5 + 0.85 * n)
                 if h > 1 then h = 1 end
                 tile.level = math.floor(h * M.MAX_LEVEL + 0.001)
@@ -251,17 +243,15 @@ function Terrain:buildHeightfield()
         end
     end
 
-    -- corner height = average of the (up to 4) touching tile levels x STEP
+    -- corner height = average of the up to 4 touching tile levels x STEP
     local function tlvl(i, j)
         local row = self.tiles[i]; local t = row and row[j]
         return (t and t.level) or 0
     end
-    -- A corner touching the flat beach strip (coastal tile), open water or the
-    -- map edge is PINNED to sea level. The beach/water tiles are drawn flat at
-    -- z=0 (coastMesh / water base), so a lifted shared corner would hoist the
-    -- land mesh's edge off them and expose the blue clear color underneath as
-    -- long triangular gaps. Pinning makes the land always rise from BEHIND the
-    -- beach, and the two meshes meet exactly.
+    -- Corners touching the beach strip, open water or the map edge are PINNED
+    -- to sea level: those tiles draw flat at z = 0, so a lifted shared corner
+    -- hoists the land mesh off them and opens triangular gaps to the clear
+    -- colour. Pinned, the land always rises from BEHIND the beach.
     local function flatTile(i, j)
         local row = self.tiles[i]; local t = row and row[j]
         return (not t) or t.water or t.land < 4
@@ -290,7 +280,7 @@ function Terrain:buildHeightfield()
     end
 end
 
--- Height (world-units) of a grid corner / a tile's average (0 out of range).
+-- corner height / tile average in world units; 0 out of range
 function Terrain:cornerZ(ci, cj)
     local row = self.cz and self.cz[ci]
     return (row and row[cj]) or 0
@@ -301,7 +291,7 @@ function Terrain:tileZ(i, j)
     return (t and t.z) or 0
 end
 
--- Classify each tile from its corner land flags + a land-cover noise.
+-- classify each tile from its corner land flags and a land-cover noise
 function Terrain:classifyTiles()
     local T = config.TILE
     local seed = config.WORLD_SEED
@@ -338,10 +328,9 @@ function Terrain:classifyTiles()
     end
 end
 
--- Chamfer distance (in corner steps, capped at 3) from every grid corner to the
--- nearest sea corner: the "how far inland am I" field that drives the dithered
--- sand→grass band (isBeach). Two forward/backward sweeps are exact here because
--- the cap is tiny.
+-- Chamfer distance in corner steps (capped at 3) to the nearest sea corner: the
+-- "how far inland" field behind the dithered beach band. Two sweeps are exact
+-- because the cap is tiny.
 function Terrain:buildShoreDist()
     local sd = {}
     for ci = 1, self.nx + 1 do
@@ -376,7 +365,7 @@ function Terrain:buildShoreDist()
     self.shoreD = sd
 end
 
--- Bilinear corner height at a world point (the land mesh's smooth surface).
+-- bilinear corner height: the land mesh's smooth surface
 function Terrain:heightAt(gx, gy)
     local T = config.TILE
     local ci, cj = gx / T + 1, gy / T + 1
@@ -390,7 +379,7 @@ function Terrain:heightAt(gx, gy)
     return top + (bot - top) * fy
 end
 
--- Bilinear shore distance at a world point (0 right at the waterline).
+-- bilinear shore distance; 0 at the waterline
 function Terrain:shoreDistAt(gx, gy)
     local T = config.TILE
     local ci, cj = gx / T + 1, gy / T + 1
@@ -404,10 +393,9 @@ function Terrain:shoreDistAt(gx, gy)
     return top + (bot - top) * fy
 end
 
--- Is the ground at (gx,gy) beach sand (true) or grass (false)? Solid sand near
--- the waterline, solid grass inland, and a speckled per-pixel dither in the
--- band between (config.BEACH), so the sand→grass edge frays naturally instead
--- of tracing the tile diamonds. Used by BOTH ground meshes at bake time.
+-- Sand or grass at (gx, gy): solid either side, with a speckled per-pixel
+-- dither in the band between (config.BEACH), so the edge frays instead of
+-- tracing the tile diamonds. Shared by BOTH ground meshes at bake time.
 function Terrain:isBeach(gx, gy)
     local B = config.BEACH
     local s = self:shoreDistAt(gx, gy)
@@ -442,7 +430,7 @@ function Terrain:scatterProps()
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "forest", z = 0,
                             salt = i * 131 + j * 977, biome = t.biome }
                     elseif bio.scrub and f > config.FOREST_THRESH + bio.scrub then
-                        -- desert: cactus and low bushes where woods can't grow
+                        -- cactus and low bushes where woods can't grow
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "scrub", z = 0,
                             salt = i * 131 + j * 977, biome = t.biome }
                     elseif (i * 31 + j * 7) % 13 == 0 and not self:isRemoteAt(cx, cy) then
@@ -475,18 +463,14 @@ function Terrain:visibleRange(minGx, minGy, maxGx, maxGy)
     return i0, j0, i1, j1
 end
 
--- Ground texture atlas: hand-drawn iso tile art (assets/tiles/gress/) baked
--- once into a mipmapped atlas. The land mesh UV-maps each flat tile's top
--- diamond onto a deterministic variant, so the whole ground still draws as
--- ONE textured mesh. Rocky, snowy and beach subcells sample the solid-white
--- cell instead (vertex colour alone), keeping today's cliffs/snow/dithered
--- beach. Missing art -> nil, and the mesh stays untextured (placeholder-first).
--- The art is NEUTRALIZED at build: each tile is normalized so its average
--- colour becomes even grey, and the land mesh's vertex colours (the game's
--- own palette + biome + snow + rock + shade pipeline) re-tint it — the art
--- is a pure detail layer, so it can never clash with the game's colours and
--- the dithered transitions to plain ground stay subtle. NORM sets the grey
--- level; the mesh multiplies vertex colours by 1/NORM to compensate.
+-- Hand-drawn iso tile art baked once into a mipmapped atlas. The land mesh
+-- UV-maps each flat tile's top diamond onto a deterministic variant, so the
+-- ground still draws as ONE mesh; rock, snow and beach subcells sample the
+-- solid-white cell and keep their vertex colours. Missing art -> nil and the
+-- mesh stays untextured.
+-- The art is NEUTRALIZED at build -- normalized so its average is even grey --
+-- and the mesh's vertex colours re-tint it. The art is a pure detail layer, so
+-- it can't clash with the palette. The mesh multiplies by 1/NORM to compensate.
 local ATLAS_NORM = 0.8
 local gressAtlas   -- nil = untried, false = art absent (cached across F6 regens)
 local function groundAtlas()
@@ -521,17 +505,14 @@ local function groundAtlas()
     for k, e in ipairs(list) do
         local col = (k - 1) % cols
         local row = math.floor((k - 1) / cols)
-        -- Only the block's TOP SURFACE goes into the atlas — the art also
-        -- paints the block's soil thickness below it, which we never render.
-        -- Measure the face's real quadrilateral: the outermost opaque columns
-        -- are the side corners (their first opaque pixel = corner height),
-        -- the centre columns give the top corner, and the bottom corner —
-        -- hidden against the soil — follows by symmetry. Cropping that exact
-        -- band keeps every soil pixel out of the atlas.
+        -- Only the TOP SURFACE goes in: the art also paints the soil thickness
+        -- below, which we never render. The outermost opaque columns give the
+        -- side corners, the centre columns the top corner, and the hidden
+        -- bottom corner follows by symmetry.
         local id = e.id
         local w, h = id:getDimensions()
-        -- neutralize: average opaque colour -> ATLAS_NORM grey (per channel,
-        -- so the art's own hue goes away and vertex colour brings the game's)
+        -- average opaque colour -> ATLAS_NORM grey, per channel, so the art's
+        -- own hue goes and vertex colour supplies the game's
         local sr, sg, sb, n = 0, 0, 0, 0
         for y = 0, h - 1, 2 do
             for x = 0, w - 1, 2 do
@@ -601,7 +582,7 @@ local function groundAtlas()
     return gressAtlas
 end
 
--- Draw a tile PNG (flat, centred, fit to TILE). Returns false if not present.
+-- flat, centred, fit to TILE; false when the PNG is absent
 function Terrain:drawSprite(ttype, i, j)
     local img = Assets.image("tiles/" .. ttype .. ".png")
     if not img then return false end
@@ -618,17 +599,16 @@ function Terrain:drawTile(i, j)
     if tile.water then
         if not self:drawSprite("water", i, j) then self:drawWater(i, j, tile) end
     elseif tile.land < 4 then
-        -- coastal: only the animated water base. The jagged land edge is baked
-        -- into self.coastMesh. Full-land tiles are baked into self.landMesh.
+        -- coastal tiles draw only the animated water base; the jagged land edge
+        -- is baked into coastMesh, full-land tiles into landMesh
         if not self:drawSprite("water", i, j) then self:drawWater(i, j, tile) end
     end
 end
 
--- Bake the jagged, pixelized shoreline into one static mesh. Each coastal tile
--- is split into COAST_PIXELS^2 sub-cells; land/wet-sand/foam cells become little
--- iso-diamond quads. Land vs water per sub-cell = bilinear of the 4 tile corners
--- + world-space noise, so the coast frays irregularly and joins seamlessly
--- tile-to-tile.
+-- Bakes the pixelized shoreline into one static mesh: each coastal tile splits
+-- into COAST_PIXELS^2 sub-cells, and land/wet-sand/foam ones become iso-diamond
+-- quads. Land vs water per sub-cell is bilinear over the tile corners plus
+-- world-space noise, so the coast frays and still joins tile-to-tile.
 function Terrain:buildCoastMesh()
     local T = config.TILE
     local N = config.COAST_PIXELS

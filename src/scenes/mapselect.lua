@@ -1,10 +1,7 @@
--- src/scenes/mapselect.lua
--- "Velg kart": pick the world to sail, right after choosing a boat. Maps are
--- pure data (src/data/maps.lua); each card draws its islands as a miniature
--- sea chart straight from the map's island anchors — so the choice reads
--- without reading. `comingSoon` maps show as quiet teaser cards (dimmed, a big
--- "?", no padlock — they're not buyable yet, just "later"), per the
--- no-purchase-pressure rule. Voice hook: velg_kart.
+-- "Velg kart", straight after the boat chooser. Each card draws its islands as
+-- a miniature sea chart from the map's own anchors, so the choice reads without
+-- reading. `comingSoon` maps are dimmed teasers with a "?" and no padlock --
+-- they aren't buyable, just later. Voice hook: velg_kart.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -16,9 +13,8 @@ local Flags  = require("src.ui.flags")
 local W = Retro.WOOD
 local MapSelect = {}
 
--- A flag WAVING in the wind, centre of the map preview: the image is drawn in
--- vertical slices riding a travelling sine (hoist edge steady, fly end waving)
--- with a light shimmer rolling along the cloth. Quads are cached per image.
+-- Waving flag: vertical slices riding a travelling sine, hoist steady and fly
+-- end waving, with a shimmer rolling along the cloth. Quads cached per image.
 local flagQuads = {}
 local function wavingFlag(country, cx, cy, w, t)
     local code = Flags.CODES[country]
@@ -68,7 +64,7 @@ end
 
 function MapSelect:update(dt) self.t = self.t + dt end
 
--- Sky + sea backdrop in the title screen's pixel language, baked once.
+-- title-screen pixel language, baked once
 function MapSelect:drawBackground(sw, sh)
     if not self.bg or self.bgW ~= sw or self.bgH ~= sh then
         local VH = Scene.VRES_H
@@ -81,8 +77,7 @@ function MapSelect:drawBackground(sw, sh)
         Scene.dithGradient(0, 0, VW, horizon, { 0.36, 0.60, 0.88 }, { 0.82, 0.90, 0.96 }, 10)
         Scene.dithGradient(0, horizon, VW, VH - horizon,
             config.colors.water_top, config.colors.water_deep, 8)
-        -- same depth + life as the title screen: haze range, treed islands
-        -- at the edges (the middle stays clear behind the map cards)
+        -- treed islands at the edges; the middle stays clear behind the cards
         Scene.hazeHills(0, VW, horizon, VH)
         local grass, gdk = config.colors.grass.top, config.colors.grass.lip
         local sand = config.colors.sand.top
@@ -128,8 +123,7 @@ function MapSelect:layout()
     }
 end
 
--- One map card: wooden frame around a mini sea chart drawn from the map's own
--- island anchors (sand halo under a grass blob per island).
+-- one card: wooden frame around a mini chart drawn from the island anchors
 function MapSelect:drawCard(c)
     local def = c.def
     local t = math.max(2, math.floor(c.h * 0.05))
@@ -144,8 +138,7 @@ function MapSelect:drawCard(c)
     love.graphics.setColor(sea[1], sea[2], sea[3])
     love.graphics.rectangle("fill", ix, iy, iw, ih)
 
-    -- Placeholder-first: a real picture (assets/maps/<id>.png, any aspect —
-    -- cover-fit + scissored) replaces the generated island blobs.
+    -- assets/maps/<id>.png (any aspect, cover-fit) replaces the blobs
     local img = not def.comingSoon and Assets.image("maps/" .. def.id .. ".png")
     if img then
         local sc = math.max(iw / img:getWidth(), ih / img:getHeight())
@@ -161,7 +154,7 @@ function MapSelect:drawCard(c)
         love.graphics.setFont(f); love.graphics.setColor(1, 1, 1, 0.85)
         love.graphics.print("?", ix + iw / 2 - f:getWidth("?") / 2, iy + ih / 2 - f:getHeight() / 2)
     else
-        -- islands to scale: sand halo + grass blob (a generated kid's chart)
+        -- islands to scale: sand halo + grass blob
         local sx, sy = iw / config.WORLD_WIDTH, ih / config.WORLD_HEIGHT
         for _, isl in ipairs(def.islands) do
             local px, py = ix + isl.x * sx, iy + isl.y * sy
@@ -175,8 +168,7 @@ function MapSelect:drawCard(c)
         end
     end
 
-    -- TWINKLE: little four-point stars glinting across a pickable chart, each
-    -- on its own rhythm (pure functions of time — nothing allocated per frame).
+    -- four-point stars, each on its own rhythm; pure functions of time
     if not def.comingSoon then
         for i = 1, 7 do
             local a = math.sin(self.t * (0.8 + (i % 3) * 0.37) + i * 1.9)
@@ -200,8 +192,7 @@ function MapSelect:drawCard(c)
         wavingFlag(def.country, ix + iw / 2, iy + ih / 2, iw * 0.40, self.t)
     end
 
-    -- premium map without the pack: roped off behind a padlock (the same
-    -- "for later" language as the locked boats)
+    -- premium without the pack: the same rope + padlock as the locked boats
     if def.premium and not self.game:isPremium() then
         local ry = iy + ih * 0.55
         Retro.ropeAcross(ix + 2, ix + iw - 2, ry, ih * 0.08, math.max(2, ih * 0.03))

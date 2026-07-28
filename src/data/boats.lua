@@ -11,9 +11,8 @@
 --   sprite    optional PNG in assets/boats/ (else placeholder art)
 --   color     {r,g,b} hull color for the placeholder
 
--- ORDER MATTERS: the first entry is the DEFAULT boat -- it's what a new save
--- starts with (Game defaultState) and what getBoatDef falls back to for an
--- unknown id. The chooser also lists them in this order.
+-- ORDER MATTERS: the first entry is the DEFAULT boat -- what a new save starts
+-- with and what getBoatDef falls back to. The chooser lists them in this order.
 return {
     {
         id       = "nasse_noff",
@@ -22,12 +21,10 @@ return {
         accel    = 95,
         turn     = 1.7,
         capacity = 3,
-        -- Live 3D textured model (assets/models/nasse_noff.obj + .png — the
-        -- png is recoloured happy Piglet-pink from the asset's dark green);
-        -- the old 8-view turnsheet below stays as the fallback.
+        -- live 3D model; the turnsheet below is the fallback
         model3d  = "nasse_noff",
         modelYaw = 0,
-        -- 8-view turnsheet frames (raw/bat-turnsheet.png via tools/make_turnsheet.py)
+        -- 8-view turnsheet (raw/bat-turnsheet.png via tools/make_turnsheet.py)
         frames   = "nasse_noff",
         spriteWidth = 118,             -- gameplay-only size (preview scales itself)
         color    = {0.16, 0.22, 0.32}, -- navy hull for the placeholder fallback
@@ -51,8 +48,7 @@ return {
         turn     = 2.0,
         capacity = 4,
         premium  = true,               -- unlocked by the one premium pack (config.PREMIUM)
-        -- Live 3D voxel tug (assets/models/toffe.obj + .mtl); the old photo
-        -- sprite stays as the fallback if the model can't load.
+        -- live 3D; the photo sprite is the fallback if the model won't load
         model3d  = "toffe",
         modelYaw = 0,
         spriteWidth = 105,
@@ -67,9 +63,7 @@ return {
         turn     = 1.9,
         capacity = 5,
         premium  = true,
-        -- Live 3D textured model (assets/models/vannvittig.obj + .png — same
-        -- hull as Nasse Nøff, its own paint job). Fallbacks below: baked
-        -- frames if they ever exist, else the code-drawn volumetric boat.
+        -- live 3D; falls back to baked frames, then the code-drawn boat
         model3d  = "vannvittig",
         modelYaw = 0,
         spriteWidth = 110,
@@ -87,10 +81,8 @@ return {
         turn     = 1.7,
         capacity = 6,
         premium  = true,
-        -- Live 3D: assets/models/vikingskipet.obj rendered in real 3D each
-        -- frame (src/systems/model3d.lua) — rotates smoothly as you steer.
-        -- modelYaw (degrees) turns the model so the bow leads; tweak it here
-        -- if a model's bow points the wrong way, no re-export needed.
+        -- live 3D (src/systems/model3d.lua). modelYaw (degrees) turns the model
+        -- so the bow leads -- fix a wrong-facing bow here, not by re-exporting.
         model3d  = "vikingskipet",
         modelYaw = 90,
         spriteWidth = 115,             -- long low ship; keep it modest on screen

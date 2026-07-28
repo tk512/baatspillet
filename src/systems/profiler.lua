@@ -1,19 +1,9 @@
--- src/systems/profiler.lua
--- Frame-by-frame profiling to a CSV, for finding real hotspots in real play
--- (F4 in dev builds). The on-screen F3 overlay tells you *that* a frame was
--- slow; this tells you *which* ones, *where* you were standing, and whether the
--- garbage collector was the cause.
---
--- Written to LÖVE's save directory as profile.csv:
---   unfused (love .)  ~/Library/Application Support/LOVE/batspillet/profile.csv
---   fused (.app)      ~/Library/Application Support/batspillet/profile.csv
---
--- IT MUST NOT PERTURB WHAT IT MEASURES. A profiler that formats a string every
--- frame generates steady garbage and would manufacture the very GC hiccups
--- we're hunting. So samples go into a PREALLOCATED flat number array and are
--- formatted only at flush time, once every FLUSH_FRAMES.
---
--- Zones are opt-in and cost nothing when off:
+-- Per-frame CSV profiling (F4 in dev builds), written to LÖVE's save dir as
+-- profile.csv. The F3 overlay says a frame was slow; this says which ones, where
+-- the boat was, and whether the GC did it.
+-- Samples go into a preallocated flat array and are formatted only at flush: a
+-- profiler that builds a string per frame manufactures the hiccups it hunts.
+-- Zones cost nothing when off:
 --     local t0 = Profiler.mark()      -- nil unless recording
 --     ...work...
 --     Profiler.zone("world", t0)
@@ -22,7 +12,7 @@ local Profiler = {}
 
 Profiler.on = false
 
--- Column order == CSV header order. Keep the two in sync.
+-- column order == CSV header order, keep in sync
 local COLS = {
     "frame", "time_s", "dt_ms", "upd_ms", "draw_ms",
     "z_world", "z_fog", "z_hud", "z_minimap",
@@ -56,13 +46,11 @@ local function flush()
         local base, row = f * NCOL, {}
         for c = 1, NCOL do
             local v = buf[base + c]
-            -- integers stay integers so the CSV is easy to eyeball
             row[c] = (v % 1 == 0) and string.format("%d", v) or string.format("%.3f", v)
         end
         parts[#parts + 1] = table.concat(row, ",")
     end
-    -- Say so if the write fails. Swallowing it silently means playing for ten
-    -- minutes and finding an empty file with no clue why.
+    -- say so on failure: a silent one means an empty file after ten minutes
     local ok, err = pcall(love.filesystem.append, PATH, table.concat(parts, "\n") .. "\n")
     if not ok and not Profiler._warned then
         Profiler._warned = true
@@ -71,7 +59,7 @@ local function flush()
     nFrames = 0
 end
 
--- Begin a fresh recording (truncates any previous file and writes the header).
+-- truncates any previous file and writes the header
 function Profiler.start()
     pcall(love.filesystem.write, PATH, table.concat(COLS, ",") .. "\n")
     nFrames, frameNo = 0, 0
@@ -92,16 +80,15 @@ function Profiler.toggle()
     return Profiler.start()
 end
 
--- One row. Call once per frame, after drawing. `world` is optional -- when the
--- active scene isn't the world we simply log zeros for its columns.
+-- One row, once per frame after drawing. `world` is optional -- outside the
+-- world scene its columns log zeros.
 function Profiler.frame(dt, updMs, drawMs, world)
     if not Profiler.on then return end
     local st  = love.graphics.getStats()
     local lua = collectgarbage("count")
 
-    -- A DROP in Lua memory means a collection ran this frame. Logging how much
-    -- was freed alongside the frame time is what makes a GC hiccup visible:
-    -- look for dt_ms spikes on rows where gc_freed_kb is large.
+    -- A drop in Lua memory means a collection ran: a GC hiccup is a dt_ms spike
+    -- on a row with a large gc_freed_kb.
     local freed = lastLua - lua
     if freed < 0 then freed = 0 end
     lastLua = lua

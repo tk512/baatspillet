@@ -1,19 +1,16 @@
--- src/ui/shipinfo.lua
--- A little MarineTraffic-style popup card for a tapped ambient ship: a photo
--- thumbnail, the ship's name, type, country (with a small drawn flag) and speed.
--- Anchored above the ship on screen, clamped to stay on-screen.
+-- MarineTraffic-style popup for a tapped ambient ship: photo, name, type,
+-- country with flag, speed. Anchored above the ship, clamped on screen.
 
 local Assets = require("src.assets")
 local Retro  = require("src.ui.retro")
 
 local ShipInfo = {}
 
--- Flags come from the shared module (image-first, painted fallback).
 local Flags = require("src.ui.flags")
 local function flag(country, x, y, w, h) Flags.draw(country, x, y, w, h) end
 
--- ship: { x,y, scale, moving, speed, look = { photo=..., def = {name,country,type} } }
--- sx, sy: the ship's position on screen (the card points down at it).
+-- ship: { x,y, scale, moving, speed, look = { photo, def = {name,country,type} } }
+-- sx, sy: the ship's screen position -- the card points down at it.
 function ShipInfo.draw(ship, sx, sy, fonts)
     local def = ship.look and ship.look.def or {}
     local name = def.name or "Skip"
@@ -29,7 +26,7 @@ function ShipInfo.draw(ship, sx, sy, fonts)
     local nh, rh = nameF:getHeight(), rowF:getHeight()
     local flagW = rh * 1.5
 
-    -- Measure content, then size the card to it so nothing ever overflows.
+    -- measure first, then size the card to it, so nothing overflows
     local rows = { { typ } }
     if country ~= "" then rows[#rows + 1] = { country, flagW + 6 * k } end
     rows[#rows + 1] = { speedText }

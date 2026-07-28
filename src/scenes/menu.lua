@@ -1,9 +1,6 @@
--- src/scenes/menu.lua
--- Title screen in an early-90s strategy-game style: the scene sits inside a
--- chunky beveled wooden frame over a dithered pixel sky, sun and horizon
--- islands. The title bounces in letter by letter, a recorded voice (my kid)
--- says it once, then a water splash erupts. The "Klar til å sette seil" button
--- is a carved wooden sign swaying on ropes. Keyboard (Enter/Space) or mouse.
+-- Title screen: a chunky wooden frame over a dithered pixel sky, sun and
+-- horizon islands. The title bounces in letter by letter, the recorded voice
+-- says it once, then a splash erupts. Enter/Space or mouse.
 
 local config   = require("src.config")
 local Assets   = require("src.assets")
@@ -18,7 +15,7 @@ local Menu = {}
 local TAU  = math.pi * 2
 local WOOD = Retro.WOOD
 
--- Elastic ease: overshoots 1 then wobbles back, for a letter springing in.
+-- overshoots 1 then wobbles back, for a letter springing in
 local function easeOutElastic(p)
     if p <= 0 then return 0 end
     if p >= 1 then return 1 end
@@ -32,14 +29,14 @@ local function clamp01(x)
     return x
 end
 
--- Split a string into a list of UTF-8 characters (so "å" is one letter).
+-- UTF-8 aware, so "å" is one letter
 local function splitChars(s)
     local t = {}
     for _, code in utf8.codes(s) do t[#t + 1] = utf8.char(code) end
     return t
 end
 
--- Biggest font for `text` that still fits within targetW (capped at maxSize).
+-- biggest font for `text` still fitting targetW
 local function fitFont(text, targetW, maxSize)
     local size = math.floor(maxSize)
     local f = love.graphics.newFont(size)
@@ -57,10 +54,8 @@ function Menu:load(game)
     Assets.stopDockMood()      -- in case we came straight from a dock
     Assets.stopChase()         -- ...or a pirate chase
 
-    -- Welcome fonts sized to the screen. They only depend on the window size,
-    -- and rasterizing the huge title font is a visible hitch on mobile — so
-    -- cache them across menu visits (like the background bake) and rebuild
-    -- only when the window actually changed.
+    -- Cached across menu visits: rasterizing the huge title font is a visible
+    -- hitch on mobile, and these depend only on the window size.
     local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
     if self._fontW ~= sw or self._fontH ~= sh then
         self.welcomeFont = fitFont("Velkommen til", sw * 0.48, sh * 0.12)
@@ -72,7 +67,7 @@ function Menu:load(game)
     self.welcomeText, self.welcomeChars = "Velkommen til", splitChars("Velkommen til")
     self.titleText,   self.titleChars   = "Båtspillet!",   splitChars("Båtspillet!")
 
-    -- The game's artist, my boy Finn-Erik, waves from the bottom-right corner.
+    -- the game's artist waves from the bottom-right corner
     self.artist = Assets.image("menu/finnerik.png")
     if self.artist then self.artist:setFilter("nearest", "nearest") end
 
@@ -88,14 +83,12 @@ function Menu:load(game)
         }
     end
 
-    -- The real boat (his boat!) cruising big across the sea, left to right.
+    -- the hero boat cruising across the sea, left to right
     local hw = sw * 0.24
     self.hero = { x = -hw, y = sh * 0.74, w = hw, speed = sw * 0.13 }
 
-    -- A little shark (the toy, photographed) cruising the other way, low in the
-    -- foreground water, chomping its jaw as it goes. Frames are pre-aligned by
-    -- the snout (see tools/make_shark.py) so we just swap them in place. Friendly,
-    -- not scary -- the harbours are always safe.
+    -- The shark cruises the other way, chomping. Frames are pre-aligned by the
+    -- snout (tools/make_shark.py), so they just swap in place.
     self.sharkFrames = {}
     for i = 1, 4 do
         local img = Assets.image("shark/shark_" .. i .. ".png")   -- pixel-art: keep nearest
@@ -107,22 +100,19 @@ function Menu:load(game)
                        frames = { 1, 2, 3, 4, 3, 2 }, frameDur = 0.18 }
     end
 
-    -- A Coast Guard helicopter that flies in after a short wait (5-10s), buzzing
-    -- left-to-right across the sky with its rotors spun in code (the photo's static
-    -- blades were cropped; see tools/make_heli.py). When it arrives, my boy's own
-    -- "chopper" recording plays. It waits off-screen until startAt, then flies and
-    -- wraps, sounding again each lap.
+    -- The helicopter waits off-screen until startAt, then crosses and wraps,
+    -- sounding each lap. Rotors are spun in code -- the photo's blades were
+    -- cropped (tools/make_heli.py).
     if Assets.image("menu/helicopter.png") then
         local hw = sw * 0.20
-        -- speed tuned so one crossing (~7.8s) matches the chopper clip's fade
-        -- in/out, so the sound swells in as it enters and trails off as it leaves
+        -- one crossing matches the clip's fade in/out, so the sound swells as
+        -- it enters and trails as it leaves
         self.heli = { x = -hw, y = sh * 0.30, w = hw, speed = sw * 0.18,
                       startAt = 5 + love.math.random() * 5, flying = false }
     end
 
-    -- The passenger action-figures playfully pop up from the bottom edge to peek,
-    -- then duck back down -- each on its own gentle rhythm so it's never crowded
-    -- (usually just one peeking at a time). My boy loves a peek-a-boo.
+    -- Action figures peek over the bottom edge, each on its own rhythm so it's
+    -- usually just one at a time.
     self.passengerImgs = {}
     for i = 1, 4 do self.passengerImgs[i] = Assets.image("icons/passenger" .. i .. ".png") end
     self.peekers = {}
@@ -143,13 +133,12 @@ function Menu:load(game)
     -- Now and then a little dolphin pod porpoises across the sea band.
     self.pod = { active = false, nextAt = 7 + love.math.random() * 10 }
 
-    -- Voice first (words bounce in to match), then the splash + wave crash.
+    -- voice first, words bouncing in to match, then the splash
     self.splash = {}
     self.splashFired = false
     Assets.playVoice("velkommen")   -- my kid: "Velkommen til Båtspillet!"
 
-    -- Splash right after the voice finishes; if there's no voice (or audio off),
-    -- splash once the words land.
+    -- after the voice finishes, or once the words land if there's no voice
     local v = Assets.voice and Assets.voice.velkommen
     if v and config.AUDIO_ON then
         self.splashAt = v:getDuration() + 0.1
@@ -161,12 +150,10 @@ function Menu:load(game)
     collectgarbage("collect")
 end
 
--- The frame, sky, sea, sun and islands never move, so we bake them once into a
--- small ~VGA canvas and upscale with a nearest filter. That gives a uniform
--- mid-90s pixel density on any monitor without hand-tuned block sizes. Only the
--- waves/boats/splash/title animate, drawn crisp at full res on top.
--- The pixel-scene primitives live in src/ui/pixelscene.lua (shared with the
--- boat chooser's backdrop); local names kept so the code below reads the same.
+-- The frame, sky, sea, sun and islands never move, so they bake once onto a
+-- ~VGA canvas that upscales with a nearest filter -- a uniform pixel density on
+-- any monitor, with no hand-tuned block sizes. Only the waves, boats, splash
+-- and title animate, drawn at full res on top. Primitives: src/ui/pixelscene.
 local VRES_H     = Scene.VRES_H
 local pixelDisc  = Scene.disc
 local pixelHill  = Scene.hill
@@ -174,14 +161,13 @@ local pixelCloud = Scene.cloud
 
 function Menu:buildBackground(sw, sh)
     local VH = VRES_H
-    -- UNIFORM upscale (like the boat/map choosers): the canvas matches the
-    -- screen's aspect, so circles stay circles — the old square-canvas
-    -- stretch turned the sun into an egg on wide iPhone screens.
+    -- UNIFORM upscale: the canvas matches the screen's aspect, or the sun goes
+    -- egg-shaped on a wide phone
     local scale = sh / VH
     local sx_s, sy_s = scale, scale
     local VW = math.floor(sw / scale + 0.5)
 
-    -- Mobile: no wooden frame — small screens get every pixel of sea
+    -- no wooden frame on mobile: small screens get every pixel of sea
     local mobile = (love.system.getOS() == "iOS") or (os.getenv("BATSIM") ~= nil)
     local fw = mobile and 0 or math.floor(math.min(VW, VH) * 0.05)
     local t1 = math.max(2, math.floor(fw * 0.34))       -- outer raised edge
@@ -196,32 +182,30 @@ function Menu:buildBackground(sw, sh)
     love.graphics.clear(0, 0, 0, 0)
     love.graphics.setColor(1, 1, 1, 1)
 
-    -- wooden frame slab + sunken inner well (desktop/iPad charm; skipped on
-    -- mobile where the scene fills the whole screen)
+    -- frame slab + sunken well; skipped on mobile
     if fw > 0 then
         Retro.bevel(0, 0, VW, VH, WOOD.face, WOOD.hi, WOOD.lo, t1, true)
         Retro.bevel(fw, fw, VW - 2 * fw, VH - 2 * fw, WOOD.deep, WOOD.hi, WOOD.lo, t2, false)
     end
 
-    -- Dithered sky: a blue-to-pale gradient, crosshatched with the Bayer matrix.
+    -- dithered sky, blue to pale
     Scene.dithGradient(sx, sy, sceneW, horizonY - sy,
         { 0.36, 0.60, 0.88 }, { 0.82, 0.90, 0.96 }, 10)
 
-    -- Dithered sea: water_top at the horizon down to water_deep at the bottom.
+    -- dithered sea, water_top at the horizon down to water_deep
     local seaBottom = sy + sceneH - 1
     Scene.dithGradient(sx, horizonY, sceneW, seaBottom - horizonY + 1,
         config.colors.water_top, config.colors.water_deep, 8)
 
-    -- (clouds are no longer baked -- they drift live; see the cloud sprites
-    -- built after the canvas, and the drift pass in draw())
+    -- clouds aren't baked: they drift live, see the sprites built below
 
-    -- sun (upper right) with a soft layered glow + shimmer on the water
+    -- sun with a layered glow and shimmer on the water
     local sunX, sunY = sx + sceneW * 0.81, sy + sceneH * 0.18
     local sunR = math.floor(sceneH * 0.075)
     Scene.sun(sunX, sunY, sunR)
     Scene.sunReflection(sunX, horizonY, seaBottom, sunR, sceneH * 0.018)
 
-    -- haze back-range + islands with tree tufts (shared pixel-scene language)
+    -- haze back-range and islands with tree tufts
     Scene.hazeHills(sx, sceneW, horizonY, sceneH)
     local grass, gdk = config.colors.grass.top, config.colors.grass.lip
     local sand = config.colors.sand.top
@@ -247,14 +231,14 @@ function Menu:buildBackground(sw, sh)
     love.graphics.setCanvas()
     love.graphics.setColor(1, 1, 1, 1)
 
-    -- Cloud sprites for the live layer (shared builder; drifted in draw()).
+    -- cloud sprites for the live layer, drifted in draw()
     self.clouds = Scene.makeClouds({
         { w = 0.12, yf = 0.14, speed = 9 },
         { w = 0.08, yf = 0.07, speed = 5 },
         { w = 0.10, yf = 0.24, speed = 7 },
     }, sceneW, sy, sceneH, sy_s)
 
-    -- scene rect in screen coords (the animated layer draws at full res)
+    -- scene rect in screen coords; the animated layer draws at full res
     self.bgScaleX, self.bgScaleY = sx_s, sy_s
     self.scene = {
         x = sx * sx_s, y = sy * sy_s, w = sceneW * sx_s, h = sceneH * sy_s,
@@ -265,7 +249,7 @@ function Menu:buildBackground(sw, sh)
     return cv
 end
 
--- A burst of water droplets + foam erupting from the middle of the screen.
+-- droplets and foam erupting from mid-screen
 function Menu:spawnSplash()
     local cx = love.graphics.getWidth() / 2
     local cy = love.graphics.getHeight() * 0.40
@@ -296,13 +280,13 @@ function Menu:update(dt)
         if b.x > w + 30 then b.x = -30 end
     end
 
-    -- The big hero boat sails across and wraps back around.
+    -- the hero boat sails across and wraps
     if self.hero then
         self.hero.x = self.hero.x + self.hero.speed * dt
         if self.hero.x - self.hero.w > w then self.hero.x = -self.hero.w end
     end
 
-    -- The dolphin pod: waits offstage, crosses the sea band, waits again.
+    -- the pod waits offstage, crosses the sea band, waits again
     local pod = self.pod
     if pod then
         local sh2 = love.graphics.getHeight()
@@ -321,7 +305,7 @@ function Menu:update(dt)
         end
     end
 
-    -- The shark glides the other way (right to left) and wraps back around.
+    -- the shark glides the other way and wraps
     if self.shark then
         self.shark.x = self.shark.x - self.shark.speed * dt
         if self.shark.x + self.shark.w < 0 then self.shark.x = w + self.shark.w end

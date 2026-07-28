@@ -1,7 +1,5 @@
--- src/data/ships_amerika.lua
--- Ambient sea traffic for the Amerika map. Reuses the existing ship photos
--- (they're international vessels — they sail everywhere), with routes pointed
--- at Amerika's ports. The Norwegian submarine visits on exercise, of course.
+-- Ambient traffic for the Amerika map: the same international vessels as
+-- ships.lua, with their routes pointed at Amerika's ports.
 
 return {
     { photo = "aidaluna", name = "Aidaluna", country = "Tyskland", type = "Passasjerskip", cruise = true, visits = { "new_york", "boston" } },

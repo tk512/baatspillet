@@ -1,11 +1,10 @@
--- src/ui/retro.lua
 -- Shared chunky-bevel drawing for the title, HUD and dock screens.
 
 local Haptics = require("src.systems.haptics")
 
 local Retro = {}
 
--- Warm-wood palette, shared with portscreen's cosy theme.
+-- warm wood, shared with portscreen
 Retro.WOOD = {
     face   = {0.40, 0.29, 0.19},
     hi     = {0.62, 0.46, 0.30},
@@ -15,8 +14,8 @@ Retro.WOOD = {
     deep   = {0.28, 0.18, 0.11},   -- recessed wood
 }
 
--- Filled rect with a 3D edge: light top/left + dark bottom/right when raised,
--- swapped for a sunken groove. `t` is edge thickness; raised defaults true.
+-- Filled rect with a 3D edge, swapped for a sunken groove when not raised.
+-- `t` is edge thickness.
 function Retro.bevel(x, y, w, h, face, hi, lo, t, raised)
     if raised == nil then raised = true end
     love.graphics.setColor(face)
@@ -31,8 +30,7 @@ function Retro.bevel(x, y, w, h, face, hi, lo, t, raised)
     love.graphics.rectangle("fill", x + w - t, y, t, h)
 end
 
--- Wooden plaque (raised outer bevel + sunken inner well). Returns the inner
--- content rect (x, y, w, h). Shared by the HUD plaques and the minimap frame.
+-- Raised bevel + sunken inner well. Returns the inner content rect.
 function Retro.plaque(x, y, w, h, t)
     local W = Retro.WOOD
     Retro.bevel(x, y, w, h, W.face, W.hi, W.lo, t, true)
@@ -41,9 +39,8 @@ function Retro.plaque(x, y, w, h, t)
     return x + t * 2, y + t * 2, w - t * 4, h - t * 4
 end
 
--- ── The shared "locked" language: harbour rope + gold padlock ──────────────
--- (used by the boat chooser and the map chooser; full-colour content behind a
--- rope reads as "for later", never "broken")
+-- The shared "locked" language: rope + padlock over full-colour content, which
+-- reads as "for later" rather than "broken".
 function Retro.ropeAcross(x1, x2, y, sag, thick)
     love.graphics.setColor(0.80, 0.64, 0.40)
     love.graphics.setLineWidth(thick)
@@ -70,21 +67,15 @@ function Retro.padlock(x, y, s)
     love.graphics.setLineWidth(1)
 end
 
--- ── Press feedback + star-burst ─────────────────────────────────────────────
--- Every button presses IN while held and fires on RELEASE, with a little gold
--- burst on success — the kids-app squish. Fire-on-release also gives "slide
--- your finger off to cancel" for free. Immediate-mode protocol (`id` = any
--- unique string per screen):
---
+-- Buttons press IN while held and fire on RELEASE, which also gives
+-- slide-off-to-cancel for free. Immediate-mode, `id` unique per screen:
 --   mousepressed:   if Retro.press(id, rect, x, y[, ox, oy]) then return end
---                   (rect and x,y in the caller's space; ox,oy = that space's
---                   screen offset, for panels drawn under a translate)
---   draw:           sunken = Retro.isDown(id)  (or use Retro.button)
+--                   (ox,oy = screen offset, for panels drawn under a translate)
+--   draw:           sunken = Retro.isDown(id), or use Retro.button
 --   mousereleased:  if Retro.released(id, x, y) then <the action> end
---                   (x,y in SCREEN space — the rect was captured at press time)
---
--- game.lua pumps Retro.updateFx/drawFx globally and calls Retro.cancelPress
--- after every release + on scene switches, so state can never get stuck.
+--                   (x,y in SCREEN space -- the rect was captured at press)
+-- game.lua pumps updateFx/drawFx and calls cancelPress after every release and
+-- on scene switches, so the state can't get stuck.
 
 Retro._pressed = nil      -- id of the held button
 Retro._pressRect = nil    -- its rect, captured in screen space at press time
@@ -100,13 +91,13 @@ function Retro.press(id, r, x, y, ox, oy)
         ox, oy = ox or 0, oy or 0
         Retro._pressed = id
         Retro._pressRect = { x = r.x + ox, y = r.y + oy, w = r.w, h = r.h }
-        Haptics.tap()          -- iPhone: a light tick as the button goes in
+        Haptics.tap()
         return true
     end
     return false
 end
 
--- Held AND still hovering: sliding off pops the button back up.
+-- held AND still hovering: sliding off pops it back up
 function Retro.isDown(id)
     if Retro._pressed ~= id then return false end
     local mx, my = love.mouse.getPosition()
@@ -119,7 +110,7 @@ function Retro.released(id, x, y)
     Retro._pressed, Retro._pressRect = nil, nil
     if inRect(r, x, y) then
         Retro.burst(x, y)
-        Haptics.thump()        -- iPhone: a firmer tap as it fires
+        Haptics.thump()
         return true
     end
     return false   -- slid off: cancelled
@@ -127,9 +118,8 @@ end
 
 function Retro.cancelPress() Retro._pressed, Retro._pressRect = nil, nil end
 
--- The standard wooden button, press-aware: raised normally, brighter on hover,
--- sunken with the label nudged down-right while held. opts: face/hi/lo colour
--- overrides, textCol.
+-- Raised, brighter on hover, sunken with the label nudged while held.
+-- opts: face/hi/lo colour overrides, textCol.
 function Retro.button(id, r, label, font, opts)
     opts = opts or {}
     local W = Retro.WOOD
@@ -146,8 +136,7 @@ function Retro.button(id, r, label, font, opts)
         r.y + r.h / 2 - font:getHeight() / 2 + off)
 end
 
--- A quick gold star-burst + expanding ring at (x, y). Sizes/speeds scale with
--- the window so it reads the same on a phone and a desktop.
+-- gold star-burst + expanding ring, scaled to the window
 function Retro.burst(x, y, col)
     local k = love.graphics.getHeight() / 800
     local fx = Retro._fx

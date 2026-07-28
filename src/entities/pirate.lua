@@ -1,9 +1,7 @@
--- src/entities/pirate.lua
--- A rare AI hunter that chases the player and lobs slow cannonballs. Tuning is
--- in config.PIRATE. Deliberately gentle: slower than the player so it can be
--- outrun, shots are slow and dodge-able, and it gives up when you stay far away
--- or run out of gold. Lives in the ground plane; only draw() knows about the iso
--- projection. The world depth-sorts it and calls drawBalls() afterwards.
+-- A rare hunter that chases and lobs slow cannonballs. Deliberately gentle:
+-- slower than the player, dodge-able shots, and it gives up when you stay away
+-- or run out of gold. Tuning in config.PIRATE; the world calls drawBalls()
+-- after the depth sort.
 
 local config = require("src.config")
 local Assets = require("src.assets")
@@ -40,13 +38,12 @@ function Pirate.new(x, y, playerMaxSpeed)
     return self
 end
 
--- Break off and sail away (when you're broke or it loses interest). Vanishes
--- once far enough, in update().
+-- break off and sail away; update() removes it once far enough
 function Pirate:flee()
     self.state = "retreat"
 end
 
--- Is the water clear for `look` units along `ang`? (a steering "whisker")
+-- steering whisker: is the water clear for `look` units along `ang`?
 function Pirate:clearAhead(terrain, ang, look)
     for d = 70, look, 70 do
         if not terrain:isWater(self.x + math.cos(ang) * d, self.y + math.sin(ang) * d) then
@@ -56,21 +53,19 @@ function Pirate:clearAhead(terrain, ang, look)
     return true
 end
 
--- Pick a heading that goes toward `baseAng` but steers AROUND land: if straight
--- ahead is blocked, fan out to the smallest left/right turn that's clear, so the
--- pirate rounds an island instead of grinding into its coast.
+-- Heading toward `baseAng` but around land: when straight ahead is blocked,
+-- fan out to the smallest clear turn, so it rounds an island.
 function Pirate:steerAround(terrain, baseAng)
     local look = 230
     if self:clearAhead(terrain, baseAng, look) then return baseAng end
     for _, off in ipairs({ 0.5, -0.5, 0.9, -0.9, 1.4, -1.4, 1.9, -1.9, 2.5, -2.5 }) do
         if self:clearAhead(terrain, baseAng + off, look) then return baseAng + off end
     end
-    return baseAng    -- boxed in: hold course (the move step nudges it off the rock)
+    return baseAng    -- boxed in: hold course, the move step nudges it off
 end
 
 function Pirate:update(dt, boat, terrain, onHit)
-    -- A "racer" (self.goal set) makes for a fixed point (a treasure), ignoring the
-    -- boat; otherwise it chases the boat. A retreating pirate always flees the boat.
+    -- a racer (self.goal) makes for a fixed point and ignores the boat
     local racing = self.goal and self.state ~= "retreat"
     local aimX = racing and self.goal.x or boat.x
     local aimY = racing and self.goal.y or boat.y
@@ -99,7 +94,7 @@ function Pirate:update(dt, boat, terrain, onHit)
     self.x = math.max(20, math.min(config.WORLD_WIDTH - 20, self.x))
     self.y = math.max(20, math.min(config.WORLD_HEIGHT - 20, self.y))
 
-    -- cannon fire (an attacking chaser only -- never a racer, it just wants the chest)
+    -- attacking chasers only: a racer just wants the chest
     self.muzzle = math.max(0, self.muzzle - dt)
     if self.state == "chase" and not self.goal then
         self.fireT = self.fireT - dt
@@ -125,12 +120,10 @@ function Pirate:update(dt, boat, terrain, onHit)
         end
     end
 
-    -- Lifecycle. A racer is managed by the world (it removes it once the race is
-    -- decided), so it never gives up on its own. An ambient chaser gives up if you
-    -- stay far away; a retreating pirate vanishes once well clear of the boat.
+    -- Lifecycle. A racer never gives up on its own -- the world removes it when
+    -- the race is decided.
     if self.state == "retreat" then
-        -- Far enough away, or simply gone long enough: a kid chasing the fleeing
-        -- pirate (or a pirate pinned against a coast) must not keep it alive forever.
+        -- bounded either way: chasing a fleeing pirate can't keep it alive
         self.retreatT = self.retreatT + dt
         if dist > P.DESPAWN_DIST or self.retreatT > P.RETREAT_MAX then self.dead = true end
     elseif not self.goal then
@@ -141,13 +134,12 @@ function Pirate:update(dt, boat, terrain, onHit)
     end
 end
 
--- Lob a cannonball toward where the boat is heading, and BOOM.
 function Pirate:fire(boat)
     local dx, dy = boat.x - self.x, boat.y - self.y
     local dist = math.sqrt(dx * dx + dy * dy)
     local plan = dist / P.BALL_SPEED
     local bvx, bvy = math.cos(boat.angle) * boat.speed, math.sin(boat.angle) * boat.speed
-    local tx = boat.x + bvx * plan * 0.8        -- partial lead (so it's still dodge-able)
+    local tx = boat.x + bvx * plan * 0.8        -- partial lead: still dodge-able
     local ty = boat.y + bvy * plan * 0.8
     local ang = math.atan2(ty - self.y, tx - self.x)
     local bowOff = 32 * (P.LENGTH or 2.6)           -- fire from the (long) bow
@@ -162,13 +154,13 @@ function Pirate:fire(boat)
     Assets.playSfx("cannon", 0.97)
 end
 
--- Scale length more than width so it reads as a long, low galleon, not a tower.
+-- length scales faster than width: a long low galleon, not a tower
 local LEN = config.PIRATE.LENGTH or 2.6
 local WID = config.PIRATE.WIDTH or 1.45
 -- a longer hull silhouette (drawn-out bow + stern), in local boat space
 local HULL = { { 30, 0 }, { 12, -12 }, { -22, -12 }, { -30, 0 }, { -22, 12 }, { 12, 12 } }
 
--- A tattered black sail (screen-space billboard) with a ragged, torn bottom.
+-- tattered black sail, screen-space billboard
 local function draggedSail(cx, topY, halfW, h)
     local poly = {
         cx - halfW, topY,
@@ -283,7 +275,7 @@ function Pirate:draw()
     love.graphics.setColor(1, 1, 1)
 end
 
--- Cannonballs arc through the air (a parabolic screen height) over the water.
+-- cannonballs arc over the water on a parabolic screen height
 function Pirate:drawBalls()
     for _, b in ipairs(self.balls) do
         local pr = math.min(1, b.life / math.max(0.01, b.plan))

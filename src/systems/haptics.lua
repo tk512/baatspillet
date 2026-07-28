@@ -1,9 +1,6 @@
--- src/systems/haptics.lua
--- Taptic buzz for buttons, iPhone-only by hardware: reaches the native
--- bridge's bt_haptic() (UIImpactFeedbackGenerator) via LuaJIT FFI, exactly
--- like the IAP bridge. iPads have no Taptic Engine and the generator no-ops
--- there; on desktop the symbol is absent and these are plain no-ops — callers
--- never need to check the platform.
+-- Taptic buzz for buttons, via the native bridge's bt_haptic() over FFI like the
+-- IAP bridge. iPhone-only by hardware; iPads no-op, and on desktop the symbol is
+-- missing so these are no-ops -- callers never check the platform.
 
 local Haptics = {}
 

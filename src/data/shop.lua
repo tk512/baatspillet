@@ -1,26 +1,13 @@
--- src/data/shop.lua
--- Things you can buy in a harbour's Butikk by saving up gold from cargo runs.
--- Safe for non-coders to edit: add an item with id / name / price / desc / icon
--- and it appears in the store grid. Buying is permanent (stored in the save under
--- state.owned[id]); an owned item is crossed out in the store.
---
--- `icon` is drawn by src/ui/icons.lua. Drop assets/icons/<icon>.png to replace a
--- code placeholder with real artwork (Finn-Erik's drawings later) -- zero code.
---
--- The Kanon (`stack = true`) auto-fires at pirates and can be bought again and
--- again: every cannon comes with a locker of balls (config.CANNON.START_AMMO)
--- and each extra one makes the battery fire a bit faster (config.CANNON).
--- Kanonkuler (`ammo = N`) is a re-buyable CRATE of N balls -- the cannon spends
--- one per shot and goes quiet when the locker is empty. Sized for a child
--- hammering the tap-to-fire trigger (~2 balls a second), not for the automatic
--- battery alone: a crate is roughly one delivery's earnings, so a big battle
--- costs a voyage's pay rather than the whole afternoon's.
--- The rest are FOOD (`food = true`): provisions you can buy again and again and
--- stock up on. The crew + passengers eat them on voyages (see World eating), so
--- the maths of saving up, buying, and using up stays front and centre.
--- NOTE: Kanonkuler stays LAST. It's the only crate that can be hidden (no
--- cannon aboard yet), and as the tail item its appearing/disappearing never
--- shifts the other crates around the grid.
+-- What a harbour's Butikk sells. Safe to edit: id / name / price / desc / icon
+-- and it appears in the grid. Purchases live in the save under state.owned[id];
+-- an owned one-off is crossed out. `icon` is drawn by src/ui/icons.lua, and
+-- assets/icons/<icon>.png replaces the placeholder with no code.
+--   stack = true   re-buyable upgrade (Kanon: each one speeds up the battery)
+--   ammo  = N      re-buyable crate of N cannonballs
+--   food  = true   re-buyable provisions; crew and passengers eat them at sea
+-- Kanonkuler stays LAST: it's the only crate that can be hidden (no cannon
+-- aboard), and as the tail item its coming and going never shifts the others.
+
 return {
     { id = "cannon",     name = "Kanon",      price = 100, desc = "Skyt på sjørøvere!", icon = "cannon", stack = true },
     { id = "brod",     name = "Brød",     price = 10,  desc = "Nybakt brød.",     icon = "bread",  food = true },

@@ -32,10 +32,8 @@ function love.mousemoved(x, y, dx, dy)
     Game:mousemoved(x, y, dx, dy)
 end
 
--- Dev: no F3 key on iOS — four fingers down together toggles the profiler
--- overlay instead (config.DEV builds only; a kid's palm-mash must never
--- summon debug stats in production). Single touches already arrive as mouse
--- events.
+-- No F3 key on iOS: four fingers together toggles the profiler, dev builds only
+-- so a palm-mash can't summon debug stats. Single touches arrive as mouse events.
 function love.touchpressed()
     local config = require("src.config")
     if config.DEV and Game.profile and #love.touch.getTouches() >= 4 then
@@ -47,8 +45,8 @@ function love.resize(w, h)
     Game:resize(w, h)
 end
 
--- iOS kills suspended apps without calling love.quit — losing focus is the
--- last reliable moment to persist. Flush exploration + save there.
+-- iOS kills suspended apps without calling love.quit, so losing focus is the
+-- last reliable moment to persist.
 function love.focus(focused)
     if focused then Game:onFocus() else Game:onBlur() end
 end
