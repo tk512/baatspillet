@@ -8,6 +8,8 @@
 	<string>English</string>
 	<key>CFBundleExecutable</key>
 	<string>harfbuzz</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.harfbuzz.harfbuzz</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundlePackageType</key>

@@ -4,88 +4,33 @@
 <dict>
 	<key>files</key>
 	<dict>
-		<key>Resources/English.lproj/InfoPlist.strings</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			PuB0ZrR9lN9Fhe5eQJwxmxpv5L4=
-			</data>
-			<key>optional</key>
-			<true/>
-		</dict>
 		<key>Resources/Info.plist</key>
 		<data>
-		5AfiOLmJXnDIYbutsL7TvGxLuKg=
+		oAT09/EOam8X88Er0rtyTfhrAGc=
 		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
-		<key>Headers/codec.h</key>
+		<key>Headers/modplug.h</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			N4o9VIt0yF7e3b955G6ORKaOpYM=
+			6kIa418Uth9NaJR9m/5Fnb0fVaw=
 			</data>
 			<key>hash2</key>
 			<data>
-			nSqINzXWVXzaUMhEQ3HWDFhf1aSopCh+fV2+XfXDJLc=
+			DMOXwAWM2Vnv7BhJ/hDVHfaSs2BZLzlCAUKNbRxGPbY=
 			</data>
-		</dict>
-		<key>Headers/theora.h</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			3SajanHuepgqRA6+H0LL68+WQXY=
-			</data>
-			<key>hash2</key>
-			<data>
-			Mpi3sGiHPTf+nrjPyIXuklQW+QdYpp1XuXQ8jMEIF7E=
-			</data>
-		</dict>
-		<key>Headers/theoradec.h</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			o3n7wRt3b0psJ7iWcWj5SEccoA4=
-			</data>
-			<key>hash2</key>
-			<data>
-			Qy0xitH5Jq+zw14mQ8LrfhxII0fqiS9OmbKVOH/GOi4=
-			</data>
-		</dict>
-		<key>Headers/theoraenc.h</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			0EqtlVX+B67ihZ2uiZsBinzwvls=
-			</data>
-			<key>hash2</key>
-			<data>
-			/PrOFbdKbPbqHgrDaD/DxbJ6idZJbnR2ySoZ6uGgnp0=
-			</data>
-		</dict>
-		<key>Resources/English.lproj/InfoPlist.strings</key>
-		<dict>
-			<key>hash</key>
-			<data>
-			PuB0ZrR9lN9Fhe5eQJwxmxpv5L4=
-			</data>
-			<key>hash2</key>
-			<data>
-			wtHLX739hhekOhhJFMfylurNBdBUeCbG1hDyLvaoLBI=
-			</data>
-			<key>optional</key>
-			<true/>
 		</dict>
 		<key>Resources/Info.plist</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			5AfiOLmJXnDIYbutsL7TvGxLuKg=
+			oAT09/EOam8X88Er0rtyTfhrAGc=
 			</data>
 			<key>hash2</key>
 			<data>
-			exlT8WPmwJ4BE9r6WRUeac/Bb1yQQZAPU+evWiF0voI=
+			zGc99fcd+WLgWz+M+j4qD8q69TZCzicVc4qq0al4F0c=
 			</data>
 		</dict>
 	</dict>

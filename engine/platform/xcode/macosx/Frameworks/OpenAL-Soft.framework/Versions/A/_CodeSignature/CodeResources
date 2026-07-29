@@ -4,89 +4,79 @@
 <dict>
 	<key>files</key>
 	<dict>
-		<key>Resources/English.lproj/InfoPlist.strings</key>
+		<key>Resources/Info.plist</key>
+		<data>
+		ITSOyIPGAP3N4Eq51SGz48rrMgY=
+		</data>
+		<key>Resources/en.lproj/InfoPlist.strings</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			PuB0ZrR9lN9Fhe5eQJwxmxpv5L4=
+			MiLKDDnrUKr4EmuvhS5VQwxHGK8=
 			</data>
 			<key>optional</key>
 			<true/>
 		</dict>
-		<key>Resources/Info.plist</key>
-		<data>
-		5AfiOLmJXnDIYbutsL7TvGxLuKg=
-		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
-		<key>Headers/codec.h</key>
+		<key>Headers/al.h</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			N4o9VIt0yF7e3b955G6ORKaOpYM=
-			</data>
 			<key>hash2</key>
 			<data>
-			nSqINzXWVXzaUMhEQ3HWDFhf1aSopCh+fV2+XfXDJLc=
+			LQH5iYAuGwIiFjlv4DUJwVq+VLN35ki5Bzgu+GfLEno=
 			</data>
 		</dict>
-		<key>Headers/theora.h</key>
+		<key>Headers/alc.h</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			3SajanHuepgqRA6+H0LL68+WQXY=
-			</data>
 			<key>hash2</key>
 			<data>
-			Mpi3sGiHPTf+nrjPyIXuklQW+QdYpp1XuXQ8jMEIF7E=
+			IVrd76tpe5lkRd4slpWBmt9t4P+JJoG2X0ueH2oLy9c=
 			</data>
 		</dict>
-		<key>Headers/theoradec.h</key>
+		<key>Headers/alext.h</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			o3n7wRt3b0psJ7iWcWj5SEccoA4=
-			</data>
 			<key>hash2</key>
 			<data>
-			Qy0xitH5Jq+zw14mQ8LrfhxII0fqiS9OmbKVOH/GOi4=
+			pIVGpJuEyfJjU6DCAiVMDIJJjVA8sVmxOOVYVXkEbUc=
 			</data>
 		</dict>
-		<key>Headers/theoraenc.h</key>
+		<key>Headers/efx-creative.h</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			0EqtlVX+B67ihZ2uiZsBinzwvls=
-			</data>
 			<key>hash2</key>
 			<data>
-			/PrOFbdKbPbqHgrDaD/DxbJ6idZJbnR2ySoZ6uGgnp0=
+			Vyurf8jH3xpFGc8PAay9alW1x13F2BX0+FvUb/CnieA=
 			</data>
 		</dict>
-		<key>Resources/English.lproj/InfoPlist.strings</key>
+		<key>Headers/efx-presets.h</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			PuB0ZrR9lN9Fhe5eQJwxmxpv5L4=
-			</data>
 			<key>hash2</key>
 			<data>
-			wtHLX739hhekOhhJFMfylurNBdBUeCbG1hDyLvaoLBI=
+			E+A/LQXDuGcV+cUAPMg/gOhS8Oxeop1FNySDNm72thc=
 			</data>
-			<key>optional</key>
-			<true/>
+		</dict>
+		<key>Headers/efx.h</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			Lc+IJkJbqYi9aCODMnmglyI4bkr3x9AezAJDp6qdIFA=
+			</data>
 		</dict>
 		<key>Resources/Info.plist</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			5AfiOLmJXnDIYbutsL7TvGxLuKg=
-			</data>
 			<key>hash2</key>
 			<data>
-			exlT8WPmwJ4BE9r6WRUeac/Bb1yQQZAPU+evWiF0voI=
+			iY0mTc3M+hqP4pn9d6eEXnEsc/tPNWGbn7LtWswrAuE=
 			</data>
+		</dict>
+		<key>Resources/en.lproj/InfoPlist.strings</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			Oc8u4Ht7Mz58F50L9NeYpbcq9qTlhPUeZCcDu/pPyCg=
+			</data>
+			<key>optional</key>
+			<true/>
 		</dict>
 	</dict>
 	<key>rules</key>

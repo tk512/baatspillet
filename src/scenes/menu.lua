@@ -1,6 +1,6 @@
--- Title screen: a chunky wooden frame over a dithered pixel sky, sun and
--- horizon islands. The title bounces in letter by letter, the recorded voice
--- says it once, then a splash erupts. Enter/Space or mouse.
+-- Title screen: a dithered pixel sky, sun and horizon islands, edge to edge.
+-- The title bounces in letter by letter, the recorded voice says it once, then
+-- a splash erupts. Enter/Space or mouse.
 
 local config   = require("src.config")
 local Assets   = require("src.assets")
@@ -167,13 +167,17 @@ function Menu:buildBackground(sw, sh)
     local sx_s, sy_s = scale, scale
     local VW = math.floor(sw / scale + 0.5)
 
-    -- no wooden frame on mobile: small screens get every pixel of sea
-    local mobile = (love.system.getOS() == "iOS") or (os.getenv("BATSIM") ~= nil)
-    local fw = mobile and 0 or math.floor(math.min(VW, VH) * 0.05)
-    local t1 = math.max(2, math.floor(fw * 0.34))       -- outer raised edge
-    local t2 = mobile and 0 or math.max(1, math.floor(fw * 0.20))
-    local sx, sy = fw + t2, fw + t2
-    local sceneW, sceneH = VW - 2 * sx, VH - 2 * sy
+    -- NO wooden frame, on any platform. It was a 5% border of planks around the
+    -- whole title screen: it fenced the sea off behind a fake window, and the
+    -- far mountain ran straight into it. Phones dropped it first (every pixel of
+    -- sea counts at 402pt) and the screen was plainly better without it, so the
+    -- desktop followed. The sign, the buttons and the shelf are still wood —
+    -- what went is the picture frame, not the material.
+    -- The scene is therefore the whole canvas. sx/sy stay as the scene's origin
+    -- so every position below still reads "relative to the scene", which is what
+    -- they mean; this is exactly the geometry iOS has been shipping.
+    local sx, sy = 0, 0
+    local sceneW, sceneH = VW, VH
     local horizonY = sy + math.floor(sceneH * 0.46)
 
     local cv = love.graphics.newCanvas(VW, VH)
@@ -181,12 +185,6 @@ function Menu:buildBackground(sw, sh)
     love.graphics.setCanvas(cv)
     love.graphics.clear(0, 0, 0, 0)
     love.graphics.setColor(1, 1, 1, 1)
-
-    -- frame slab + sunken well; skipped on mobile
-    if fw > 0 then
-        Retro.bevel(0, 0, VW, VH, WOOD.face, WOOD.hi, WOOD.lo, t1, true)
-        Retro.bevel(fw, fw, VW - 2 * fw, VH - 2 * fw, WOOD.deep, WOOD.hi, WOOD.lo, t2, false)
-    end
 
     -- dithered sky, blue to pale
     Scene.dithGradient(sx, sy, sceneW, horizonY - sy,
@@ -457,8 +455,8 @@ function Menu:draw()
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(self.bg, 0, 0, 0, self.bgScaleX, self.bgScaleY)   -- upscale VGA canvas
 
-    -- Everything that moves is clipped to the inner scene (so it never spills
-    -- over the wooden frame).
+    -- Everything that moves is clipped to the scene box, which is now the whole
+    -- screen (it used to be the sea inside the wooden frame).
     local S = self.scene
     love.graphics.setScissor(S.x, S.y, S.w, S.h)
 

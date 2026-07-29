@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Entitlements for the MAC APP STORE build (./bygg.sh mac). Synced over the
+     engine's love.entitlements, which is where the love-macosx target's
+     CODE_SIGN_ENTITLEMENTS points.
+
+     App Sandbox is mandatory for the Mac App Store. Everything else here is the
+     smallest set that still runs — every extra entitlement is a question at
+     review:
+       - allow-jit: LÖVE embeds LuaJIT (Lua.framework really is LuaJIT), and a
+         hardened, sandboxed process cannot map executable pages without it.
+       - allow-unsigned-executable-memory: the same need on the x86_64 slice,
+         where LuaJIT maps RWX rather than going through MAP_JIT.
+     Deliberately NOT here, and both are in the dev set:
+       - disable-library-validation: the archive re-signs every embedded
+         framework with our identity, so validation passes on its own.
+       - device.audio-input: the game never records; asking for a microphone in
+         a children's game invites a rejection it cannot answer.
+
+     app-identifier / team-identifier match the "Batspillet MacAppStore" profile
+     exactly. Xcode would merge them in from the profile anyway; they are
+     spelled out so a mismatch fails loudly at signing rather than quietly at
+     launch. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.application-identifier</key>
+	<string>8K92QASAAM.skep.batspillet</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>8K92QASAAM</string>
+</dict>
+</plist>

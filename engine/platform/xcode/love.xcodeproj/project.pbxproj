@@ -19,6 +19,9 @@
 		BA0B1AF0000000000000B002 /* bt_iap.m in Sources */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B001 /* bt_iap.m */; };
 		BA0B1AF0000000000000B004 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B003 /* StoreKit.framework */; };
 		BA0B1AF0000000000000B006 /* batspillet.love in Resources */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B005 /* batspillet.love */; };
+		BA0B1AF0000000000000B007 /* bt_iap.m in Sources */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B001 /* bt_iap.m */; };
+		BA0B1AF0000000000000B008 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B003 /* StoreKit.framework */; };
+		BA0B1AF0000000000000B009 /* batspillet.love in Resources */ = {isa = PBXBuildFile; fileRef = BA0B1AF0000000000000B005 /* batspillet.love */; };
 		CE73F8001EEB64150052DAB3 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE73F7FF1EEB64150052DAB3 /* AVFoundation.framework */; };
 		D9596F642CBAC98B00BE58C1 /* SDL3.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; };
 		D9596F662CBAC99F00BE58C1 /* SDL3.xcframework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -117,7 +120,7 @@
 
 /* Begin PBXFileReference section */
 		1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
-		8D1107320486CEB800E47090 /* love.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = love.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8D1107320486CEB800E47090 /* Båtspillet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Båtspillet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9255E021043195A00BA1496 /* vorbis.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = vorbis.framework; path = macosx/Frameworks/vorbis.framework; sourceTree = "<group>"; };
 		A9255F51104324D700BA1496 /* ogg.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ogg.framework; path = macosx/Frameworks/ogg.framework; sourceTree = "<group>"; };
 		A93E6A3410420AC0007D418B /* love.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = love.cpp; path = ../../src/love.cpp; sourceTree = "<group>"; };
@@ -127,7 +130,7 @@
 		A9F16926109E7BAD00FC83D1 /* libmodplug.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = libmodplug.framework; path = macosx/Frameworks/libmodplug.framework; sourceTree = "<group>"; };
 		BA0B1AF0000000000000B001 /* bt_iap.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = bt_iap.m; path = ../../../ios/storekit/bt_iap.m; sourceTree = "<group>"; };
 		BA0B1AF0000000000000B003 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
-		BA0B1AF0000000000000B005 /* batspillet.love */ = {isa = PBXFileReference; lastKnownFileType = file; name = batspillet.love; path = "../../../Båtspillet.love"; sourceTree = "<group>"; };
+		BA0B1AF0000000000000B005 /* batspillet.love */ = {isa = PBXFileReference; lastKnownFileType = file; name = batspillet.love; path = ../../../batspillet.love; sourceTree = "<group>"; };
 		CE73F7FF1EEB64150052DAB3 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS10.3.sdk/System/Library/Frameworks/AVFoundation.framework; sourceTree = DEVELOPER_DIR; };
 		D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = SDL3.xcframework; path = shared/Frameworks/SDL3.xcframework; sourceTree = "<group>"; };
 		D9DAB9352963CF5F00C64820 /* harfbuzz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = harfbuzz.framework; path = macosx/Frameworks/harfbuzz.framework; sourceTree = "<group>"; };
@@ -163,6 +166,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BA0B1AF0000000000000B008 /* StoreKit.framework in Frameworks */,
 				FA08F69616C766E000F007B5 /* love.framework in Frameworks */,
 				D9596F642CBAC98B00BE58C1 /* SDL3.xcframework in Frameworks */,
 				8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */,
@@ -215,7 +219,7 @@
 		19C28FACFE9D520D11CA2CBB /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8D1107320486CEB800E47090 /* love.app */,
+				8D1107320486CEB800E47090 /* Båtspillet.app */,
 				FA0B7F061A95AAF3000E1D17 /* love.app */,
 			);
 			name = Products;
@@ -339,7 +343,7 @@
 			name = "love-macosx";
 			productInstallPath = "$(HOME)/Applications";
 			productName = love;
-			productReference = 8D1107320486CEB800E47090 /* love.app */;
+			productReference = 8D1107320486CEB800E47090 /* Båtspillet.app */;
 			productType = "com.apple.product-type.application";
 		};
 		FA0B7F051A95AAF3000E1D17 /* love-ios */ = {
@@ -423,6 +427,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BA0B1AF0000000000000B009 /* batspillet.love in Resources */,
 				FA5933751C6D625B000EC779 /* Images.xcassets in Resources */,
 				FAC1A449196F5DC600125284 /* license.txt in Resources */,
 			);
@@ -445,6 +450,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BA0B1AF0000000000000B007 /* bt_iap.m in Sources */,
 				A93E6EED10420BA8007D418B /* love.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -479,9 +485,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "OS X AppIcon";
 				CODE_SIGN_ENTITLEMENTS = love.entitlements;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXECUTABLE_NAME = love;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/macosx/Frameworks",
@@ -502,8 +511,9 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 12.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.love2d.love;
-				PRODUCT_NAME = love;
+				PRODUCT_BUNDLE_IDENTIFIER = skep.batspillet;
+				PRODUCT_NAME = "Båtspillet";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Debug;
 		};
@@ -516,6 +526,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXECUTABLE_NAME = love;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/macosx/Frameworks",
@@ -534,8 +545,9 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 12.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.love2d.love;
-				PRODUCT_NAME = love;
+				PRODUCT_BUNDLE_IDENTIFIER = skep.batspillet;
+				PRODUCT_NAME = "Båtspillet";
+				PROVISIONING_PROFILE_SPECIFIER = "Batspillet MacAppStore";
 			};
 			name = Release;
 		};
@@ -931,9 +943,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "OS X AppIcon";
 				CODE_SIGN_ENTITLEMENTS = love.entitlements;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 8K92QASAAM;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -955,6 +969,7 @@
 				MARKETING_VERSION = 12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.love2d.love;
 				PRODUCT_NAME = love;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 			};
 			name = Distribution;
 		};

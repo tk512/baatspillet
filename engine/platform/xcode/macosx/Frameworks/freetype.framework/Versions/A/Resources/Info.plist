@@ -10,18 +10,24 @@
 	<string>freetype</string>
 	<key>CFBundleGetInfoString</key>
 	<string>FreeType </string>
+	<key>CFBundleIdentifier</key>
+	<string>org.freetype.freetype</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>freetype</string>
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
 		<string>MacOSX</string>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>1.0.0</string>
 	<key>DTCompiler</key>
 	<string>com.apple.compilers.llvm.clang.1_0</string>
 	<key>DTPlatformBuild</key>

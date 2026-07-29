@@ -2,39 +2,51 @@
 
 ![Båtspillet](skjermbilde.png)
 
-Et båtspill jeg har laget til gutten min, Finn-Erik (5). Du seiler rundt mellom 
-byer, frakter passasjerer og annen last og tjener gullmynter.
+Et båtspill jeg har laget til gutten min, Finn-Erik (5). Du seiler mellom byer,
+frakter passasjerer og fisk, finner skatter — og passer deg for sjørøvere.
+På App Store til iPhone, iPad og Mac. Koden ligger her.
 
-## Kontroller
+Klikk på vannet, eller styr med piltastene. Seil bort til en havn, så legger
+båten til av seg selv, og pila over båten viser veien videre.
 
-| Knapp | Hva|
-|-------|-----------|
-| Klikk på vannet | Båten seiler dit |
-| Piltaster / WASD | Styr båten selv |
-| Mus mot kanten, eller høyreklikk + dra | Flytt kartet |
-| C | Sentrer kameraet på båten |
-| M | Lyd av/på |
-| ESC | Tilbake til menyen |
+## Utvikle
 
-## Sånn spiller du
+```sh
+./bygg.sh setup     # én gang: bygger spillmotoren
+love .              # spill det du nettopp endret
+```
 
-Seil bort til en havn, så legger båten til av seg selv. Havnesjefen gir 
-deg et oppdrag ... kanskje noen passasjerer, fisk osv. En pil over båten 
-viser hvilken by du skal til.
+Alt ligger i `src/`:
 
-## ⚠️ Sjørøvere.... HIV OG HOI!
+| Mappe | Hva |
+|-------|-----|
+| `config.lua` | **alle tall og farger — vil du endre følelsen, gjør det her** |
+| `data/` | byer, båter, skip, butikk … selve innholdet, trygt å endre |
+| `scenes/` | meny, båtvalg, kartvalg, og `world.lua` som er selve spillet |
+| `entities/` | båt, havn, sjørøver, hai, delfiner |
+| `systems/` | terreng, skatter, kamera, kjøp i app |
+| `ui/` | HUD, hylla, havneskjermen, minikartet, albumet |
 
-Av og til, når du har gull om bord, dukker det opp et svart sjørøverskip som jager deg. 
+**F5** laster scenen på nytt, **F6** laster `src/data/*` på nytt — uten å starte
+spillet. Tester kjører uten LÖVE: `luajit tests/save_state.lua` (flere i `tests/`).
+
+Detaljene — og *hvorfor* ting er som de er — står i `CLAUDE.md`.
+
+## Slippe en ny versjon
+
+```sh
+./bygg.sh           # meny → 1. Slipp ny versjon
+```
+
+Den bygger **både iOS (iPhone + iPad) og macOS** med samme versjonsnummer,
+sjekker signering før den begynner, og åpner Transporter med begge til slutt.
+Så, i App Store Connect: lag den versjonen for **begge** plattformene, velg
+byggene, send til vurdering. Menyen skriver ut framgangsmåten til slutt, så du
+slipper å huske den. Skjermbilder: **meny → 5**.
 
 ## Lisens
 
-Koden og våre egne assets er **MIT-lisensiert** (`LICENSE`) — bruk dem gjerne!
-
-- Noen sprites (skip, trær, hus, landemerker) er hentet fra
-  [OpenGFX](https://github.com/OpenTTD/OpenGFX) og brukes med skriftlig
-  tillatelse fra rettighetshaverne.
-- Stemmeklipp og portretter er opptak/bilder av familien vår og er **ikke**
-  lisensiert for gjenbruk (se `LICENSE`). Spillet lager syntetiske
-  erstatninger hvis du sletter dem.
-
-Spillet kommer også på App Store (gratis kildekode her, ferdig bygget der).
+Koden og våre egne assets er **MIT** (`LICENSE`) — bruk dem gjerne! Noen sprites
+er fra [OpenGFX](https://github.com/OpenTTD/OpenGFX), brukt med tillatelse.
+Stemmeklipp og portretter er opptak av familien vår og er **ikke** til gjenbruk;
+spillet lager syntetiske erstatninger hvis du sletter dem.

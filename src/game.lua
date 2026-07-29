@@ -55,7 +55,8 @@ function Game:load()
 
     -- iOS is always fullscreen natively; forcing a mode switch can reset the
     -- GL context
-    if config.START_FULLSCREEN and not self.mobile and not os.getenv("BATSIM") then
+    if config.START_FULLSCREEN and not self.mobile and not os.getenv("BATSIM")
+       and not os.getenv("BATSHOT") then
         love.window.setFullscreen(true, "desktop")
     end
 
@@ -501,6 +502,16 @@ function Game:keypressed(key, scancode, isrepeat)
         self:reloadScene(); return
     elseif config.DEV and key == "f6" then
         self:reloadData(); return
+    elseif config.DEV and key == "f10" then
+        -- Store screenshot: the backbuffer exactly as drawn, so it lands at the
+        -- window's own size with no cursor, no menu bar and no window chrome —
+        -- all three of which disqualify a shot taken with the system grabber.
+        self.shotNo = (self.shotNo or 0) + 1
+        local name = ("skjermbilde-%d-%dx%d.png")
+            :format(self.shotNo, love.graphics.getWidth(), love.graphics.getHeight())
+        love.graphics.captureScreenshot(name)
+        print("screenshot -> " .. love.filesystem.getSaveDirectory() .. "/" .. name)
+        return
     elseif config.DEV and key == "f3" then
         self.profile.on = not self.profile.on; return   -- toggle dev profiler
     elseif config.DEV and key == "f4" then

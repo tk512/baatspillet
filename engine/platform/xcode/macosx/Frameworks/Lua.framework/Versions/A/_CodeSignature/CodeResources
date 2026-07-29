@@ -4,89 +4,111 @@
 <dict>
 	<key>files</key>
 	<dict>
-		<key>Resources/English.lproj/InfoPlist.strings</key>
+		<key>Resources/Info.plist</key>
+		<data>
+		VTr0iDETYh0fYFmmjalerMq2u5Y=
+		</data>
+		<key>Resources/en.lproj/InfoPlist.strings</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			PuB0ZrR9lN9Fhe5eQJwxmxpv5L4=
+			MiLKDDnrUKr4EmuvhS5VQwxHGK8=
 			</data>
 			<key>optional</key>
 			<true/>
 		</dict>
-		<key>Resources/Info.plist</key>
-		<data>
-		5AfiOLmJXnDIYbutsL7TvGxLuKg=
-		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
-		<key>Headers/codec.h</key>
+		<key>Headers/lauxlib.h</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			N4o9VIt0yF7e3b955G6ORKaOpYM=
+			WI8tfaRQUnj5QjIyIGd4YEiPM84=
 			</data>
 			<key>hash2</key>
 			<data>
-			nSqINzXWVXzaUMhEQ3HWDFhf1aSopCh+fV2+XfXDJLc=
+			cJPqcPs4NB0QR1gUuQlhzsIvlkPBHj6kwt3CzUsDFk4=
 			</data>
 		</dict>
-		<key>Headers/theora.h</key>
+		<key>Headers/lua.h</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			3SajanHuepgqRA6+H0LL68+WQXY=
+			9UnHKGUddFhtyh1NIQar8zfXtUw=
 			</data>
 			<key>hash2</key>
 			<data>
-			Mpi3sGiHPTf+nrjPyIXuklQW+QdYpp1XuXQ8jMEIF7E=
+			7KuEgKrttki3UlhFOrguccTQ2yNBdfRVr3KWLIV494c=
 			</data>
 		</dict>
-		<key>Headers/theoradec.h</key>
+		<key>Headers/lua.hpp</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			o3n7wRt3b0psJ7iWcWj5SEccoA4=
+			z3g8qnpLhL8TrMoBm8i8G3KstqE=
 			</data>
 			<key>hash2</key>
 			<data>
-			Qy0xitH5Jq+zw14mQ8LrfhxII0fqiS9OmbKVOH/GOi4=
+			M2XbaQN/OuiR6a5kif382vcxhTR7i4/3wOjuZlI3U/E=
 			</data>
 		</dict>
-		<key>Headers/theoraenc.h</key>
+		<key>Headers/luaconf.h</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			0EqtlVX+B67ihZ2uiZsBinzwvls=
+			VB67wWq5PTLgmSQI+7VJvVCGHAk=
 			</data>
 			<key>hash2</key>
 			<data>
-			/PrOFbdKbPbqHgrDaD/DxbJ6idZJbnR2ySoZ6uGgnp0=
+			XTYuaW0P1Z3F6/iwNotUW1qz5AqRHYiRZ1bWghqbVwU=
 			</data>
 		</dict>
-		<key>Resources/English.lproj/InfoPlist.strings</key>
+		<key>Headers/luajit.h</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			PuB0ZrR9lN9Fhe5eQJwxmxpv5L4=
+			jmWZotg/Hkb9BHoD1nPRCULEd08=
 			</data>
 			<key>hash2</key>
 			<data>
-			wtHLX739hhekOhhJFMfylurNBdBUeCbG1hDyLvaoLBI=
+			MuBi82xJ/UkfcawqTkicD8gLaoa+tZkJ1Iq3ke+Jx38=
 			</data>
-			<key>optional</key>
-			<true/>
+		</dict>
+		<key>Headers/lualib.h</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			FM9S2cFRMmGekHemSqiv8uTdUJg=
+			</data>
+			<key>hash2</key>
+			<data>
+			0igY6rTCgFmQOIzHrAC93E5HEr9zvZUJSJBCUmupRkU=
+			</data>
 		</dict>
 		<key>Resources/Info.plist</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			5AfiOLmJXnDIYbutsL7TvGxLuKg=
+			VTr0iDETYh0fYFmmjalerMq2u5Y=
 			</data>
 			<key>hash2</key>
 			<data>
-			exlT8WPmwJ4BE9r6WRUeac/Bb1yQQZAPU+evWiF0voI=
+			TvdzW3/2HWZmUctLpqXj8i12MO3JJOAL2apnSi2yDtM=
 			</data>
+		</dict>
+		<key>Resources/en.lproj/InfoPlist.strings</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			MiLKDDnrUKr4EmuvhS5VQwxHGK8=
+			</data>
+			<key>hash2</key>
+			<data>
+			Oc8u4Ht7Mz58F50L9NeYpbcq9qTlhPUeZCcDu/pPyCg=
+			</data>
+			<key>optional</key>
+			<true/>
 		</dict>
 	</dict>
 	<key>rules</key>

@@ -9,6 +9,7 @@ config.START_FULLSCREEN = true
 -- NEVER true in a shipped build: it reads only BATDEV/BATSIM, which don't exist
 -- inside an app bundle.
 config.DEV = (os.getenv("BATDEV") ~= nil) or (os.getenv("BATSIM") ~= nil)
+             or (os.getenv("BATSHOT") ~= nil)
 
 -- temporary show/hide toggles
 config.SHOW_CLOUDS       = false  -- mountain-peak clouds in the world

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mac App Store export. Produces a signed .pkg — the App Store will not take a
+     .app or a .zip for macOS.
+
+     Two identities are involved and they are NOT the same certificate: the app
+     inside is signed with "Apple Distribution", the installer wrapping it with
+     "3rd Party Mac Developer Installer" (Xcode calls it Mac Installer
+     Distribution). bygg.sh checks for both before it starts. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>8K92QASAAM</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<key>installerSigningCertificate</key>
+	<string>3rd Party Mac Developer Installer</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>skep.batspillet</key>
+		<string>Batspillet MacAppStore</string>
+	</dict>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>
