@@ -756,13 +756,11 @@ do_release() {
     echo "${C}════════════════════════════════════════════════${R}"
     echo "  ⚓  ${B}Utgivelse $ver${R} — iOS + macOS"
     echo "${C}════════════════════════════════════════════════${R}"
-    echo "  Bygger begge, klare for opplasting. Tar 10-20 min"
-    echo "  ${D}Du kan gå og ta en kaffe; jeg sier fra når begge er klare.${R}"
     echo ""
     echo "  ${B}Sjekker signering først…${R}"
     signing_preflight both || {
         echo ""
-        echo "  Fiks det over og kjør igjen — ingenting er bygget ennå."
+        echo "  Fiks det over og kjør igjen"
         exit 1
     }
     echo "  ${D}sertifikater og profiler OK${R}"
