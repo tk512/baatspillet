@@ -79,6 +79,46 @@ function Terrain:generateLand()
             self.corner[ci][cj] = (mask + edge * config.COAST_NOISE > config.LAND_THRESH) and 1 or 0
         end
     end
+    self:carveChannels()
+end
+
+-- Force the authored waterways open (config.CHANNELS). This runs on the CORNER
+-- GRID, before anything downstream reads it, so the water test, the baked
+-- meshes, the coastline and the port snapping all agree -- carving later would
+-- give a channel you can sail through that still draws as land.
+--
+-- Only corners inside the band are cleared, and only within the segment's own
+-- bounding box, so a channel costs a few hundred tests rather than a sweep of
+-- the map. Deterministic: no randomness, so the same map still builds the same
+-- world and F6 reproduces it.
+function Terrain:carveChannels()
+    local T = config.TILE
+    for _, c in ipairs(config.CHANNELS or {}) do
+        local x1, y1, x2, y2, w = c[1], c[2], c[3], c[4], c[5]
+        local half = w * 0.5
+        local vx, vy = x2 - x1, y2 - y1
+        local len2 = vx * vx + vy * vy
+        local i0 = math.max(1, math.floor((math.min(x1, x2) - half) / T))
+        local i1 = math.min(self.nx + 1, math.ceil((math.max(x1, x2) + half) / T) + 1)
+        local j0 = math.max(1, math.floor((math.min(y1, y2) - half) / T))
+        local j1 = math.min(self.ny + 1, math.ceil((math.max(y1, y2) + half) / T) + 1)
+        for ci = i0, i1 do
+            local gx = (ci - 1) * T
+            for cj = j0, j1 do
+                local gy = (cj - 1) * T
+                -- distance from the corner to the segment
+                local t = 0
+                if len2 > 0 then
+                    t = ((gx - x1) * vx + (gy - y1) * vy) / len2
+                    if t < 0 then t = 0 elseif t > 1 then t = 1 end
+                end
+                local dx, dy = gx - (x1 + vx * t), gy - (y1 + vy * t)
+                if dx * dx + dy * dy <= half * half then
+                    self.corner[ci][cj] = 0
+                end
+            end
+        end
+    end
 end
 
 local function cornersAllZero(self, i, j)
@@ -426,15 +466,35 @@ function Terrain:scatterProps()
                 if t.type == "grass" then
                     local bio = config.BIOMES[t.biome or "green"] or config.BIOMES.green
                     local f = fbm(cx / config.FOREST_SCALE, cy / config.FOREST_SCALE, seed + 200)
-                    if f > config.FOREST_THRESH + (bio.forest or 0) then
+                    -- How thickly the countryside is settled: 1 tile in N. A
+                    -- smaller modulus is a busier island; `remote` still wins, so
+                    -- the empty islands stay empty.
+                    local wantHouse = ((i * 31 + j * 7) % (bio.houses or 13) == 0)
+                                      and not self:isRemoteAt(cx, cy)
+                    local function house()
+                        self.props[#self.props + 1] =
+                            { tx = i, ty = j, kind = "house", z = 0, biome = t.biome }
+                    end
+                    -- A biome that ASKED to be settled gets first refusal on its
+                    -- tiles; everything else keeps the old order, where houses take
+                    -- what the woods left. That distinction is load-bearing: with
+                    -- vegetation first, `houses` did nothing at all on the two
+                    -- biomes that set it, because tropical's generous forest
+                    -- (-0.05) and desert's scrub (-0.02) claim almost every grass
+                    -- tile before the house branch is ever reached. Norge's islands
+                    -- are untouched -- green sets no `houses`, so it still falls
+                    -- through to the bottom.
+                    if bio.houses and wantHouse then
+                        house()
+                    elseif f > config.FOREST_THRESH + (bio.forest or 0) then
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "forest", z = 0,
                             salt = i * 131 + j * 977, biome = t.biome }
                     elseif bio.scrub and f > config.FOREST_THRESH + bio.scrub then
                         -- cactus and low bushes where woods can't grow
                         self.props[#self.props + 1] = { tx = i, ty = j, kind = "scrub", z = 0,
                             salt = i * 131 + j * 977, biome = t.biome }
-                    elseif (i * 31 + j * 7) % 13 == 0 and not self:isRemoteAt(cx, cy) then
-                        self.props[#self.props + 1] = { tx = i, ty = j, kind = "house", z = 0 }
+                    elseif wantHouse then
+                        house()
                     end
                 end
             end

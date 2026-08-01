@@ -7,7 +7,7 @@ frakter passasjerer og fisk, finner skatter — og passer deg for sjørøvere.
 På App Store til iPhone, iPad og Mac. Koden ligger her.
 
 Klikk på vannet, eller styr med piltastene. Seil bort til en havn, så legger
-båten til av seg selv, og pila over båten viser veien videre.
+båten til av seg selv, og pilen over båten viser veien videre.
 
 ## Utvikle
 
@@ -25,7 +25,7 @@ Alt ligger i `src/`:
 | `scenes/` | meny, båtvalg, kartvalg, og `world.lua` som er selve spillet |
 | `entities/` | båt, havn, sjørøver, hai, delfiner |
 | `systems/` | terreng, skatter, kamera, kjøp i app |
-| `ui/` | HUD, hylla, havneskjermen, minikartet, albumet |
+| `ui/` | HUD, hyllen, havneskjermen, minikartet, albumet |
 
 **F5** laster scenen på nytt, **F6** laster `src/data/*` på nytt — uten å starte
 spillet. Tester kjører uten LÖVE: `luajit tests/save_state.lua` (flere i `tests/`).

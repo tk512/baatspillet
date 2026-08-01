@@ -76,6 +76,17 @@ local LANDMARKS = {
         "props/airport/terminal.png",
         "props/airport/hangar.png",
     },
+    -- Starbase's oil terminal. The flare goes FIRST because placement walks
+    -- consecutive candidate tiles outward, so the first piece lands nearest the
+    -- town -- and a burning flare stack on the skyline is what says "this is an
+    -- oil town" to a five-year-old, the way the control tower says "big city".
+    oljeterminal = {
+        "props/oil/flare.png",
+        "props/oil/plant.png",
+        "props/oil/tank.png",
+        "props/oil/pumps.png",
+        "props/oil/chimney.png",
+    },
 }
 
 local function countryHouseSprite(i, j)
@@ -157,7 +168,7 @@ function World:load(game)
         elseif p.kind == "scrub" then          -- desert: cactus + low bushes
             self.objects:add({
                 tx = p.tx, ty = p.ty, z = pz, kind = "scrub",
-                draw = function(_, g) Objects.drawScrub(g, p.salt) end,
+                draw = function(_, g) Objects.drawScrub(g, p.salt, p.biome) end,
             })
         elseif p.kind == "house" and self:solidLand(p.tx, p.ty) then
             self.objects:add({
@@ -186,8 +197,9 @@ function World:load(game)
         -- the submarine's surfacing bubbles ride the world's splash bursts
         splash = function(x, y) self.splashes[#self.splashes + 1] = { x = x, y = y, t = 0 } end,
     }
-    self.fleet:populate()
+    self.fleet:populate(game:getMapDef(game.state.selectedMap).sea)
 
+    if config.DEV and os.getenv("BATNAV") then self:dumpNavGrid() end
     self.cargoSystem = CargoSystem.new(self.ports)
 
     -- restore the explored area, then light up where the boat already is
@@ -208,6 +220,10 @@ function World:load(game)
     local foundSet = {}
     for _, id in ipairs(self.ms.treasuresFound) do foundSet[id] = true end
     self.treasures = Treasure.build(self.terrain, foundSet)
+    -- Rigs went in before the chests did, so withdraw any that landed on one --
+    -- see Fleet:unblockTreasures for why a blocked chest is worse than a missing
+    -- platform.
+    self.fleet:unblockTreasures(self.treasures)
     self.mapped = {}
     for _, id in ipairs(self.ms.treasuresMapped) do self.mapped[id] = true end
     -- Gates the shelf's tally, so it isn't an empty well on a save that never
@@ -502,14 +518,23 @@ function World:findStartWater(gx, gy)
     return gx, gy
 end
 
+-- What you just clonked into, by obstacle kind. The oil rigs joined the same
+-- solid list as the skerries and inherited their toast, so sailing into a
+-- platform announced "Du traff et skjær!" -- naming the wrong thing is worse
+-- than naming nothing, because the words are the one part a grown-up reads out.
+local BUMP_TOAST = {
+    skjaer = "Du traff et skjær!",
+    rig    = "Du traff en oljeplattform!",
+}
+
 -- screen shake, a "doooink!" and a toast, on a cooldown so grinding along a
 -- skerry doesn't spam it
-function World:hitSkerry()
+function World:hitObstacle(kind)
     if self._skerryCd > 0 then return end
     self._skerryCd = 1.2
     self.camera:addShake(14)
     Assets.playSfx("doink", 0.9)
-    self:showToast("Du traff et skjær!")
+    self:showToast(BUMP_TOAST[kind or "skjaer"] or BUMP_TOAST.skjaer)
 end
 
 -- within `r` of any town; the implementation lives in fleet.lua
@@ -618,8 +643,8 @@ function World:update(dt)
     -- so a vessel near the harbour can't block the approach.
     self._skerryCd = math.max(0, (self._skerryCd or 0) - dt)
     if not self.latching and not self.nearPort then
-        for _, s in ipairs(self.fleet.obstacles) do    -- skerries: clonk + shake on a real hit
-            if self.boat:collideCircle(s.x, s.y, s.r) then self:hitSkerry() end
+        for _, s in ipairs(self.fleet.obstacles) do    -- skerries and rigs: clonk + shake
+            if self.boat:collideCircle(s.x, s.y, s.r) then self:hitObstacle(s.kind) end
         end
         for _, s in ipairs(self.fleet.ships) do        -- ambient ships
             if not (s.dive and s.dive > 0.05) then     -- a submerged sub isn't solid
@@ -2414,6 +2439,38 @@ end
 function World:mousemoved(x, y, dx, dy)
     if self.winScreen or self.mapReveal or self.album or self.dock then return end
     if self.panning then self.camera:drag(dx, dy) end
+end
+
+-- ── Navigability dump (dev only) ─────────────────────────────────────────────
+-- `BATNAV=1 love .` writes navgrid.txt to the save dir: one character per 16
+-- units, land or water. tools/navcheck.py turns that into the answer to the only
+-- question that matters for a new map -- can a five-year-old actually steer
+-- everywhere the water goes? -- by splitting the sea into BASINS of water with
+-- enough clearance to steer in, and reporting anything outside the basin the
+-- boat starts in. It also prints the shortest carve that would join each
+-- stranded basin back, which is exactly what goes in a map's `channels` list.
+--
+-- This exists because "there is water there" and "you can sail there" are
+-- different questions, and Amerika read fine by eye while a third of its sea was
+-- unreachable. Re-run after touching config.ISLANDS, LAND_THRESH or channels.
+function World:dumpNavGrid()
+    local STEP = 16
+    local nx = math.floor(config.WORLD_WIDTH / STEP)
+    local ny = math.floor(config.WORLD_HEIGHT / STEP)
+    local rows = {}
+    for j = 1, ny do
+        local r = {}
+        for i = 1, nx do
+            r[i] = self.terrain:isWater((i - 0.5) * STEP, (j - 0.5) * STEP) and "." or "#"
+        end
+        rows[j] = table.concat(r)
+    end
+    love.filesystem.write("navgrid.txt", string.format("%d %d %d %d %d\n%s\n",
+        nx, ny, STEP, math.floor(self.boat.x), math.floor(self.boat.y),
+        table.concat(rows, "\n")))
+    print(("navgrid %dx%d step %d -> %s/navgrid.txt")
+        :format(nx, ny, STEP, love.filesystem.getSaveDirectory()))
+    print("  analyse with:  python3 tools/navcheck.py")
 end
 
 return World

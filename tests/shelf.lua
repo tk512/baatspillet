@@ -21,6 +21,7 @@ local H = require("tests.harness")
 H.installLove()
 
 local Shelf = require("src.ui.shelf")
+local Retro = require("src.ui.retro")
 local check, eq, near = H.check, H.eq, H.near
 
 -- Stand-in for World + Game: only the fields Shelf.build actually reads.
@@ -209,5 +210,62 @@ local s1 = Shelf.build(w)
 local s2 = Shelf.build(w)
 check(s1 == s2 and s1.treas[1] == s2.treas[1],
     "unchanged state: the cached build is reused, entries and all")
+
+-- ── The see-through frame paints every pixel exactly once ────────────────────
+-- Retro.plaqueGlass is the shelf's frame, and it exists only because the panel
+-- is transparent now. The ordinary Retro.plaque stacks two filled rectangles,
+-- which is invisible at alpha 1 and wrong the moment there is any: the middle
+-- darkens twice and the backing shows through onto the PLANK rather than onto
+-- the sea -- which looks exactly like being see-through onto nothing. The
+-- minimap's wooden surround had this identical bug and was rewritten as a real
+-- ring to fix it.
+--
+-- A future "simplification" back to stacked fills would look deliberate and be
+-- wrong, so the invariant is pinned numerically here: the rectangles it emits
+-- must TILE the plaque -- no overlap anywhere, and no gap either.
+do
+    local rects
+    love.graphics.rectangle = function(mode, x, y, w, h)
+        if w > 0 and h > 0 then rects[#rects + 1] = { x = x, y = y, w = w, h = h } end
+    end
+    love.graphics.setColor = function() end
+
+    local function area(r) return r.w * r.h end
+    local function overlap(a, b)
+        local ox = math.min(a.x + a.w, b.x + b.w) - math.max(a.x, b.x)
+        local oy = math.min(a.y + a.h, b.y + b.h) - math.max(a.y, b.y)
+        if ox <= 0 or oy <= 0 then return 0 end
+        return ox * oy
+    end
+
+    -- the shapes the shelf really takes: wide-and-short, tall, and tiny bevels
+    for _, c in ipairs({
+        { w = 240, h = 120, t = 3 }, { w = 700, h = 96, t = 5 },
+        { w = 180, h = 400, t = 2 }, { w = 90,  h = 60, t = 8 },
+    }) do
+        rects = {}
+        Retro.plaqueGlass(10, 20, c.w, c.h, c.t, 0.66, 0.40)
+        local tag = ("%dx%d t=%d"):format(c.w, c.h, c.t)
+
+        local painted, dup = 0, 0
+        for i, r in ipairs(rects) do
+            painted = painted + area(r)
+            for j = i + 1, #rects do dup = dup + overlap(r, rects[j]) end
+            check(r.x >= 10 and r.y >= 20 and r.x + r.w <= 10 + c.w and r.y + r.h <= 20 + c.h,
+                tag .. ": every piece stays inside the plaque")
+        end
+        eq(dup, 0, tag .. ": no two pieces overlap (one alpha = one sheet of glass)")
+        eq(painted, c.w * c.h, tag .. ": the pieces cover the plaque exactly, no gaps")
+    end
+
+    -- and it hands back the same content rect as the opaque plaque, so a caller
+    -- can be swapped between them without moving its contents
+    rects = {}
+    local gx, gy, gw, gh = Retro.plaqueGlass(10, 20, 240, 120, 3, 0.66, 0.40)
+    eq(gx, 16, "content rect: same x as Retro.plaque's")
+    eq(gy, 26, "content rect: same y as Retro.plaque's")
+    eq(gw, 228, "content rect: same width as Retro.plaque's")
+    eq(gh, 108, "content rect: same height as Retro.plaque's")
+end
 
 H.report()

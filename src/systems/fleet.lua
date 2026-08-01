@@ -42,16 +42,37 @@ function Fleet.new(deps)
     self.data    = deps.data or {}
     self.splash  = deps.splash
     self.ships     = {}   -- all ambient ships (idle + moving), solid + clickable
-    self.obstacles = {}   -- skerry bump circles (static)
+    self.obstacles = {}   -- skerry + rig bump circles (static)
+    -- The fleet's OWN generator, seeded from the map (CLAUDE.md, "Determinism":
+    -- same seed -> same world, and F6 must reproduce it). The terrain always
+    -- obeyed that because it is noise, but everything SCATTERED here -- skerries,
+    -- ambient ships, oil rigs, buoy jitter -- ran on love.math.random, which LÖVE
+    -- seeds from the clock. So the sea furniture moved on every single load: a
+    -- platform you sailed out to yesterday was somewhere else today, and no
+    -- amount of checking a position in one run said anything about the next.
+    --
+    -- A LOCAL generator rather than seeding the global one, so gameplay
+    -- randomness -- where a pirate appears, fireworks, the dolphins -- stays
+    -- genuinely different every time.
+    self.rng = love.math.newRandomGenerator(config.WORLD_SEED)
     return self
 end
 
 -- one call from World:load
-function Fleet:populate()
+-- `sea` is the current map's sea-furniture table (maps.lua), nil for a map that
+-- wants none -- which is Norge, deliberately.
+function Fleet:populate(sea)
     self:buildShipPool()
     self:scatterAmbientBoats(26)
     self:scatterSkerries(14)
     self:spawnVikingSky()
+    sea = sea or {}
+    -- `rigs` is either a list of exact spots (what shipped maps use) or a COUNT
+    -- to scatter, which prints a paste-ready list in dev so a new map can be
+    -- scattered once and then frozen.
+    if type(sea.rigs) == "table" then self:placeRigs(sea.rigs)
+    elseif sea.rigs then self:scatterRigs(sea.rigs, sea.rig) end
+    if sea.buoys then self:layBuoys() end
 end
 
 -- photo billboards when their art is present, else OpenGFX sprite ships
@@ -69,13 +90,13 @@ end
 -- variety comes from adding boats, never from resizing the same one.
 function Fleet:pickShipLook()
     if self.usePhotos then
-        local d = self.shipDefs[love.math.random(#self.shipDefs)]
+        local d = self.shipDefs[self.rng:random(#self.shipDefs)]
         return lookForDef(d)
     end
     return {
         billboard = false,
-        sprite = config.AMBIENT_SHIPS[love.math.random(#config.AMBIENT_SHIPS)],
-        col = config.SHIP_COLORS[love.math.random(#config.SHIP_COLORS)],
+        sprite = config.AMBIENT_SHIPS[self.rng:random(#config.AMBIENT_SHIPS)],
+        col = config.SHIP_COLORS[self.rng:random(#config.SHIP_COLORS)],
         def = { name = "Skip", country = "", type = "Lasteskip" },
     }
 end
@@ -101,7 +122,7 @@ function Fleet:addShip(gx, gy, angle, opts)
     }
     if s.route then              -- ferries begin lying at their first stop
         s.routeI = 1
-        s.waitT = (s.dwell or config.AMBIENT_VISIT.DWELL) * (0.3 + love.math.random() * 0.7)
+        s.waitT = (s.dwell or config.AMBIENT_VISIT.DWELL) * (0.3 + self.rng:random() * 0.7)
     end
     if look.def and look.def.submarine then
         -- s.dive: 0 surfaced .. 1 under; drives clipping, collision and taps
@@ -110,7 +131,7 @@ function Fleet:addShip(gx, gy, angle, opts)
         s.dive = 1
         s.subState = "under"
         -- first surfacing comes sooner, so the surprise lands early
-        s.subT = (U.SUBMERGED_MIN + love.math.random() * (U.SUBMERGED_MAX - U.SUBMERGED_MIN)) * 0.5
+        s.subT = (U.SUBMERGED_MIN + self.rng:random() * (U.SUBMERGED_MAX - U.SUBMERGED_MIN)) * 0.5
     end
     self.ships[#self.ships + 1] = s
     return s
@@ -139,7 +160,7 @@ function Fleet:updateDive(s, dt)
         if s.dive <= 0 then
             s.dive = 0
             s.subState = "up"
-            s.subT = U.SURFACE_MIN + love.math.random() * (U.SURFACE_MAX - U.SURFACE_MIN)
+            s.subT = U.SURFACE_MIN + self.rng:random() * (U.SURFACE_MAX - U.SURFACE_MIN)
         end
     elseif s.subState == "up" then
         s.subT = s.subT - dt
@@ -152,7 +173,7 @@ function Fleet:updateDive(s, dt)
         if s.dive >= 1 then
             s.dive = 1
             s.subState = "under"
-            s.subT = U.SUBMERGED_MIN + love.math.random() * (U.SUBMERGED_MAX - U.SUBMERGED_MIN)
+            s.subT = U.SUBMERGED_MIN + self.rng:random() * (U.SUBMERGED_MAX - U.SUBMERGED_MIN)
         end
     end
 end
@@ -202,7 +223,7 @@ end
 function Fleet:findShipSpot()
     local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
     for _ = 1, 800 do
-        local gx, gy = love.math.random() * W, love.math.random() * H
+        local gx, gy = self.rng:random() * W, self.rng:random() * H
         local sdx, sdy = gx - self.boat.x, gy - self.boat.y
         if (sdx * sdx + sdy * sdy) > (600 * 600) and self:openSea(gx, gy, 70)
             and not Fleet.nearAnyPort(self.ports, gx, gy, 560) then
@@ -227,9 +248,9 @@ function Fleet:findCruiseLane(reach, port)
     for _ = 1, 20 do
         local gx, gy
         if port then
-            local a = love.math.random() * math.pi * 2
+            local a = self.rng:random() * math.pi * 2
             local r = config.AMBIENT_HOME_MIN
-                + love.math.random() * (config.AMBIENT_HOME_LEASH - config.AMBIENT_HOME_MIN)
+                + self.rng:random() * (config.AMBIENT_HOME_LEASH - config.AMBIENT_HOME_MIN)
             local x, y = port.x + math.cos(a) * r, port.y + math.sin(a) * r
             if x > 60 and y > 60 and x < config.WORLD_WIDTH - 60
                 and y < config.WORLD_HEIGHT - 60 and self:openSea(x, y, 70)
@@ -242,7 +263,7 @@ function Fleet:findCruiseLane(reach, port)
         end
         if gx then
             for _ = 1, 8 do
-                local a = love.math.random() * math.pi * 2
+                local a = self.rng:random() * math.pi * 2
                 if self:clearAlong(gx, gy, a, reach)
                     and self:clearAlong(gx, gy, a + math.pi, reach) then
                     return gx, gy, a
@@ -275,8 +296,8 @@ function Fleet:buildFerryRoute(port)
     if not ax then return end
     local bx, by, bestD = nil, nil, 0
     for _ = 1, 60 do                       -- farthest reachable spot wins
-        local a = love.math.random() * math.pi * 2
-        local r = 550 + love.math.random() * 500
+        local a = self.rng:random() * math.pi * 2
+        local r = 550 + self.rng:random() * 500
         local x, y = port.x + math.cos(a) * r, port.y + math.sin(a) * r
         if x > 60 and y > 60 and x < W - 60 and y < H - 60 and self:openSea(x, y, 60)
             and not Fleet.nearAnyPort(self.ports, x, y, 560, port) then
@@ -295,8 +316,8 @@ end
 function Fleet:findAnchorage(port)
     local V = config.AMBIENT_VISIT
     for _ = 1, 50 do
-        local a = love.math.random() * math.pi * 2
-        local r = V.RING_MIN + love.math.random() * (V.RING_MAX - V.RING_MIN)
+        local a = self.rng:random() * math.pi * 2
+        local r = V.RING_MIN + self.rng:random() * (V.RING_MAX - V.RING_MIN)
         local x, y = port.x + math.cos(a) * r, port.y + math.sin(a) * r
         if x > 60 and y > 60 and x < config.WORLD_WIDTH - 60 and y < config.WORLD_HEIGHT - 60
             and self:openSea(x, y, 60) and not Fleet.nearAnyPort(self.ports, x, y, 560, port) then
@@ -315,7 +336,7 @@ function Fleet:scatterAmbientBoats(count)
     if self.usePhotos then
         for _, d in ipairs(self.shipDefs) do
             local gx, gy = self:findShipSpot()
-            local angle = love.math.random() * math.pi * 2
+            local angle = self.rng:random() * math.pi * 2
             local opts = { moving = false, look = lookForDef(d) }
             if d.cruise then
                 opts.moving = true
@@ -363,7 +384,7 @@ function Fleet:scatterAmbientBoats(count)
     count = count or 18
     for _ = 1, count do
         local gx, gy = self:findShipSpot()
-        if gx then self:addShip(gx, gy, love.math.random() * math.pi * 2, { moving = false }) end
+        if gx then self:addShip(gx, gy, self.rng:random() * math.pi * 2, { moving = false }) end
     end
 end
 
@@ -377,12 +398,12 @@ function Fleet:scatterSkerries(count)
     local placed, tries = 0, 0
     while placed < count and tries < 800 do
         tries = tries + 1
-        local gx, gy = love.math.random() * W, love.math.random() * H
+        local gx, gy = self.rng:random() * W, self.rng:random() * H
         local sdx, sdy = gx - self.boat.x, gy - self.boat.y
         if (sdx * sdx + sdy * sdy) > (500 * 500) and self:openSea(gx, gy, 90)
             and not Fleet.nearAnyPort(self.ports, gx, gy, 600) then
             placed = placed + 1
-            local salt = love.math.random() * 1000
+            local salt = self.rng:random() * 1000
             self.obstacles[#self.obstacles + 1] = { x = gx, y = gy, r = 22 }
             self.objects:add({
                 tx = math.floor(gx / T) + 1, ty = math.floor(gy / T) + 1, z = 0,
@@ -390,6 +411,213 @@ function Fleet:scatterSkerries(count)
             })
         end
     end
+end
+
+-- ── Sea furniture ────────────────────────────────────────────────────────────
+-- Switched on per map by its `sea` table (src/data/maps.lua), because an oil rig
+-- in a fjord is the same mistake as a glass tower in one. Both go in during
+-- populate(), which runs inside the loading coroutine, so the placement search
+-- costs nothing at play time.
+
+-- Offshore platforms, out where there is nothing else. They are SOLID -- the
+-- point of a structure in open water is that you sail around it -- and the bump
+-- circle is generous, since the sprite's legs are far wider than its deck and
+-- clipping through a leg reads as the art being broken.
+--
+-- They also keep APART from each other: left to pure chance two would eventually
+-- land in sight of one another and read as one confused industrial estate rather
+-- than as separate landmarks worth sailing out to.
+-- `over` is the map's optional per-map override (a `rig` table in its `sea`
+-- entry): Norway's platforms belong far out in the North Sea, not tucked between
+-- islands, so Norge asks for much more open water than Amerika does.
+function Fleet:scatterRigs(count, over)
+    if not count or count <= 0 then return 0 end
+    local R = config.SEA.RIG
+    over = over or {}
+    local CLEAR     = over.clear    or R.CLEAR
+    local FROM_PORT = over.fromPort or R.FROM_PORT
+    local NEAR_PORT = over.nearPort or R.NEAR_PORT
+    local APART     = over.apart    or R.APART
+    local T = config.TILE
+    local W, H = config.WORLD_WIDTH, config.WORLD_HEIGHT
+
+    -- A platform belongs in an ANNULUS round the towns: far enough out to be
+    -- offshore (FROM_PORT), close enough in to be somewhere the boat goes
+    -- (NEAR_PORT). Both bounds were learned the hard way. With only a lower
+    -- bound, "far from every harbour" and "far from the game" turn out to be the
+    -- same place -- Norge's towns only span x 3500..9000, so the rigs went to
+    -- the map's outer margins where nobody sails. The upper bound is what keeps
+    -- them in the water you actually cross.
+    local cand, tries = {}, 0
+    while #cand < 240 and tries < 4000 do
+        tries = tries + 1
+        local gx, gy = self.rng:random() * W, self.rng:random() * H
+        local bdx, bdy = gx - self.boat.x, gy - self.boat.y
+        -- Off the map's own edge too. openSea samples through tileIndexAt, which
+        -- CLAMPS to the map, so a point hard against the border reads as having
+        -- open water on that side -- a rig came out at y = 26, wedged into the
+        -- top edge. The border is a wall, so treat it like one.
+        local inBounds = gx > CLEAR and gy > CLEAR
+                     and gx < W - CLEAR and gy < H - CLEAR
+        if inBounds
+           and (bdx * bdx + bdy * bdy) > R.FROM_BOAT * R.FROM_BOAT
+           and self:openSea(gx, gy, CLEAR)
+           and not Fleet.nearAnyPort(self.ports, gx, gy, FROM_PORT)
+           and Fleet.nearAnyPort(self.ports, gx, gy, NEAR_PORT) then
+            cand[#cand + 1] = { x = gx, y = gy }
+        end
+    end
+    if #cand == 0 then return 0 end
+
+    -- Farthest-point selection: each platform goes to whichever remaining spot
+    -- is furthest from the ones already standing. That spreads them over the
+    -- water the map actually has, without needing to know where that water is.
+    -- On its own it drives everything into the map's corners, which is what the
+    -- annulus above is holding back.
+    local chosen = { cand[1] }
+    while #chosen < count do
+        local best, bestD = nil, -1
+        for _, c in ipairs(cand) do
+            local near = math.huge
+            for _, k in ipairs(chosen) do
+                local dx, dy = c.x - k.x, c.y - k.y
+                local d = dx * dx + dy * dy
+                if d < near then near = d end
+            end
+            if near > bestD then best, bestD = c, near end
+        end
+        if not best or bestD < APART * APART then break end   -- no room left
+        chosen[#chosen + 1] = best
+    end
+
+    for _, c in ipairs(chosen) do self:addRig(c.x, c.y) end
+    if config.DEV then
+        -- Paste-ready, because a scattered map is meant to be FROZEN once it
+        -- looks right: see the note on `rigs` in src/data/maps.lua.
+        local out = {}
+        for _, c in ipairs(chosen) do
+            out[#out + 1] = ("{ %d, %d }"):format(math.floor(c.x), math.floor(c.y))
+        end
+        print("rigs = { " .. table.concat(out, ", ") .. " },")
+    end
+    return #chosen
+end
+
+-- One rig, at an exact spot. Both the authored list and the scatter come through
+-- here, so they cannot drift apart in size, sprite or bump radius.
+function Fleet:addRig(gx, gy)
+    local R = config.SEA.RIG
+    local T = config.TILE
+    if config.DEV and not self:openSea(gx, gy, 120) then
+        print(("WARNING: rig at (%d, %d) is not in open water"):format(gx, gy))
+    end
+    do
+        local salt = (gx * 131 + gy * 977) % 1000
+        local obj = self.objects:add({
+            -- TWO tiles wide, matching the 128px sprite. Objects.draw scales a
+            -- sprite to FILL the footprint and Iso.footprint makes that exactly
+            -- tiles*64, so 2 tiles + a 128px canvas is TTD's own 1:1 pixel scale.
+            -- Getting this pair out of step is what makes a rig either a giant or
+            -- a postage stamp.
+            tx = math.floor(gx / T) + 1, ty = math.floor(gy / T) + 1, z = 0,
+            w = 2, h = 2,
+            sprite = "props/rig/rig.png",
+            draw = function(_, g) Objects.drawRig(g, salt) end,
+        })
+        self.obstacles[#self.obstacles + 1] =
+            { x = gx, y = gy, r = R.RADIUS, kind = "rig", obj = obj }
+    end
+end
+
+-- Rigs at coordinates the map states outright. This is what a shipped map uses:
+-- procedural placement is fine for finding good spots, but it moves the moment
+-- the terrain, the channels or a tuning number changes, and then every position
+-- has to be re-checked. Written down, they are the same on every device and any
+-- one of them can be nudged by hand without touching the rules.
+function Fleet:placeRigs(list)
+    for _, r in ipairs(list) do self:addRig(r[1], r[2]) end
+    return #list
+end
+
+-- Rigs are placed before the treasure is, because populate() runs first -- so a
+-- platform can end up standing on a sandbank with a chest on it. Its bump circle
+-- would then make that chest unreachable, and a hunt you cannot finish is a dead
+-- end with no way out of it: the marker keeps pointing at something the boat
+-- physically cannot get to. Losing one platform out of six is invisible; that is
+-- not. Called from World:load once the treasures exist.
+function Fleet:unblockTreasures(treasures)
+    if not treasures or #treasures == 0 then return 0 end
+    local gone = 0
+    for i = #self.obstacles, 1, -1 do
+        local o = self.obstacles[i]
+        if o.kind == "rig" then
+            for _, tr in ipairs(treasures) do
+                local dx, dy = tr.x - o.x, tr.y - o.y
+                -- the rig's own reach plus room to sail up and take the chest
+                local pad = o.r + 220
+                if dx * dx + dy * dy < pad * pad then
+                    if config.DEV then
+                        print(("WARNING: rig at (%d, %d) stands on a treasure -- "
+                            .. "withdrawn. Move it in maps.lua."):format(o.x, o.y))
+                    end
+                    if o.obj then self.objects:removeWhere(function(q) return q == o.obj end) end
+                    table.remove(self.obstacles, i)
+                    gone = gone + 1
+                    break
+                end
+            end
+        end
+    end
+    return gone
+end
+
+-- A row of markers leading out of each harbour mouth, the way a real channel is
+-- marked. NOT decoration: a five-year-old cannot read a town name, but he can
+-- follow a line of red buoys, and they are visible from further out than the
+-- town is. They are deliberately NOT solid (config.SEA.BUOY.RADIUS = 0) --
+-- bumping off the thing you were told to follow teaches the wrong lesson.
+--
+-- The line is aimed from the port toward open water: the bearing with the most
+-- water along it wins, which is the harbour's approach by definition. A port
+-- whose approach can't be found simply gets no buoys rather than a row across
+-- a headland.
+function Fleet:layBuoys()
+    local B = config.SEA.BUOY
+    local T = config.TILE
+    local reach = B.FIRST + B.STEP * (B.COUNT - 1)
+    local n = 0
+    for _, p in ipairs(self.ports) do
+        local best, bestScore = nil, 0
+        for k = 0, 23 do                              -- 24 bearings, 15 degrees apart
+            local a = k * math.pi / 12
+            local c, s = math.cos(a), math.sin(a)
+            local score = 0
+            for d = B.FIRST, reach, 60 do
+                if self.terrain:isWater(p.x + c * d, p.y + s * d) then score = score + 1
+                else break end
+            end
+            if score > bestScore then best, bestScore = a, score end
+        end
+        -- the whole row must be afloat, or it isn't a channel
+        if best and bestScore >= math.ceil((reach - B.FIRST) / 60) then
+            local c, s = math.cos(best), math.sin(best)
+            local nx, ny = -s, c                      -- sideways, for the jitter
+            for i = 1, B.COUNT do
+                local d = B.FIRST + B.STEP * (i - 1)
+                local off = (self.rng:random() * 2 - 1) * B.JITTER
+                local bx, by = p.x + c * d + nx * off, p.y + s * d + ny * off
+                if self.terrain:isWater(bx, by) then
+                    n = n + 1
+                    local phase = self.rng:random() * 6.28
+                    self.objects:add({
+                        tx = math.floor(bx / T) + 1, ty = math.floor(by / T) + 1, z = 0,
+                        draw = function(_, g) Objects.drawBuoy(g, phase) end,
+                    })
+                end
+            end
+        end
+    end
+    return n
 end
 
 -- Water (and world) clear along the ship's whole look-ahead ray on `ang`?
@@ -484,10 +712,10 @@ function Fleet:stepShip(s, dt, W, H)
     else
         if s.visits then                             -- time for a city call?
             s.visitT = (s.visitT or (V.INTERVAL_MIN
-                + love.math.random() * (V.INTERVAL_MAX - V.INTERVAL_MIN))) - dt
+                + self.rng:random() * (V.INTERVAL_MAX - V.INTERVAL_MIN))) - dt
             if s.visitT <= 0 then
                 s.visitT = V.INTERVAL_MIN
-                    + love.math.random() * (V.INTERVAL_MAX - V.INTERVAL_MIN)
+                    + self.rng:random() * (V.INTERVAL_MAX - V.INTERVAL_MIN)
                 local port, bestD2                   -- call at the NEAREST city
                 for _, p in ipairs(s.visits) do
                     local px, py = p.x - s.x, p.y - s.y

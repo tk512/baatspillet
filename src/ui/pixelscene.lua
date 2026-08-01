@@ -2,9 +2,16 @@
 -- Everything except miniBoat and drawLive is BAKE time: draw once onto a
 -- nearest-filtered virtual-res canvas and upscale. Never per frame.
 
+local config = require("src.config")
+
 local Scene = {}
 
 Scene.VRES_H = 540   -- virtual scanlines (between VGA 480 and SVGA 600)
+
+-- One sky, everywhere. The title, boat, map and info screens are meant to read
+-- as the same afternoon.
+Scene.SKY_TOP = { 0.36, 0.60, 0.88 }
+Scene.SKY_LOW = { 0.82, 0.90, 0.96 }
 
 -- Bayer 4x4 ordered-dither matrix, 0..15
 Scene.BAYER = {
@@ -202,6 +209,70 @@ function Scene.drawLive(S, t)
     end
     love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1)
+end
+
+-- ── The chooser backdrop ─────────────────────────────────────────────────────
+-- Sky, sea, haze range, islands and sun baked onto the virtual-res canvas, plus
+-- the descriptor drawLive needs. The boat, map and info screens each had the
+-- identical twenty lines with different constants, so the constants became the
+-- argument -- and a fourth screen is now a table, not a copy.
+--
+-- `spec` is fractions of the virtual scene, so it is resolution-free:
+--   { horizon = 0.30,
+--     islands = { { x = 0.11, w = 0.085, h = 0.10 }, ... },   -- x/w of VW, h of VH
+--     sun     = { x = 0.85, y = 0.115, r = 0.06 },
+--     clouds  = { { w = 0.07, yf = 0.10, speed = 8 }, ... } }
+-- The cache lands on `o` (the scene table): bg/bgW/bgH/bgScale/bgHorizon and
+-- liveScene, so a caller that wants more (boatselect's glints) can read them.
+--
+-- The TITLE screen keeps its own bake on purpose: it has the lighthouse and a
+-- full-bleed geometry the choosers don't share.
+function Scene.backdrop(o, sw, sh, spec)
+    local VH = Scene.VRES_H
+    local scale = sh / VH
+    local VW = math.max(4, math.floor(sw / scale + 0.5))
+    local horizon = math.floor(VH * spec.horizon)
+
+    local cv = love.graphics.newCanvas(VW, VH)
+    cv:setFilter("nearest", "nearest")
+    love.graphics.setCanvas(cv)
+    love.graphics.clear(0, 0, 0, 0)
+
+    Scene.dithGradient(0, 0, VW, horizon, Scene.SKY_TOP, Scene.SKY_LOW, 10)
+    Scene.dithGradient(0, horizon, VW, VH - horizon,
+        config.colors.water_top, config.colors.water_deep, 8)
+
+    Scene.hazeHills(0, VW, horizon, VH)          -- depth behind the islands
+    local grass, gdk = config.colors.grass.top, config.colors.grass.lip
+    local sand = config.colors.sand.top
+    for _, isl in ipairs(spec.islands) do
+        Scene.island(VW * isl.x, horizon, VW * isl.w, VH * isl.h, grass, gdk, sand)
+    end
+
+    local sunX, sunY = VW * spec.sun.x, VH * spec.sun.y
+    local sunR = math.floor(VH * spec.sun.r)
+    Scene.sun(sunX, sunY, sunR)
+    Scene.sunReflection(sunX, horizon, VH, sunR, VH * 0.016)
+
+    love.graphics.setCanvas()
+    love.graphics.setColor(1, 1, 1)
+
+    o.bg, o.bgW, o.bgH = cv, sw, sh
+    o.bgScale, o.bgHorizon = scale, horizon * scale
+    o.liveScene = {
+        x = 0, y = 0, w = sw, h = sh,
+        horizon = horizon * scale, blk = math.max(2, scale), scale = scale,
+        sun = { x = sunX * scale, y = sunY * scale, r = sunR * scale },
+        clouds = Scene.makeClouds(spec.clouds, VW, 0, VH, scale),
+    }
+end
+
+-- Bake on first use or after a resize, then draw the canvas and the live layer.
+function Scene.drawBackdrop(o, sw, sh, spec, t)
+    if not o.bg or o.bgW ~= sw or o.bgH ~= sh then Scene.backdrop(o, sw, sh, spec) end
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(o.bg, 0, 0, 0, o.bgScale, o.bgScale)
+    Scene.drawLive(o.liveScene, t)
 end
 
 -- horizon sailboat; cheap enough for a per-frame path

@@ -92,4 +92,61 @@ check(T.COUNT * gap <= 30,
     ("the whole 4-chest arc is %.0f deliveries -- the finale stays reachable")
     :format(T.COUNT * gap))
 
+-- ── chest identity survives an update ────────────────────────────────────────
+-- A saved game stores treasures by ID, and the ID is "treasure" .. the island's
+-- INDEX in config.ISLANDS (Treasure.build). Two ways a content change silently
+-- breaks a child's half-finished hunt, neither of which errors or logs:
+--
+--   1. Inserting an island anywhere but the END renumbers every island after it,
+--      so treasuresFound/Mapped -- and discoveredIslands, keyed "island"..i --
+--      start naming different places than they were written for.
+--   2. Adding an island BIGGER than the smallest currently-picked one displaces
+--      it: pickIslands takes the COUNT biggest, so a found chest's id stops
+--      existing. The tally drops (3/4 back to 2/4), and because `good` is handed
+--      out by PICK ORDER, the album's stickers reshuffle underneath him.
+--
+-- Adding a TOWN is always safe -- nothing in the save mentions ports -- so this
+-- guards the islands, which is the part that looks equally innocent in a diff.
+local picks = {}
+do
+    local idx = {}
+    for i = 1, #config.ISLANDS do idx[i] = i end
+    table.sort(idx, function(a, b) return config.ISLANDS[a].radius > config.ISLANDS[b].radius end)
+    for i = 1, math.min(T.COUNT, #idx) do picks[i] = idx[i] end
+    table.sort(picks)
+end
+
+-- The shipping Norge map. Change this list ONLY together with a save migration.
+local EXPECTED = { 1, 3, 5, 7 }
+check(#picks == #EXPECTED, ("%d chest islands, as configured"):format(#EXPECTED))
+for i, want in ipairs(EXPECTED) do
+    check(picks[i] == want,
+        ("chest %d sits on island %d (id \"treasure%d\") -- unchanged since release")
+        :format(i, want, want))
+end
+
+-- The margin that keeps it that way: a new island must stay UNDER the smallest
+-- picked radius, or it takes that island's chest. Ties are a coin flip, because
+-- table.sort is unstable on equal keys -- so equal is not safe either.
+local smallestPicked = math.huge
+for _, i in ipairs(picks) do
+    smallestPicked = math.min(smallestPicked, config.ISLANDS[i].radius)
+end
+check(smallestPicked == 1820,
+    ("a new Norge island must have radius < %d to leave the hunt alone")
+    :format(smallestPicked))
+
+local biggestUnpicked = 0
+for i = 1, #config.ISLANDS do
+    local picked = false
+    for _, p in ipairs(picks) do if p == i then picked = true end end
+    if not picked then
+        biggestUnpicked = math.max(biggestUnpicked, config.ISLANDS[i].radius)
+    end
+end
+check(biggestUnpicked < smallestPicked,
+    ("no tie at the cut: biggest unpicked %d < smallest picked %d, so the "):format(
+        biggestUnpicked, smallestPicked)
+    .. "pick set can't flip on a re-sort")
+
 H.report()

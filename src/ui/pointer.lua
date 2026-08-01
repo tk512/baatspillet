@@ -5,6 +5,29 @@ local Icons = require("src.ui.icons")
 
 local Pointer = {}
 
+-- The mission arrow's shape and colours. It lives HERE, not in world.lua, so the
+-- help screen can show the child the exact arrow he follows at sea: a second
+-- hand-drawn arrow on the page that drifted from this one would teach the wrong
+-- symbol. Read, never written -- file scope, not per frame.
+-- (Why the arrow carries no badge is in World:drawMissionPointer.)
+Pointer.MISSION = {
+    shape = {
+         36,   0,   -- tip
+         15, -20,   -- head top corner
+         15,  -9,   -- step in to shaft
+        -30, -14,   -- tail top
+        -18,   0,   -- the swallowtail notch
+        -30,  14,   -- tail bottom
+         15,   9,   -- step out
+         15,  20,   -- head bottom corner
+    },
+    fill  = { 0.99, 0.83, 0.22 },   -- bright gold
+    line  = { 0.10, 0.08, 0.05 },   -- dark outline
+    orbit = 0,                      -- the arrow IS the marker; nothing to orbit
+    reach = 22,                     -- arrow half-height: what a caption clears
+    ringThick = 4, ringShadow = 7, ringShadowA = 0.5, ringAlpha = 0.95,
+}
+
 -- Returns anchor ax,ay (where the badge sits), bearing ang, and the arrow
 -- centre qx,qy (anchor pushed out along the bearing by `orbit`).
 -- Pure and allocation-free -- runs per frame per live pointer.

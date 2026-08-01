@@ -223,7 +223,36 @@ end
 -- Saguaro and scrub where the desert biome forbids woods (config.SCRUB). Soft
 -- rounded shapes, not pixel sprites. Cached in the same forestCache under a
 -- salt that can't collide with a forest's -- a tile is only ever one of them.
-function Objects.drawScrub(g, salt)
+-- ── Palms ────────────────────────────────────────────────────────────────────
+-- The one place the "trees are never pixel art" rule is bent, and only on the
+-- two islands that ask for it: Los Angeles and Miami. A palm is a SILHOUETTE --
+-- bare trunk, crown on top - so it survives being pixels in a way a fluffy
+-- broadleaf does not, which is what the original objection was about. Everywhere
+-- else still gets the smooth 3D-baked trees.
+--
+-- Missing art falls through to whatever the caller drew before, so the game
+-- still runs with no assets.
+local PALMS = { "props/palms/palm_1.png", "props/palms/palm_2.png",
+                "props/palms/palm_3.png", "props/palms/palm_4.png" }
+
+-- `pick` and `flip` are 0..1 rolls from the caller's own deterministic stream,
+-- so a palm never changes between frames or between runs.
+local function drawPalm(sx, sy, sc, pick, flip)
+    local path = PALMS[1 + math.floor(pick * #PALMS) % #PALMS]
+    local img = Assets.image(path)
+    if not img then return false end
+    -- Sized by HEIGHT, not width: palms differ in height by a factor of two and
+    -- matching their widths would make the tall one a toothpick. 52 against the
+    -- forest's 44 so they stand a little over the other trees, which is what a
+    -- palm does.
+    local s2 = 52 * sc / img:getHeight()
+    local oy = Assets.imageGroundY(path) or img:getHeight()
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.draw(img, sx, sy, 0, (flip < 0.5) and -s2 or s2, s2, img:getWidth() / 2, oy)
+    return true
+end
+
+function Objects.drawScrub(g, salt, biome)
     local S = config.SCRUB
     local z = g.z or 0
     local plants = forestCache[salt]
@@ -244,13 +273,20 @@ function Objects.drawScrub(g, salt)
         forestCache[salt] = plants
     end
 
+    local bio = biome and config.BIOMES[biome]
+    local palms = bio and bio.palms
     for _, p in ipairs(plants) do
         local sx, sy = Iso.project(p[1], p[2], z)
         local sc = p[3]
         love.graphics.setColor(0, 0, 0, 0.10)
         love.graphics.ellipse("fill", sx, sy + 2, 7 * sc, 3 * sc)
 
-        if p[4] < S.CACTUS then
+        -- Palms first: a share of the desert's plants are palms rather than
+        -- cactus (config.BIOMES.desert.palms). p[5] is a roll this plant already
+        -- owned, so nothing new has to be seeded.
+        if palms and p[5] < palms and drawPalm(sx, sy, sc * 1.15, p[4], p[6]) then
+            -- drawn
+        elseif p[4] < S.CACTUS then
             -- QUADS, not thick round-capped lines: those cost ~11 draw calls a
             -- plant, 1.7x a whole forest tile. Quads get there in ~5.
             local h  = 22 * sc
@@ -312,12 +348,16 @@ function Objects.drawForest(g, salt, biome)
 
     local pack = trees3d()
     local tint = biome and TREE_TINTS[biome]
+    local bio = biome and config.BIOMES[biome]
+    local palms = bio and bio.palms
     for _, t in ipairs(trees) do
         local sx, sy = Iso.project(t[1], t[2], z)
         local sc = t[3]
         love.graphics.setColor(0, 0, 0, 0.10)
         love.graphics.ellipse("fill", sx, sy + 2, 9 * sc, 4 * sc)
-        if pack then
+        if palms and t[5] < palms and drawPalm(sx, sy, sc, t[4], t[6]) then
+            -- a palm coast: see drawPalm
+        elseif pack then
             local vn = #pack
             local v = 1 + math.floor(t[4] * vn)
             -- a pack may end with a bare/dead tree: keep those uncommon
@@ -360,6 +400,78 @@ function Objects.drawSkerry(g, salt)
     love.graphics.setColor(c.rock_light)
     love.graphics.circle("fill", sx - 3 + j, sy - 5, 6)
     love.graphics.circle("fill", sx + 4, sy - 3 - j, 4)
+end
+
+-- ── Sea furniture ────────────────────────────────────────────────────────────
+-- Both of these are placeholder-first like everything else (CLAUDE.md): the
+-- code shape below is what draws when assets/props/rig|buoy/*.png are absent, so
+-- the game still runs with no art. The real sprites come from OpenGFX via
+-- tools/extract_opengfx_amerika.py.
+
+-- An offshore platform: legs in the water, a deck, a derrick, a flare. Deliberately
+-- crude -- it exists to prove the placement, and the real sprite is a photo-grade
+-- pixel rig that this could never match.
+function Objects.drawRig(g, salt)
+    local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
+    local t = love.timer.getTime()
+    local w, h = 26, 30
+    love.graphics.setColor(1, 1, 1, 0.18)                       -- wash round the legs
+    love.graphics.ellipse("fill", sx, sy + 3, w * 1.1, w * 0.5)
+    love.graphics.setColor(0.34, 0.30, 0.26)                    -- four legs
+    for i = -1, 1, 2 do
+        love.graphics.rectangle("fill", sx + i * w * 0.55 - 2, sy - h * 0.55, 4, h * 0.55)
+        love.graphics.rectangle("fill", sx + i * w * 0.30 - 2, sy - h * 0.45, 4, h * 0.45)
+    end
+    love.graphics.setColor(0.86, 0.66, 0.16)                    -- deck
+    love.graphics.rectangle("fill", sx - w, sy - h * 0.78, w * 2, h * 0.26)
+    love.graphics.setColor(0.72, 0.72, 0.74)                    -- accommodation block
+    love.graphics.rectangle("fill", sx - w * 0.85, sy - h * 1.25, w * 0.9, h * 0.5)
+    love.graphics.setColor(0.80, 0.20, 0.16)                    -- derrick
+    love.graphics.polygon("fill", sx + w * 0.35, sy - h * 1.75,
+        sx + w * 0.62, sy - h * 0.78, sx + w * 0.08, sy - h * 0.78)
+    -- the flare, guttering on its own rhythm
+    local f = 0.6 + 0.4 * math.sin(t * 7 + (salt or 0))
+    love.graphics.setColor(1, 0.62, 0.12, 0.9)
+    love.graphics.circle("fill", sx - w * 0.95, sy - h * 1.5, 4 + 2 * f)
+    love.graphics.setColor(1, 0.90, 0.45, 0.9)
+    love.graphics.circle("fill", sx - w * 0.95, sy - h * 1.5, 2 + f)
+    love.graphics.setColor(1, 1, 1)
+end
+
+-- A channel marker, bobbing. Two sprite frames when the art is there, a code
+-- buoy when it isn't. `phase` is per-buoy so a row of them never bobs in unison,
+-- which is what would make a line of markers read as a fence.
+function Objects.drawBuoy(g, phase)
+    local B = config.SEA.BUOY
+    local t = love.timer.getTime()
+    local bob = math.sin(t * B.BOB + phase) * 3
+    local sx, sy = Iso.project(g.cx, g.cy, g.z or 0)
+
+    local frame = (math.floor(t / B.FRAMES + phase) % 2) + 1
+    local img = Assets.image("props/buoy/buoy_" .. frame .. ".png")
+    if img then
+        -- the SAME scaling Objects.draw uses: the sprite is padded to one tile
+        -- wide (tools/extract_opengfx_amerika.py), so this is 1:1 with a tile and
+        -- the buoy comes out the quarter-tile it is. Any extra factor here would
+        -- silently disagree with every other prop on the map.
+        local scale = (g.width * SPRITE_FILL) / img:getWidth()
+        local oy = Assets.imageGroundY("props/buoy/buoy_" .. frame .. ".png") or img:getHeight()
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.draw(img, sx, sy + bob, 0, scale, scale, img:getWidth() / 2, oy)
+        return
+    end
+
+    love.graphics.setColor(1, 1, 1, 0.22)                       -- ripple
+    love.graphics.ellipse("fill", sx, sy + 2 + bob, 11, 5)
+    love.graphics.setColor(0.78, 0.16, 0.14)                    -- red float
+    love.graphics.ellipse("fill", sx, sy - 4 + bob, 8, 6)
+    love.graphics.setColor(0.94, 0.92, 0.88)                    -- white band
+    love.graphics.rectangle("fill", sx - 7, sy - 5 + bob, 14, 2)
+    love.graphics.setColor(0.55, 0.55, 0.58)                    -- mast
+    love.graphics.rectangle("fill", sx - 1, sy - 14 + bob, 2, 9)
+    love.graphics.setColor(0.90, 0.24, 0.20)
+    love.graphics.circle("fill", sx, sy - 15 + bob, 2.5)
+    love.graphics.setColor(1, 1, 1)
 end
 
 -- Landmark placeholders, anchored on the 1-tile footprint centre at height g.z:

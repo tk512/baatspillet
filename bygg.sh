@@ -197,7 +197,7 @@ build_love() {
     zip -9 -r -X "$LOVE" . \
         -x '.git/*' -x '.claude/*' -x 'raw/*' -x 'tools/*' -x 'save/*' \
         -x 'engine/*' -x 'tests/*' -x 'docs/*' -x 'ios/*' \
-        -x 'assets/icon/*' -x 'skjermbilde.png' \
+        -x 'assets/icon/*' -x 'skjermbilde.png' -x 'navcheck.png' \
         -x '*.love' -x '*.app' -x '*.app/*' -x '*.dmg' -x '*.zip' \
         -x 'bygg.sh' -x '.gitignore' -x 'CLAUDE.md' -x 'README.md' \
         -x '.DS_Store' -x '*/.DS_Store' -x '*.swp' \
@@ -873,7 +873,7 @@ ${C}═════════════════════════�
         ${B}BATSHOT=retina love .${R}
 
    ${B}2.${R} Spill deg til noe fint. Trykk ${B}F10${R} for hvert bilde.
-      Stien skrives i terminalen (lagremappa).
+      Stien skrives i terminalen (lagremappen).
 
    ${B}3.${R} Last dem opp i App Store Connect.
 

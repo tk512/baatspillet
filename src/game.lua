@@ -62,6 +62,7 @@ function Game:load()
 
     self.scenes = {
         menu      = require("src.scenes.menu"),
+        info      = require("src.scenes.info"),      -- "Sånn spiller du", off the title
         boatselect = require("src.scenes.boatselect"),
         mapselect  = require("src.scenes.mapselect"),
         loading   = require("src.scenes.loading"),
@@ -243,6 +244,7 @@ function Game:applyMap(id)
     self.state.selectedMap = m.id
     config.WORLD_SEED = m.seed
     config.ISLANDS    = m.islands
+    config.CHANNELS   = m.channels or {}
     self.data.ports   = require(m.ports)
     self.data.ships   = require(m.ships)
     return m
@@ -525,9 +527,14 @@ function Game:keypressed(key, scancode, isrepeat)
         Assets.refreshAudio(); return
     elseif key == "escape" then
         -- In the world, ESC opens the pause/menu overlay (which has its own
-        -- "Hovedmeny" to save + leave). Elsewhere it quits.
+        -- "Hovedmeny" to save + leave). A scene with its own idea of "back"
+        -- (the title's quit ask, the help page) says so with onEscape, so
+        -- there is ONE way out per screen rather than a key that quits behind
+        -- the button that asks first. Everything else still quits.
         if self.sceneName == "world" and self.scene.togglePause then
             self.scene:togglePause()
+        elseif self.scene and self.scene.onEscape then
+            self.scene:onEscape()
         else
             love.event.quit()
         end

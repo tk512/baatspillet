@@ -21,3 +21,4 @@ __pycache__/
 engine/build
 
 docs/
+navcheck.png      # tools/navcheck.py output, regenerated on demand

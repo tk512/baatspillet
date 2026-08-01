@@ -63,6 +63,21 @@ function Shelf.progressSlot(x, y, s, icon, frac, label, font, t)
     if label then badge(x, y, s, st, label, font) end
 end
 
+-- The gold line: coin, then the number. It is the one thing on the shelf with no
+-- sunken slot behind it, so once the backing went see-through it became gold
+-- lettering on open water -- hence the drop shadow, which is what the title and
+-- the harbour credits already use over the sea. One function for both layouts,
+-- like sectionExtent: they have drifted before.
+local function goldLine(ix, iy, pad, coinR, gapi, rowH, nmH, str, font)
+    Icons.coin(ix + pad + coinR, iy + pad + rowH * 0.5, coinR)
+    love.graphics.setFont(font)
+    local tx, ty = ix + pad + coinR * 2 + gapi, iy + pad + (rowH - nmH) * 0.5
+    love.graphics.setColor(0, 0, 0, 0.55)
+    love.graphics.print(str, tx + 1, ty + 2)
+    love.graphics.setColor(WOOD.accent)
+    love.graphics.print(str, tx, ty)
+end
+
 -- the one place deciding a section's slot kind, so the layouts can't disagree
 function Shelf.drawEntry(sec, e, x, y, s, font, t)
     if sec.progress then
@@ -272,18 +287,18 @@ local function drawFlow(world, x, y, t, sh, fonts, nmH, pad, gapi, coinR, key)
 
     local pw = widest + (pad + t * 2) * 2
     local ph = acc - gapi + (pad + t * 2) * 2
-    local ix, iy = Retro.plaque(x, y, pw, ph, t)
+    -- See-through: the panel covers a corner of the sea all game and most of
+    -- what it covers is padding. Frame and backing give way; nothing inside
+    -- does. Retro.plaqueGlass has the note on why it is not just an alpha.
+    local ix, iy = Retro.plaqueGlass(x, y, pw, ph, t,
+        config.SHELF.FRAME_ALPHA, config.SHELF.WELL_ALPHA)
 
     local rects = world._shelfRects
     if not rects then rects = {}; world._shelfRects = rects end
 
     -- gold first, on row 1
     local row1H = rowH[1]
-    love.graphics.setFont(fonts.normal)
-    Icons.coin(ix + pad + coinR, iy + pad + row1H * 0.5, coinR)
-    love.graphics.setColor(WOOD.accent)
-    love.graphics.print(goldStr, ix + pad + coinR * 2 + gapi,
-        iy + pad + (row1H - nmH) * 0.5)
+    goldLine(ix, iy, pad, coinR, gapi, row1H, nmH, goldStr, fonts.normal)
     if key > 0 then
         local kr = world._shelfKeyRect
         if not kr then kr = {}; world._shelfKeyRect = kr end
@@ -385,16 +400,16 @@ function Shelf.draw(world, x, y, t, key)
 
     local pw = contentW + (pad + t * 2) * 2
     local ph = h + (pad + t * 2) * 2
-    local ix, iy = Retro.plaque(x, y, pw, ph, t)
+    -- See-through: the panel covers a corner of the sea all game and most of
+    -- what it covers is padding. Frame and backing give way; nothing inside
+    -- does. Retro.plaqueGlass has the note on why it is not just an alpha.
+    local ix, iy = Retro.plaqueGlass(x, y, pw, ph, t,
+        config.SHELF.FRAME_ALPHA, config.SHELF.WELL_ALPHA)
 
     -- Gold reads as a NUMBER, not a slot: it's the one quantity worth counting,
     -- and a badge on a coin would bury it. It still lives inside the shelf so
     -- everything the player owns is one object on screen.
-    Icons.coin(ix + pad + coinR, iy + pad + goldH * 0.5, coinR)
-    love.graphics.setFont(fonts.normal)
-    love.graphics.setColor(WOOD.accent)
-    love.graphics.print(goldStr, ix + pad + coinR * 2 + gapi,
-        iy + pad + (goldH - nmH) * 0.5)
+    goldLine(ix, iy, pad, coinR, gapi, goldH, nmH, goldStr, fonts.normal)
     if key > 0 then
         local kr = world._shelfKeyRect
         if not kr then kr = {}; world._shelfKeyRect = kr end

@@ -90,61 +90,26 @@ function BoatSelect:update(dt)
     end
 end
 
--- The title screen's pixel language, baked once onto a virtual-res canvas and
--- rebaked only on resize. The per-frame extras are three sailboats and some
--- wave glints, all pure functions of time -- nothing allocated.
-function BoatSelect:buildBackground(sw, sh)
-    local VH = Scene.VRES_H
-    local scale = sh / VH
-    local VW = math.max(4, math.floor(sw / scale + 0.5))
-    local horizon = math.floor(VH * 0.30)
-
-    local cv = love.graphics.newCanvas(VW, VH)
-    cv:setFilter("nearest", "nearest")
-    love.graphics.setCanvas(cv)
-    love.graphics.clear(0, 0, 0, 0)
-
-    Scene.dithGradient(0, 0, VW, horizon, { 0.36, 0.60, 0.88 }, { 0.82, 0.90, 0.96 }, 10)
-    Scene.dithGradient(0, horizon, VW, VH - horizon,
-        config.colors.water_top, config.colors.water_deep, 8)
-
-    -- horizon depth + islands with tree tufts, like the title screen's
-    Scene.hazeHills(0, VW, horizon, VH)
-    local grass, gdk = config.colors.grass.top, config.colors.grass.lip
-    local sand = config.colors.sand.top
-    Scene.island(VW * 0.11, horizon, VW * 0.085, VH * 0.10, grass, gdk, sand)
-    Scene.island(VW * 0.68, horizon, VW * 0.055, VH * 0.07, grass, gdk, sand)
-    Scene.island(VW * 0.92, horizon, VW * 0.095, VH * 0.13, grass, gdk, sand)
-
-    local sunX, sunY, sunR = VW * 0.85, VH * 0.115, math.floor(VH * 0.06)
-    Scene.sun(sunX, sunY, sunR)
-    Scene.sunReflection(sunX, horizon, VH, sunR, VH * 0.016)
-
-    love.graphics.setCanvas()
-    love.graphics.setColor(1, 1, 1)
-    self.bg, self.bgW, self.bgH = cv, sw, sh
-    self.bgScale, self.bgHorizon = scale, horizon * scale
-
-    -- the shared live layer
-    self.liveScene = {
-        x = 0, y = 0, w = sw, h = sh,
-        horizon = horizon * scale, blk = math.max(2, scale), scale = scale,
-        sun = { x = sunX * scale, y = sunY * scale, r = sunR * scale },
-        clouds = Scene.makeClouds({
-            { w = 0.07, yf = 0.10, speed = 8 },
-            { w = 0.045, yf = 0.055, speed = 5 },
-            { w = 0.055, yf = 0.15, speed = 6 },
-        }, VW, 0, VH, scale),
-    }
-end
+-- The title screen's pixel language (Scene.backdrop bakes it once and rebakes
+-- only on resize). The per-frame extras below are three sailboats and some wave
+-- glints, all pure functions of time -- nothing allocated.
+local BACKDROP = {
+    horizon = 0.30,
+    islands = {
+        { x = 0.11, w = 0.085, h = 0.10 },
+        { x = 0.68, w = 0.055, h = 0.07 },
+        { x = 0.92, w = 0.095, h = 0.13 },
+    },
+    sun    = { x = 0.85, y = 0.115, r = 0.06 },
+    clouds = {
+        { w = 0.07,  yf = 0.10,  speed = 8 },
+        { w = 0.045, yf = 0.055, speed = 5 },
+        { w = 0.055, yf = 0.15,  speed = 6 },
+    },
+}
 
 function BoatSelect:drawBackground(sw, sh)
-    if not self.bg or self.bgW ~= sw or self.bgH ~= sh then
-        self:buildBackground(sw, sh)
-    end
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.draw(self.bg, 0, 0, 0, self.bgScale, self.bgScale)
-    Scene.drawLive(self.liveScene, self.t)
+    Scene.drawBackdrop(self, sw, sh, BACKDROP, self.t)
 
     -- tiny sailboats drifting across the horizon band
     local t = self.t
@@ -587,6 +552,7 @@ function BoatSelect:drawPreview(L, def)
             love.graphics.ellipse("fill", L.cx, L.previewY + bob, L.previewW * 0.4, L.previewW * 0.18)
         end
     end
+
     if not owned then
         local rw = L.previewW * 0.85
         local ry = L.previewY + bob * 0.3

@@ -66,8 +66,24 @@ config.ISLANDS = {
     { x = 2600, y = 6000, radius = 1820 },  -- Lerøy    (SW)
     { x = 5200, y = 6200, radius = 1050 },  -- Klokkarvik (tiny, S-mid)
     { x = 10000,y = 6200, radius = 2520 },  -- Oslo     (huge, SE)
-    { x = 5100, y = 4300, radius = 1260 },  -- Florida  (big, central sea)
+    { x = 5100, y = 4300, radius = 1260 },  -- Valhall  (big, central sea)
 }
+
+-- Authored waterways, forced open AFTER the island masks and noise have had
+-- their say (Terrain:carveChannels). A LIVE SLOT like ISLANDS: Game:applyMap
+-- installs the selected map's list here.
+--
+-- Why this exists: ~60% of Amerika is land and its islands overlap by design, so
+-- whether a strait between two of them is sailable is decided by where the
+-- coast noise happens to fall -- and it fell wrong. The strait in the middle
+-- came out with EIGHT units of clearance against a boat of radius 20: passable
+-- only because land collision tests the boat's centre point, so you could thread
+-- it to within a few units and no five-year-old ever will. Nudging the island
+-- anchors apart to fix it would reshape half the map; this opens the one channel
+-- and leaves everything else exactly as it was.
+--
+--   { x1, y1, x2, y2, width }   width is the full carved band, in world units
+config.CHANNELS = {}
 
 -- Set per island in a map's `islands` list; omitted = "green", the Norge look.
 -- Each overrides ground colours and forest behaviour, and snowAt pulls the
@@ -81,7 +97,21 @@ config.BIOMES = {
                sand  = { 0.85, 0.74, 0.52 },
                forest = 999, snowless = true,               -- no woods, never snow
                -- not bare though: cactus and scrub instead, see SCRUB
-               scrub = -0.02 },
+               scrub = -0.02,
+               palms = 0.30,                                -- ...and palms among them:
+               -- Los Angeles is a desert with palms down every street, which is
+               -- exactly the silhouette that says "California" rather than
+               -- "somewhere hot". A third of the plants, so they punctuate the
+               -- cactus rather than replace it.
+               houses = 9 },                                -- busier than the 13 default
+    -- Miami. Green would have done, but a palm coast is the whole reason to sail
+    -- that far, and a town you can see from further out makes the trip feel
+    -- worth it -- hence the densest housing on either map.
+    tropical = { grass = { 0.42, 0.60, 0.30 },
+                 sand  = { 0.94, 0.88, 0.66 },              -- bright shell sand
+                 forest = -0.05,                            -- generous woods...
+                 palms = 1.0,                               -- ...and every one a palm
+                 houses = 6 },
     snow   = { grass = { 0.82, 0.86, 0.92 },                -- frozen ground
                rock  = { 0.52, 0.58, 0.68 },                -- icy blue stone
                sand  = { 0.88, 0.90, 0.94 },                -- frosted shores
@@ -398,6 +428,59 @@ config.MISSION_MARKER = {
 config.MINIMAP = {
     FOG_ALPHA  = 0.28,  -- unexplored cells; lower = more sea showing through
     WELL_ALPHA = 0.10,  -- the well behind the map (see the note in Minimap:draw)
+}
+
+-- THE SHELF's see-through wood -- the same idea as the minimap's dark, one panel
+-- over. The top-left plaque sits on the sea for the whole game, and most of what
+-- it covers is padding rather than anything to read, so the FRAME and the BACKING
+-- give way and the water shows through them. Everything the panel exists to show
+-- -- the coin, the gold, every slot and its icon, the pause key -- stays at full
+-- strength, because that is the whole reason it is there.
+--
+-- Deliberately less see-through than the minimap's 0.10 well, which is a touch
+-- too faint. FRAME above WELL: the border is what keeps this one OBJECT rather
+-- than a scatter of icons on the water.
+-- Drawn by Retro.plaqueGlass, which has the load-bearing note about why.
+config.SHELF = {
+    FRAME_ALPHA = 0.66,  -- the wooden surround and its two bevels
+    WELL_ALPHA  = 0.40,  -- the recessed backing behind the padding and gold row
+}
+
+-- SEA FURNITURE: things standing in open water, switched on PER MAP (a map's
+-- `sea` table in src/data/maps.lua). Norge has none -- an oil rig in a fjord is
+-- the same mistake as a glass tower in one.
+--
+-- Both earn their place by being things you can SAIL AROUND rather than look at
+-- from the shore, which is the one kind of scenery a boat game is short of.
+config.SEA = {
+    RIG = {
+        CLEAR    = 260,   -- open water needed all round before one may stand
+        FROM_PORT = 900,  -- never near a harbour: it must not steal a dock tap
+        NEAR_PORT = 3200, -- ...but never further out than this either: a rig you
+                          -- never sail past may as well not exist, and "far from
+                          -- every town" is the same place as "off the edge of
+                          -- the game". The two bounds make an annulus.
+        FROM_BOAT = 700,  -- nor sit on top of you at the start of a voyage
+        RADIUS   = 88,    -- bump circle -- generous, the legs are wide apart
+        APART    = 1400,  -- rigs cluster into a field if they can see each other
+        -- No footprint setting on purpose: a rig sits on ONE tile like every
+        -- other prop, and its size comes from the sprite (64x117 against a 64px
+        -- tile). A bigger footprint stretches the art, it does not enlarge it.
+    },
+    -- Buoys mark the channel INTO a harbour, in a line you can follow. That is
+    -- the point of them: a pre-reader cannot read a town name, but he can
+    -- follow a row of red markers, and they say "a harbour is that way" from
+    -- further out than the town itself is visible.
+    BUOY = {
+        COUNT   = 4,      -- per harbour approach
+        FIRST   = 320,    -- distance from the port to the first one
+        STEP    = 260,    -- and between each after that
+        JITTER  = 90,     -- side-to-side wander, so the line isn't a ruler
+        RADIUS  = 0,      -- NOT solid: bumping a channel marker is a punishment
+                          -- for following the thing you were meant to follow
+        BOB     = 1.7,    -- bob cycles per second
+        FRAMES  = 0.45,   -- seconds per sprite frame
+    },
 }
 
 -- Crew + passengers eat the food you've stocked as you sail: every EAT_DISTANCE

@@ -78,13 +78,27 @@ return {
         produces = { mode = "cargo", label = "Fisk", icon = "fish" },
     },
     {
-        id    = "florida",
-        name  = "Florida",
-        master = "Vlad Niki",
+        id    = "valhall",
+        name  = "Valhall",
+        master = "Torbjørn",
         x     = 5100, y = 4300,        -- big harbour on the central-sea island
         color = {0.95, 0.55, 0.20},
         size  = "large",
         produces = { mode = "passengers", label = "Passasjerer", icon = "passenger" },
+    },
+    -- Second town on BERGEN'S island, on the far NE shore ~2800 units from
+    -- Bergen itself -- clear of it, since even a `large` town spreads ~1100 and
+    -- the terrain flattening reaches ~450. Deliberately on an EXISTING island:
+    -- adding to config.ISLANDS would renumber the island and treasure ids and
+    -- break saves mid-hunt (see "Adding a town to a shipped map" in CLAUDE.md).
+    {
+        id    = "frekhaug",
+        name  = "Frekhaug",
+        master = "Sofie",
+        x     = 4360, y = 840,         -- NE coast of the big NW island
+        color = {0.40, 0.70, 0.45},    -- green: distinct from all eight others
+        size  = "small",
+        produces = { mode = "cargo", label = "Fisk", icon = "fish" },
     },
 }
 

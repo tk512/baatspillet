@@ -39,6 +39,53 @@ function Retro.plaque(x, y, w, h, t)
     return x + t * 2, y + t * 2, w - t * 4, h - t * 4
 end
 
+-- A rectangular ring in four bands that DO NOT OVERLAP: top and bottom run the
+-- full width, left and right fill only the gap between them. `Retro.bevel`'s
+-- bands overlap at the corners, which is invisible at alpha 1 and doubles up the
+-- moment there is any transparency. Only the top-right corner differs from
+-- bevel's (light rather than dark), which at t of a few px is not worth mitring.
+local function ringBands(x, y, w, h, bw, tl, br, a)
+    local mid = math.max(0, h - bw * 2)
+    love.graphics.setColor(tl[1], tl[2], tl[3], a)
+    love.graphics.rectangle("fill", x, y, w, bw)                       -- top
+    love.graphics.rectangle("fill", x, y + bw, bw, mid)                -- left
+    love.graphics.setColor(br[1], br[2], br[3], a)
+    love.graphics.rectangle("fill", x, y + h - bw, w, bw)              -- bottom
+    love.graphics.rectangle("fill", x + w - bw, y + bw, bw, mid)       -- right
+end
+Retro.ringBands = ringBands
+
+-- Retro.plaque you can see the world through, for a panel that sits over the sea
+-- all game (today: the shelf). Same three zones as the plaque -- raised outer
+-- frame, sunken inner bevel, recessed backing -- but every pixel is painted
+-- EXACTLY ONCE, which is the whole trick and the whole trap.
+--
+-- `Retro.plaque` fills the full rect with `face` and then lays the well over the
+-- top of it. Give those two an alpha and the middle darkens twice, and worse, the
+-- well ends up see-through onto the PLANK rather than onto the sea -- which looks
+-- exactly like being see-through onto nothing. That is the identical mistake the
+-- minimap's wooden surround was rewritten as a genuine ring to fix (CLAUDE.md,
+-- "World map + treasure hunt"); this is the rectangular version of the same
+-- lesson. **If you ever collapse this back into stacked fills, the transparency
+-- silently stops working while still looking deliberate.**
+--
+-- Two alphas, because the frame and the backing want different amounts: the
+-- border is what keeps the panel one OBJECT rather than icons scattered on the
+-- water, so it stays the more solid of the two. Content drawn into the returned
+-- rect is untouched and should stay opaque.
+function Retro.plaqueGlass(x, y, w, h, t, frameA, wellA)
+    local W = Retro.WOOD
+    local t2 = math.max(1, math.floor(t * 0.6))
+    local b = t + t2                                   -- frame + sunken bevel
+    love.graphics.setColor(W.deep[1], W.deep[2], W.deep[3], wellA)
+    love.graphics.rectangle("fill", x + b, y + b,
+        math.max(0, w - b * 2), math.max(0, h - b * 2))
+    ringBands(x + t, y + t, w - t * 2, h - t * 2, t2, W.lo, W.hi, frameA)  -- sunken
+    ringBands(x, y, w, h, t, W.hi, W.lo, frameA)                           -- raised
+    love.graphics.setColor(1, 1, 1)
+    return x + t * 2, y + t * 2, w - t * 4, h - t * 4
+end
+
 -- The shared "locked" language: rope + padlock over full-colour content, which
 -- reads as "for later" rather than "broken".
 function Retro.ropeAcross(x1, x2, y, sag, thick)

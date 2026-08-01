@@ -7,6 +7,7 @@ local Assets   = require("src.assets")
 local Retro    = require("src.ui.retro")
 local Icons    = require("src.ui.icons")
 local Scene    = require("src.ui.pixelscene")
+local Dialog   = require("src.ui.dialog")
 local Dolphins = require("src.entities.dolphins")   -- drawBody, for the sea band
 local utf8     = require("utf8")
 
@@ -51,6 +52,12 @@ end
 function Menu:load(game)
     self.game = game
     self.t = 0
+    self.quitAsk = nil
+    -- Coming BACK from a page the player opened himself (the help screen) is not
+    -- an arrival: the welcome shout and the splash are for walking in the door,
+    -- and replaying them every time he closes the help reads as a stutter.
+    local quiet = game.menuQuiet
+    game.menuQuiet = nil
     Assets.stopDockMood()      -- in case we came straight from a dock
     Assets.stopChase()         -- ...or a pirate chase
 
@@ -70,6 +77,12 @@ function Menu:load(game)
     -- the game's artist waves from the bottom-right corner
     self.artist = Assets.image("menu/finnerik.png")
     if self.artist then self.artist:setFilter("nearest", "nearest") end
+
+    -- the two carved pins the sign hangs from (see Menu:discSide)
+    self.discImg = {
+        hjelp   = Assets.image("menu/questionmark.png"),
+        avslutt = Assets.image("menu/exit.png"),
+    }
 
     -- a few small pixel sailboats drifting across the sea band
     self.boats = {}
@@ -136,15 +149,19 @@ function Menu:load(game)
     -- voice first, words bouncing in to match, then the splash
     self.splash = {}
     self.splashFired = false
-    Assets.playVoice("velkommen")   -- my kid: "Velkommen til Båtspillet!"
-
-    -- after the voice finishes, or once the words land if there's no voice
-    local v = Assets.voice and Assets.voice.velkommen
-    if v and config.AUDIO_ON then
-        self.splashAt = v:getDuration() + 0.1
-        Assets.setMusicVolume(0.25)  -- duck the music under the voice
+    self.splashAt = 1.8
+    if quiet then
+        self.t = 3.0                 -- past the title bounce; the sign is already up
+        self.splashFired = true
+        Assets.setMusicVolume(1.0)
     else
-        self.splashAt = 1.8
+        Assets.playVoice("velkommen")   -- my kid: "Velkommen til Båtspillet!"
+        -- after the voice finishes, or once the words land if there's no voice
+        local v = Assets.voice and Assets.voice.velkommen
+        if v and config.AUDIO_ON then
+            self.splashAt = v:getDuration() + 0.1
+            Assets.setMusicVolume(0.25)  -- duck the music under the voice
+        end
     end
 
     collectgarbage("collect")
@@ -272,6 +289,7 @@ end
 
 function Menu:update(dt)
     self.t = self.t + dt
+    if self.quitAsk then self.quitAsk:update(dt) end
     local w = love.graphics.getWidth()
     for _, b in ipairs(self.boats) do
         b.x = b.x + b.speed * dt
@@ -350,6 +368,83 @@ function Menu:buttonRect()
     local bw = math.min(math.floor(sw * 0.44), 600)   -- wide enough for the longer label
     local bh = math.floor(bw * 0.22)
     return sw / 2 - bw / 2, math.floor(sh * 0.66), bw, bh
+end
+
+-- ── The two hanging keys ─────────────────────────────────────────────────────
+-- Where the sign's rope-end doubloons used to be. They were decoration, and the
+-- title screen's two corners of dead wood were the natural home for the only two
+-- things a grown-up ever wants here: "how does this work" and "let me out".
+--
+-- They are PINS BOLTED TO THE SCREEN: nailed up there, with the sign swinging
+-- from them. They were first drawn inside the sign's sway, hanging with it, and
+-- that was wrong twice over. The art is carved wood, so its grain slides against
+-- itself under any small continuous motion and the disc reads as a smeared
+-- texture rather than a solid object -- and a button that will not hold still is
+-- a worse button. Fixed, they are also honest: rings do not swing, ropes do.
+-- Menu:drawSign therefore hangs the ropes FROM these points and sways only what
+-- is below them.
+--
+-- Size: DISC_H of the plank's height, nearly twice the old doubloon across, with
+-- a floor at config.TOUCH_MIN so a small screen can still be hit -- 21pt of
+-- doubloon was a decoration, not a control. One rect function feeds both the
+-- drawing and the hit test, so those can never drift apart.
+--
+-- No Avslutt on iOS: apps there leave by the home gesture, and Apple rejects an
+-- in-app quit button. That rope keeps its doubloon.
+local DISC_H = 0.66   -- disc diameter as a fraction of the plank height
+
+function Menu:discSide(side)
+    local bx, by, bw, bh = self:buttonRect()
+    local d = math.max(config.TOUCH_MIN * 1.15, bh * DISC_H)
+    local cx = bx + bw * (side == "hjelp" and 0.16 or 0.84)
+    local cy = by - bh * 0.52          -- the rope top: beamY (-0.62) + 0.10
+    return { x = cx - d / 2, y = cy - d / 2, w = d, h = d }, cx, cy, d
+end
+
+function Menu:hasQuitDisc() return not self.game.mobile end
+
+-- How far the sign (and so the discs) has popped in: 0 = not there yet.
+function Menu:signIn()
+    return clamp01((self.t - 1.6) / 0.5)
+end
+
+-- Presses in and lifts on hover, like every other button, and otherwise DOES NOT
+-- MOVE -- see the note above. `pop` is the sign's entrance, applied about the
+-- disc's own centre so it arrives with the sign it holds up; that is a one-off,
+-- not the idle wobble the grain hated. `glyph` is the fallback shape for a build
+-- with no art -- the game must always run without it.
+function Menu:drawDisc(id, side, glyph, pop)
+    local r, cx, cy, d = self:discSide(side)
+    local down = Retro.isDown(id)
+    local mx, my = love.mouse.getPosition()
+    local hov = not down and Retro.inRect(r, mx, my)
+    local s = (down and 0.90 or (hov and 1.06 or 1.0)) * pop
+    if down then cy = cy + d * 0.05 end
+
+    local img = self.discImg and self.discImg[side]
+    if img then
+        if img:getFilter() ~= "linear" then img:setFilter("linear", "linear") end
+        local sc = d * s / img:getWidth()
+        local ox, oy = img:getWidth() / 2, img:getHeight() / 2
+        love.graphics.setColor(0, 0, 0, 0.30)                    -- sits proud of the sky
+        love.graphics.draw(img, cx + d * 0.045, cy + d * 0.05, 0, sc, sc, ox, oy)
+        love.graphics.setColor(1, 1, 1)                          -- art carries its own shading
+        love.graphics.draw(img, cx, cy, 0, sc, sc, ox, oy)
+    else
+        local rr = d * s * 0.5
+        love.graphics.setColor(0, 0, 0, 0.30)
+        love.graphics.circle("fill", cx + d * 0.045, cy + d * 0.05, rr)
+        love.graphics.setColor(WOOD.face); love.graphics.circle("fill", cx, cy, rr)
+        love.graphics.setColor(WOOD.lo)
+        love.graphics.setLineWidth(math.max(2, rr * 0.12))
+        love.graphics.circle("line", cx, cy, rr)
+        love.graphics.setLineWidth(1)
+        local f = self.game.fonts.big
+        love.graphics.setFont(f)
+        love.graphics.setColor(WOOD.accent)
+        love.graphics.print(glyph, cx - f:getWidth(glyph) / 2, cy - f:getHeight() / 2)
+    end
+    love.graphics.setColor(1, 1, 1)
 end
 
 -- Draw a string letter-by-letter, each letter springing in (elastic bounce)
@@ -598,40 +693,37 @@ function Menu:draw()
     self:bouncyText(self.welcomeFont, self.welcomeText, self.welcomeChars, sw / 2, sh * 0.16, 0.10, 0.0)
     self:bouncyText(self.titleFont,   self.titleText,   self.titleChars,   sw / 2, sh * 0.42, 0.55, 3.0)
 
-    -- wooden sign button (appears once the welcome has bounced in)
-    local btnIn = clamp01((self.t - 1.6) / 0.5)
+    -- wooden sign button (appears once the welcome has bounced in), with the
+    -- help and quit discs hanging off its ropes
+    local btnIn = self:signIn()
     if btnIn > 0 then self:drawSign(btnIn) end
 
     self:drawArtist(sw, sh)   -- Finn-Erik, the game's artist, in the corner
 
-    -- Avslutt (quit) button, bottom-right. Not on iOS: apps there quit via the
-    -- home gesture, and Apple's guidelines reject in-app quit buttons.
-    if not self.game.mobile then
-        local bx, by, bw, bh, label = self:quitBtnRect()
-        local hover = self:pointInQuit(love.mouse.getPosition())
-        Retro.bevel(bx, by, bw, bh, hover and WOOD.hi or WOOD.face, WOOD.hi, WOOD.lo, 3, true)
-        love.graphics.setFont(self.game.fonts.small)
-        love.graphics.setColor(WOOD.text)
-        love.graphics.print(label, bx + (bw - self.game.fonts.small:getWidth(label)) / 2,
-            by + (bh - self.game.fonts.small:getHeight()) / 2)
-    end
+    -- the quit ask, over everything (it swallows its own clicks)
+    if self.quitAsk then self.quitAsk:draw() end
 
     love.graphics.setColor(1, 1, 1)
 end
 
--- "Avslutt" (quit) button in the bottom-right corner of the title screen.
-function Menu:quitBtnRect()
-    local sw, sh = love.graphics.getDimensions()
-    local f = self.game.fonts.small
-    local label, pad = "Avslutt", 10
-    local w, h = f:getWidth(label) + pad * 2, f:getHeight() + pad
-    return sw - w - 16, sh - h - 14, w, h, label
+-- ── "Vil du avslutte?" ───────────────────────────────────────────────────────
+-- The exit disc never quits on the spot: one stray tap on a title screen a
+-- five-year-old is allowed to bash would end the game. Both ways out of the
+-- question are safe, and the boy's own recorded answer plays with it -- "Nei, du
+-- må spille videre!" -- which is the joke and also, for him, the label.
+function Menu:askQuit()
+    if not self:hasQuitDisc() then return end
+    self.quitAsk = Dialog.new("menu.quit", self.game.fonts, "Vil du avslutte?", {
+        { label = "Nei, spill videre!", action = function() self:closeQuit() end,
+          face = Dialog.SAFE.face, hi = Dialog.SAFE.hi, lo = Dialog.SAFE.lo },
+        { label = "Ja, avslutt", action = function() love.event.quit() end },
+    }, function() self:closeQuit() end)
+    Assets.playNamedVoice("nei_spill_videre")
 end
 
-function Menu:pointInQuit(mx, my)
-    if self.game.mobile then return false end   -- no quit button on iOS
-    local bx, by, bw, bh = self:quitBtnRect()
-    return mx >= bx and mx <= bx + bw and my >= by and my <= by + bh
+function Menu:closeQuit()
+    self.quitAsk = nil
+    Retro.cancelPress()
 end
 
 -- Credit my boy Finn-Erik (the artist) peeking up from the bottom-right corner.
@@ -681,33 +773,47 @@ end
 
 -- The carved wooden sign hanging from two ropes, swaying gently from a pivot
 -- above. Brightens and sways a touch more on hover.
+--
+-- What sways and what does NOT is the whole shape of this function. The two
+-- discs are pins nailed to the screen (Menu:discSide says why), so the sway can
+-- no longer be one push around everything: the ropes are drawn from the FIXED
+-- pin down to the plank's SWUNG corner, and only the plank and its carved label
+-- ride inside the transform. `swayed` is that transform applied by hand to a
+-- single point -- it must stay in step with the push below, since the rope has
+-- to land on the corner the plank actually drew.
 function Menu:drawSign(pop)
-    local bx, by, bw, bh = self:buttonRect()
+    local bx, by0, bw, bh = self:buttonRect()
+    local by = by0
     if Retro.isDown("menu.sign") then
-        by = by + bh * 0.10   -- pressed: the plank dips on its ropes
+        by = by + bh * 0.10   -- pressed: the plank dips on its ropes, the pins don't
     end
     local cx = bx + bw / 2
     local hover = self:pointInButton(love.mouse.getPosition())
     local t = math.max(2, math.floor(bh / 14))          -- bevel thickness
-    local beamY = by - bh * 0.62                          -- rope pivot above plank
+    local beamY = by0 - bh * 0.62                         -- rope pivot, fixed to the screen
     local sway = math.sin(self.t * 1.1) * (hover and 0.045 or 0.022)
+    local ca, sa = math.cos(sway), math.sin(sway)
+    local function swayed(px, py)                         -- == the push below, for one point
+        local dx, dy = (px - cx) * pop, (py - beamY) * pop
+        return cx + dx * ca - dy * sa, beamY + dx * sa + dy * ca
+    end
+
+    -- two ropes, from the fixed pins down to the plank's swinging top corners
+    local lx, rx = bx + bw * 0.16, bx + bw * 0.84
+    local pinY = beamY + bh * 0.10
+    local lx2, ly2 = swayed(lx, by)
+    local rx2, ry2 = swayed(rx, by)
+    love.graphics.setColor(0.62, 0.50, 0.30)
+    love.graphics.setLineWidth(math.max(2, bh * 0.05))
+    love.graphics.line(lx, pinY, lx2, ly2)
+    love.graphics.line(rx, pinY, rx2, ry2)
+    love.graphics.setLineWidth(1)
 
     love.graphics.push()
     love.graphics.translate(cx, beamY)
     love.graphics.rotate(sway)
     love.graphics.scale(pop, pop)                         -- pop-in when appearing
     love.graphics.translate(-cx, -beamY)
-
-    -- two ropes from rings down to the plank's top corners
-    local lx, rx = bx + bw * 0.16, bx + bw * 0.84
-    love.graphics.setColor(0.62, 0.50, 0.30)
-    love.graphics.setLineWidth(math.max(2, bh * 0.05))
-    love.graphics.line(lx, beamY + bh * 0.10, lx, by)
-    love.graphics.line(rx, beamY + bh * 0.10, rx, by)
-    love.graphics.setLineWidth(1)
-    -- gold doubloons where the ropes hang (was: dull iron rings)
-    Icons.coin(lx, beamY + bh * 0.10, bh * 0.17)
-    Icons.coin(rx, beamY + bh * 0.10, bh * 0.17)
 
     -- the plank: raised wood, with a sunken carved inner panel
     local face = hover and WOOD.hi or WOOD.face
@@ -725,6 +831,19 @@ function Menu:drawSign(pop)
     love.graphics.print(label, tx, ty)
 
     love.graphics.pop()
+
+    -- The pins last, so the rope ends tuck behind them. Carved discs where the
+    -- doubloons used to hang (and dull iron rings before that).
+    self:drawDisc("menu.hjelp", "hjelp", "?", pop)
+    if self:hasQuitDisc() then
+        self:drawDisc("menu.avslutt", "avslutt", "X", pop)
+    else
+        -- iOS keeps its doubloon, at the disc's OWN size so the two pins are a
+        -- matched pair rather than a big one and a leftover trinket. Read from
+        -- discSide, not re-derived, or a tune to DISC_H would only move one.
+        local _, cxA, cyA, dA = self:discSide("avslutt")
+        Icons.coin(cxA, cyA, dA / 2)
+    end
 end
 
 function Menu:pointInButton(mx, my)
@@ -739,17 +858,36 @@ function Menu:start()
     self.game:setScene("boatselect")   -- choose your boat, then set sail
 end
 
+-- Opens the help page. Same trip as the sign: the title screen is left behind.
+function Menu:openInfo()
+    Assets.setMusicVolume(1.0)
+    self.game:setScene("info")
+end
+
 function Menu:keypressed(key)
+    if self.quitAsk then self.quitAsk:keypressed(key); return end
     if key == "return" or key == "space" or key == "kpenter" then
         self:start()
     end
 end
 
+-- ESC used to quit on the spot; it now asks, like the disc does. Routed here by
+-- Game:keypressed rather than handled there, so the two exits are one path.
+function Menu:onEscape()
+    if self.quitAsk then self:closeQuit()
+    elseif self:hasQuitDisc() then self:askQuit()
+    else love.event.quit() end
+end
+
 function Menu:mousepressed(x, y, button)
+    if self.quitAsk then self.quitAsk:mousepressed(x, y, button); return end
     if button ~= 1 then return end
-    if self:pointInQuit(x, y) then             -- quit the game (desktop only)
-        love.event.quit()
-        return
+    -- The discs go FIRST: everything after them treats a tap as "set sail", and
+    -- the last line treats it as "set sail" wherever it landed.
+    if self:signIn() > 0 then
+        if Retro.press("menu.hjelp", (self:discSide("hjelp")), x, y) then return end
+        if self:hasQuitDisc()
+           and Retro.press("menu.avslutt", (self:discSide("avslutt")), x, y) then return end
     end
     local bx, by, bw, bh = self:buttonRect()
     if Retro.press("menu.sign", { x = bx, y = by, w = bw, h = bh }, x, y) then
@@ -759,8 +897,10 @@ function Menu:mousepressed(x, y, button)
 end
 
 function Menu:mousereleased(x, y, button)
+    if self.quitAsk then self.quitAsk:mousereleased(x, y, button); return end
     if button ~= 1 then return end
-    local bx, by, bw, bh = self:buttonRect()
+    if Retro.released("menu.hjelp", x, y) then self:openInfo(); return end
+    if Retro.released("menu.avslutt", x, y) then self:askQuit(); return end
     if Retro.released("menu.sign", x, y) then
         self:start()
     end
