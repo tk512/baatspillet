@@ -9,6 +9,7 @@ local json   = require("src.json")
 local Scale  = require("src.ui.scale")
 local Retro  = require("src.ui.retro")
 local Profiler = require("src.systems.profiler")
+local Model3D  = require("src.systems.model3d")   -- only for its capability probe
 
 local Game = {}
 
@@ -51,6 +52,7 @@ function Game:load()
     self:loadData()
     Assets.loadSounds()
     self:loadSave()
+    self:applyBoatVisibility()   -- after loadSave: it reads the real state.premium
     self:applyMap(self.state.selectedMap)
 
     -- iOS is always fullscreen natively; forcing a mode switch can reset the
@@ -199,6 +201,7 @@ function Game:reloadData()
     package.loaded["src.data.shop"]  = nil
     package.loaded["src.data.ships"] = nil
     self:loadData()
+    self:applyBoatVisibility()   -- loadData re-required a FULL list; filter it again
     self:reloadScene()
 end
 
@@ -251,6 +254,53 @@ function Game:applyMap(id)
 end
 
 -- by id, falling back to the first boat
+-- Which boats a player is shown. PURE -- no self, no love -- so the rule can be
+-- pinned in tests/save_state.lua rather than discovered on someone else's laptop.
+--
+-- The rule: with no live-3D renderer the PREMIUM boats aren't worth showing.
+-- Tøffe falls back to a 1 KB placeholder PNG, Vannvittig to the code-drawn
+-- yacht, Vikingskipet to a grey volumetric box, while the two free boats have
+-- real art either way (Nasse Nøff's 8-view turnsheet, Sundferjen's photo). This
+-- happens on a hand-out .love opened with a stock LÖVE 11.x -- see the fallback
+-- chain in Boat:draw.
+--
+-- Reusing `premium` is a deliberate shortcut: it is TODAY exactly the set with
+-- no usable fallback. A boat that breaks that alignment -- a free 3D-only boat,
+-- or a premium one with real photo art -- needs its own field in boats.lua, not
+-- a cleverer rule here.
+--
+-- `paid` must be state.premium, a RECORDED PURCHASE, never isPremium(): that
+-- returns true on any unfused run and would stop this firing on the very .love
+-- it exists for. Nothing bought is ever hidden.
+--
+-- Never returns an empty list. BoatSelect:load indexes boats[1] unconditionally,
+-- so an all-premium list has to come back whole rather than crash the second
+-- screen of the game -- which is a live risk, since boats.lua is meant to be
+-- edited by non-coders.
+--
+-- Returns list, premiumHidden. The flag answers the question the two scenes
+-- actually ask -- "are the paid boats being withheld?" -- and NOT "did this call
+-- shorten the list", so asking twice about an already-filtered list gives the
+-- same answer. It is false in the all-premium case above, where we gave up and
+-- showed everything, which is exactly when the pack card still has a showcase.
+function Game.visibleBoats(list, has3d, paid)
+    if has3d or paid then return list, false end
+    local out = {}
+    for _, b in ipairs(list) do
+        if not b.premium then out[#out + 1] = b end
+    end
+    if #out == 0 then return list, false end
+    return out, true
+end
+
+-- Runs once per data load, and AFTER loadSave so state.premium is the real one
+-- rather than the default.
+function Game:applyBoatVisibility()
+    local paid = self.state ~= nil and self.state.premium == true
+    self.data.boats, self.premiumHidden =
+        Game.visibleBoats(self.data.boats, Model3D.available(), paid)
+end
+
 function Game:getBoatDef(id)
     for _, b in ipairs(self.data.boats) do
         if b.id == id then return b end

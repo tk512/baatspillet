@@ -269,6 +269,12 @@ local function ensureShader()
     return shader ~= nil
 end
 
+-- Can the live-3D path run at all? The shader is GLSL3 and FORMAT is LÖVE 12's
+-- vertex-format table, so an older engine builds neither and every 3D boat
+-- silently falls back to its baked frames -- which reads as "the art didn't
+-- update". Latched both ways, so callers may ask as often as they like.
+function Model3D.available() return ensureShader() end
+
 -- One triangle -> three FORMAT-ordered vertex rows appended to `data`, flat-
 -- shaded with the face normal. ta/tb/tc are vt indices (nil = no UVs).
 local function emitFace(data, a, b, c, ta, tb, tc, col, vts)

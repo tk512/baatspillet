@@ -214,6 +214,10 @@ function MapSelect:pick(def)
     if def.comingSoon then Assets.playSfx("leave", 0.20); return end
     if def.premium and not self.game:isPremium() then
         Assets.playNamedVoice("spor_en_voksen")
+        -- With the premium boats hidden the pack card has no showcase to draw,
+        -- so it's suppressed -- and sending the player to the boat screen to
+        -- meet no card would simply lose them. Say it out loud and stay put.
+        if self.game.premiumHidden then return end
         self.game._openPackOffer = true
         self.game:setScene("boatselect")     -- the Kaptein-pakken card lives there
         return

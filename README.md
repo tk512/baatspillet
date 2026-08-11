@@ -28,7 +28,13 @@ Alt ligger i `src/`:
 | `ui/` | HUD, hyllen, havneskjermen, minikartet, albumet |
 
 **F5** laster scenen på nytt, **F6** laster `src/data/*` på nytt — uten å starte
-spillet. Tester kjører uten LÖVE: `luajit tests/save_state.lua` (flere i `tests/`).
+spillet.
+
+```sh
+./bygg.sh test      # alle testene, uten LÖVE, på under et sekund
+```
+
+`utgivelse` kjører dem selv og nekter å bygge hvis noe feiler.
 
 Detaljene — og *hvorfor* ting er som de er — står i `CLAUDE.md`.
 

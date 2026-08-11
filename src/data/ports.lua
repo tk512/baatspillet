@@ -7,7 +7,7 @@
 --   color     {r,g,b} accent for the roof + destination flag
 --   size      city size: tiny / small / medium / large (see config.CITY_SIZES)
 --   master    harbour master's name -> "Havnesjef <master>"; a LIST turns it
---             plural, "Havnesjefer Solveig og Frida". Portrait either way is
+--             plural, "Havnesjefer ...". Portrait either way is
 --             assets/ports/portraits/<id>.png. Omit for a plain "Havnesjef".
 --   produces  what this town sends:
 --               { mode = "passengers", label = "Passasjerer", icon = "passenger" }
@@ -35,7 +35,7 @@ return {
     {
         id    = "skiparviken",
         name  = "Skiparviken",
-        master = { "Solveig", "Frida" },   -- this harbour is run by two havnesjefer
+        master = { "S", "F" },   -- this harbour is run by two havnesjefer
         x     = 8700, y = 3400,        -- south coast of the NE island
         color = {0.30, 0.62, 0.66},
         size  = "medium",

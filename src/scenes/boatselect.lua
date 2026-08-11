@@ -57,7 +57,11 @@ function BoatSelect:load(game)
     self.offer = false                           -- the premium-pack offer card, when up
     if game._openPackOffer then                  -- sent here by a locked map card
         game._openPackOffer = nil
-        self.offer = "card"
+        -- ...but never while the premium boats are hidden: offerLayout builds
+        -- the showcase from data.boats' `premium` entries, so the card would
+        -- come up as a kr 19 button over an empty strip. MapSelect already
+        -- doesn't send us here in that case; this is the belt to its braces.
+        if not game.premiumHidden then self.offer = "card" end
     end
 end
 
@@ -295,6 +299,55 @@ end
 
 -- ---- layout ---------------------------------------------------------------
 
+-- ---- the on-screen keyboard's geometry, in ONE place ----------------------
+--
+-- keyLayout() builds the key rects from this and layout() hangs the editing name
+-- box directly above it. They each used to pick their own fraction of sh, and on
+-- a phone that broke badly: the keys are sized by Scale.ui, so 1.6x boosted, and
+-- four rows of them outgrew the fraction they were anchored at. The bottom row
+-- ended 57..118 px past the bottom of every iPhone -- and that row is Slett,
+-- Mellomrom and FERDIG. Ferdig is the only way out of editing on a touch device,
+-- so the name screen became a trap you left by force-quitting the app.
+--
+-- So height is a HARD constraint here, and the keyboard is anchored to the BOTTOM
+-- of the screen rather than to a fraction of it: same answer as Info.layout
+-- shrinking its rows instead of letting the last one fall off the page.
+local KB_MAX    = 96     -- design-px key width where there is room to spare
+local KB_ASPECT = 0.92   -- key height / key width
+local KB_GAP    = 0.12   -- gap / key width
+local KB_EDGE   = 10     -- design-px clear of the screen edge
+local KB_COLS   = 10     -- the widest letter row
+local KB_EDITH  = 58     -- design-px height of the name box while typing
+local KB_TITLE  = 68     -- design-px reserved for the title (fonts.title is 64*k)
+
+function BoatSelect:kbMetrics()
+    local sw, sh = love.graphics.getDimensions()
+    local k     = Scale.ui(1)
+    local rows  = #KB_ROWS + 1                 -- letters + Slett/Mellomrom/Ferdig
+    local edge  = KB_EDGE * k
+    local editH = KB_EDITH * k
+
+    -- Title band, then the name box and three gaps; the keyboard gets the rest.
+    local titleTop = sh * 0.06 + KB_TITLE * k
+    local avail    = sh - titleTop - editH - 3 * edge
+
+    -- The width term counts the GAPS too. Dividing sw * 0.92 by the key count
+    -- alone forgot them, which put the outer keys of a 667pt-wide iPhone SE at
+    -- x = -3 -- off the side, on top of the off-the-bottom problem.
+    local kw = math.floor(math.min(
+        KB_MAX * k,
+        (sw - 2 * edge) / (KB_COLS + (KB_COLS - 1) * KB_GAP),
+        avail / (rows * KB_ASPECT + (rows - 1) * KB_GAP)))
+    local kh  = math.floor(kw * KB_ASPECT)
+    local gap = math.floor(kw * KB_GAP)
+    local h   = rows * kh + (rows - 1) * gap
+    return {
+        kw = kw, kh = kh, gap = gap, h = h, edge = edge, editH = editH,
+        topY     = math.floor(sh - edge - h),
+        titleTop = titleTop,
+    }
+end
+
 function BoatSelect:layout()
     local sw, sh = love.graphics.getDimensions()
     local k = Scale.ui(1)   -- read/tapped UI: phone-boosted (see src/ui/scale.lua)
@@ -302,11 +355,16 @@ function BoatSelect:layout()
     local ed = self.editing
     local previewY = math.floor(sh * (ed and 0.24 or 0.32))
     local previewW = math.min(sw * (ed and 0.30 or 0.42), (ed and 230 or 320) * k)
-    local nameW, nameH, gap, nyttW = 340 * k, 46 * k, 12 * k, 150 * k
+    -- The name box and Nytt navn are TAPPED, so they are controls and meet
+    -- Apple's minimum -- pure proportionality made them 34..40pt on a phone,
+    -- which is the same mistake HUD.keySize exists to stop.
+    local nameW, nameH, gap, nyttW = 340 * k, math.max(46 * k, config.TOUCH_MIN), 12 * k, 150 * k
     local groupW = nameW + gap + nyttW
     local gx = cx - groupW / 2
 
-    -- ALL boats, so the paid ones are on show
+    -- ALL boats, so the paid ones are on show. Which boats EXIST is decided once
+    -- at load (Game:applyBoatVisibility) and never here: layout runs every frame
+    -- from draw, so a list filtered at this line would allocate a table per frame.
     local boats = self.game.data.boats
     local nb = #boats
     local thumbW = math.min((sw * 0.86) / nb, 150 * k)
@@ -324,38 +382,49 @@ function BoatSelect:layout()
     local statsY = math.floor(stripY + thumbH + 14 * k)
     local nameY  = math.floor(statsY + 26 * k + 12 * k)
 
+    local kb = self:kbMetrics()
+    local editW = math.min(sw * 0.6, 460 * k)
+    local editY = math.floor(kb.topY - kb.edge - kb.editH)
+
     return {
         k = k, cx = cx, previewY = previewY, previewW = previewW,
         statsY = statsY,
         strip = strip,
         nameBox = { x = gx, y = nameY, w = nameW, h = nameH },
         nytt = { x = gx + nameW + gap, y = nameY, w = nyttW, h = nameH },
-        sail = { x = cx - 170 * k, y = math.floor(sh * 0.80), w = 340 * k, h = 76 * k },
-        back = { x = 20 * k, y = 20 * k, w = 130 * k, h = 52 * k },
-        -- name box while editing: centred above the keyboard
-        editBox = { x = cx - math.min(sw * 0.6, 460 * k) / 2, y = math.floor(sh * 0.40),
-                    w = math.min(sw * 0.6, 460 * k), h = 58 * k },
+        -- Sett seil! keeps its place on a roomy screen and FLOWS below the name
+        -- row when the boosted sizes above it would otherwise reach it.
+        sail = { x = cx - 170 * k, y = math.max(math.floor(sh * 0.80), math.floor(nameY + nameH + 12 * k)),
+                 w = 340 * k, h = 76 * k },
+        back = { x = 20 * k, y = 20 * k, w = 130 * k, h = math.max(52 * k, config.TOUCH_MIN) },
+        -- name box while editing: directly above the keyboard, which owns the
+        -- bottom of the screen. Never a fraction of sh of its own -- that is how
+        -- the name ended up being typed underneath the keys on a phone.
+        editBox = { x = cx - editW / 2, y = editY, w = editW, h = kb.editH },
+        -- What is left for the hero boat while typing. On a phone it is nothing
+        -- worth drawing, so draw() skips the preview rather than putting it over
+        -- the name -- one rule, no device check.
+        previewRoom = editY - kb.titleTop,
     }
 end
 
--- recomputed each call: a few dozen rects, cheap
+-- recomputed each call: a few dozen rects, cheap. All the sizing decisions live
+-- in kbMetrics, which layout() shares -- so the name box and the keys cannot
+-- disagree about where the keyboard starts.
 function BoatSelect:keyLayout()
-    local sw, sh = love.graphics.getDimensions()
-    local k = Scale.ui(1)
-    local kw = math.floor(math.min((sw * 0.92) / 10, 96 * k))
-    local kh = math.floor(kw * 0.92)
-    local gap = math.floor(kw * 0.12)
-    local topY = math.floor(sh * 0.50)
+    local sw = love.graphics.getWidth()
+    local M = self:kbMetrics()
+    local kw, kh, gap = M.kw, M.kh, M.gap
     local keys = {}
     for r, row in ipairs(KB_ROWS) do
         local n = #row
         local x0 = (sw - (n * kw + (n - 1) * gap)) / 2
-        local y = topY + (r - 1) * (kh + gap)
+        local y = M.topY + (r - 1) * (kh + gap)
         for c, ch in ipairs(row) do
             keys[#keys + 1] = { x = x0 + (c - 1) * (kw + gap), y = y, w = kw, h = kh, kind = "letter", label = ch }
         end
     end
-    local y = topY + 3 * (kh + gap)
+    local y = M.topY + #KB_ROWS * (kh + gap)
     local aw, spw = kw * 2 + gap, kw * 4 + gap * 3
     local x0 = (sw - (aw * 2 + spw + gap * 2)) / 2
     keys[#keys + 1] = { x = x0, y = y, w = aw, h = kh, kind = "back", label = "Slett" }
@@ -892,8 +961,13 @@ function BoatSelect:draw()
     end
 
     -- The hero preview LAST, so the big spinning boat sails right over the
-    -- thumbnails and buttons — prettier, and the boat owns the screen.
-    self:drawPreview(L, def)
+    -- thumbnails and buttons — prettier, and the boat owns the screen. While
+    -- typing it needs real room above the name box, and a phone hasn't got it:
+    -- 402pt of height is the keyboard's, and a boat drawn there would land on
+    -- top of the name being spelled out.
+    if not self.editing or L.previewRoom >= 70 * L.k then
+        self:drawPreview(L, def)
+    end
 
     if self.offer == "gate" then self:drawGate()
     elseif self.offer then self:drawOffer() end
@@ -953,6 +1027,13 @@ function BoatSelect:mousepressed(x, y, button)
                 elseif key.kind == "done" then self.editing = false; self:commitName() end
                 return
             end
+        end
+        -- Nothing hit: keep the name and leave. Ferdig is the front door, but a
+        -- screen with exactly one small way out is a screen that traps you the
+        -- moment that key moves -- which is precisely what happened on every
+        -- iPhone. Same tap-outside gesture as the offer card above.
+        if not hit(self:layout().editBox, x, y) then
+            self.editing = false; self:commitName()
         end
         return
     end

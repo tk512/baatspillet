@@ -8,6 +8,7 @@
 #   ./bygg.sh iphone     — build + run in the iPhone simulator
 #   ./bygg.sh device     — build + install on a plugged-in iPad/iPhone
 #   ./bygg.sh archive    — App Store .ipa (version auto-bumps from ios/VERSION)
+#   ./bygg.sh test       — the headless test suite (no LÖVE); `utgivelse` gates on it
 #   ./bygg.sh love       — just Båtspillet.love (every iOS build starts here)
 #   ./bygg.sh dmg        — Båtspillet.app + .dmg to hand out (run `setup` first)
 #   ./bygg.sh mac        — Mac App Store .pkg (same app record as iOS)
@@ -77,6 +78,46 @@ trap cleanup EXIT
 
 need_engine() {
     [ -d "$XCODEPROJ" ] || { echo "!! vendored engine missing at $ENGINE"; exit 1; }
+}
+
+# ── the test suite ─────────────────────────────────────────────────────────
+# The whole of tests/, in one command. It GLOBS on purpose: a new test file is
+# picked up by existing, which is the difference between a suite and eleven
+# commands somebody has to remember the names of.
+#
+# One interpreter PER FILE, not one process requiring them all. Each test calls
+# H.installLove() and mutates the global `love`, and H.report() ends with
+# os.exit(1) — so separate processes are both necessary for isolation and free.
+#
+# `utgivelse` calls this before it builds anything, for the same reason
+# signing_preflight runs there: the archive alone is ten minutes, and this costs
+# under a second. It was the one failure the release path did not check for.
+run_tests() {
+    local lua="${LUA:-}"
+    if [ -z "$lua" ]; then
+        for c in luajit lua5.1 lua; do command -v "$c" >/dev/null 2>&1 && { lua="$c"; break; }; done
+    fi
+    [ -n "$lua" ] || { echo "!! no luajit/lua on PATH — cannot run tests (brew install luajit)"; return 1; }
+
+    local D=$'\e[2m' R=$'\e[0m' failed=0 n=0 out=""
+    echo ">> tests  ${D}($lua, headless — no LÖVE)${R}"
+    for t in tests/*.lua; do
+        [ "$(basename "$t")" = "harness.lua" ] && continue   # shared helpers, not a test
+        n=$((n + 1))
+        if out="$("$lua" "$t" 2>&1)"; then
+            printf '   %-22s %s\n' "$(basename "$t")" "$(echo "$out" | tail -1)"
+        else
+            failed=$((failed + 1))
+            printf '   %-22s FEILET\n' "$(basename "$t")"
+            echo "$out" | sed 's/^/      /'
+        fi
+    done
+    [ "$n" -gt 0 ] || { echo "!! no test files found in tests/ — that is itself a failure"; return 1; }
+    if [ "$failed" -gt 0 ]; then
+        echo "!! $failed av $n testfiler feilet — fiks dem før du bygger."
+        return 1
+    fi
+    echo "   ${D}$n testfiler, alle grønne${R}"
 }
 
 # Our plist customizations live in this repo — sync before every build.
@@ -756,8 +797,19 @@ do_release() {
     echo "${C}════════════════════════════════════════════════${R}"
     echo "  ⚓  ${B}Utgivelse $ver${R} — iOS + macOS"
     echo "${C}════════════════════════════════════════════════${R}"
+    # Tests before certificates: they are the cheaper check of the two, and a
+    # green suite is the only part of this preflight that says the GAME is sound
+    # rather than the paperwork.
     echo ""
-    echo "  ${B}Sjekker signering først…${R}"
+    echo "  ${B}Kjører testene først…${R}"
+    run_tests || {
+        echo ""
+        echo "  Fiks testene over og kjør igjen"
+        exit 1
+    }
+
+    echo ""
+    echo "  ${B}Sjekker signering…${R}"
     signing_preflight both || {
         echo ""
         echo "  Fiks det over og kjør igjen"
@@ -836,6 +888,7 @@ menu() {
         echo "   ${B}6${R}  Kun iOS  (.ipa)     ${D}neste versjon: $(next_version)${R}"
         echo "   ${B}7${R}  Kun macOS (.pkg)    ${D}versjon: $(cat ios/VERSION 2>/dev/null || echo '?')${R}"
         echo "   ${B}8${R}  Mac-app + .dmg      ${D}dele ut utenom App Store${R}"
+        echo "   ${B}9${R}  Tester              ${D}headless, under et sekund${R}"
         echo ""
         echo "   ${B}q${R}  Avslutt"
         echo ""
@@ -851,6 +904,7 @@ menu() {
             6) "$0" archive   || echo "!! feilet" ;;
             7) "$0" mac       || echo "!! feilet" ;;
             8) "$0" dmg       || echo "!! feilet" ;;
+            9) "$0" test      || echo "!! feilet"; read -rsn1 -p "  Trykk en tast… "; echo ;;
             q|Q) exit 0 ;;
         esac
     done
@@ -897,7 +951,8 @@ case "${1:-}" in
     love)    build_love ;;
     dmg)     do_dmg ;;
     mac)     do_mac ;;
+    test)    run_tests ;;
     utgivelse|release) do_release ;;
     "")      if [ -t 0 ] && [ -t 1 ]; then menu; else do_sim "$SIM_NAME"; fi ;;
-    *)       echo "!! unknown command '$1' (utgivelse|ipad|iphone|device|archive|mac|love|dmg|setup|xcode)"; exit 1 ;;
+    *)       echo "!! unknown command '$1' (utgivelse|ipad|iphone|device|archive|mac|love|dmg|test|setup|xcode)"; exit 1 ;;
 esac

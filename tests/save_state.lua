@@ -262,5 +262,74 @@ reset('{"boatNames": {"fishing_boat": "T\248ffe"}}')
 eq(Game.state.boatNames.fishing_boat, "T\195\184ffe",
     "loadSave: Latin-1 boat name repaired to UTF-8")
 
+-- boat visibility on an engine with no live 3D -------------------------------------
+-- Game.visibleBoats is what a hand-out .love opened with a stock LÖVE 11.x sees:
+-- the shader is GLSL3 and won't build, every 3D boat falls back silently, and the
+-- premium three fall back to placeholder art. Two failures here are invisible in a
+-- diff -- an emptied list crashes BoatSelect:load on boats[1], and filtering a paid
+-- player hides a purchase with nothing on screen saying so -- hence all four
+-- combinations plus both edges.
+local allBoats = Game.data.boats
+local function ids(list)
+    local out = {}
+    for _, b in ipairs(list) do out[#out + 1] = b.id end
+    return table.concat(out, ",")
+end
+
+local kept, hidden = Game.visibleBoats(allBoats, true, false)
+eq(ids(kept), ids(allBoats), "visibleBoats: live 3D works -> every boat stays")
+eq(hidden, false, "visibleBoats: nothing hidden when 3D works")
+
+kept, hidden = Game.visibleBoats(allBoats, true, true)
+eq(ids(kept), ids(allBoats), "visibleBoats: 3D + paid -> every boat stays")
+eq(hidden, false, "visibleBoats: nothing hidden when 3D works and the pack is paid")
+
+-- The one that must never regress: a RECORDED PURCHASE outranks the renderer.
+-- Placeholder boats are a cosmetic problem; boats vanishing from a chooser after
+-- someone paid kr 19 is not.
+kept, hidden = Game.visibleBoats(allBoats, false, true)
+eq(ids(kept), ids(allBoats), "visibleBoats: a paid pack is NEVER hidden, 3D or not")
+eq(hidden, false, "visibleBoats: paid -> premiumHidden false")
+
+kept, hidden = Game.visibleBoats(allBoats, false, false)
+eq(hidden, true, "visibleBoats: no 3D and no purchase -> premium boats withheld")
+check(#kept > 0, "visibleBoats: never hands back an empty list")
+check(#kept < #allBoats, "visibleBoats: something was actually withheld")
+for _, b in ipairs(kept) do
+    check(not b.premium, "visibleBoats: only free boats survive (" .. b.id .. ")")
+end
+eq(kept[1].id, allBoats[1].id,
+    "visibleBoats: the DEFAULT boat survives -- getBoatDef and defaultState both "
+    .. "name boats[1], so losing it breaks a fresh save")
+
+-- Asking twice must give the same answer: the flag means "the paid boats are
+-- being withheld", not "this call shortened the list".
+local twice, twiceHidden = Game.visibleBoats(kept, false, false)
+eq(ids(twice), ids(kept), "visibleBoats: filtering an already-filtered list is a no-op")
+eq(twiceHidden, true, "visibleBoats: premiumHidden survives a second pass")
+
+-- Degenerate data: every boat premium. Showing placeholders beats a chooser with
+-- nothing in it, and the pack card still has a showcase, so nothing is withheld.
+local allPremium = { { id = "a", premium = true }, { id = "b", premium = true } }
+kept, hidden = Game.visibleBoats(allPremium, false, false)
+eq(ids(kept), "a,b", "visibleBoats: an all-premium list comes back WHOLE, never empty")
+eq(hidden, false, "visibleBoats: all-premium -> nothing withheld, the pack card works")
+
+-- A hidden boat still resolves, and the SAVE still names it: carry the .love back
+-- to a LÖVE 12 machine and the player's own boat is waiting for them.
+local premiumId
+for _, b in ipairs(allBoats) do if b.premium then premiumId = b.id; break end end
+check(premiumId ~= nil, "boats.lua still has a premium boat to test with")
+Game.data = { boats = select(1, Game.visibleBoats(allBoats, false, false)) }
+eq(Game:getBoatDef(premiumId).id, Game.data.boats[1].id,
+    "boats: a hidden boat's id falls back to boats[1] rather than erroring")
+reset()
+Game.state.selectedBoat = premiumId
+Game:save()
+Game:loadSave()
+eq(Game.state.selectedBoat, premiumId,
+    "boats: hiding a boat must NOT rewrite selectedBoat -- the save outlives the engine")
+Game.data = { boats = allBoats }
+
 -- ---------------------------------------------------------------------------------
 H.report()
